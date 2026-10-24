@@ -601,10 +601,10 @@ export const MainLayout: React.FC = () => {
               )}
             </NavLink>
 
-            {/* 2. Horarios */}
+            {/* 2. Plantilla docente */}
             <NavLink
               to="/coordinator/assignments"
-              title="Horarios"
+              title="Plantilla docente"
               className={({ isActive }) =>
                 `flex items-center rounded-xl transition-all ${
                   isSidebarCollapsed ? 'justify-center p-2.5' : 'px-2.5 py-2 space-x-2'
@@ -617,7 +617,7 @@ export const MainLayout: React.FC = () => {
             >
               <Calendar className="shrink-0 w-4 h-4" />
               {!isSidebarCollapsed && (
-                <span className="text-xs tracking-tight truncate">Horarios</span>
+                <span className="text-xs tracking-tight truncate">Plantilla docente</span>
               )}
             </NavLink>
 
