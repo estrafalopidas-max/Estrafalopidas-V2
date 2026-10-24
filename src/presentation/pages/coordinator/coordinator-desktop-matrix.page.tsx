@@ -160,7 +160,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek());
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const isMeetingDay = Boolean(meetingDays[`${selectedShift}_${selectedDay}`] ?? meetingDays[selectedDay]);
-  const isEventDay = Boolean(eventDays[selectedDay]);
+  const isEventDay = false;
   const activeScheduleType: 'A' | 'B' | 'C' =
     scheduleTypes[`${selectedShift}_${selectedDay}`] || scheduleTypes[selectedDay] || 'A';
   const activeDayHeader = useMemo(() => weekHeaders.find((w) => w.id === selectedDay), [weekHeaders, selectedDay]);
@@ -1807,7 +1807,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
             <div
               ref={modeMenuRef}
-              className={`relative ${selectedShift === 'afternoon' ? 'w-48' : 'w-44'}`}
+              className="relative w-44"
             >
               <button
                 type="button"
@@ -1817,8 +1817,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                     ? 'bg-red-50 border-red-300 text-red-900 ring-1 ring-red-300/60'
                     : isMeetingDay
                     ? 'bg-amber-50 border-amber-300 text-amber-950 ring-1 ring-amber-300/60'
-                    : isEventDay && selectedShift === 'afternoon'
-                    ? 'bg-purple-50 border-purple-300 text-purple-950 ring-1 ring-purple-300/60'
                     : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
                 }`}
                 title="Configurar Día festivo y Atención a padres"
@@ -1838,12 +1836,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                     <span
                       className="w-2 h-2 rounded-full bg-villa-magenta"
                       title="Atención a padres activa"
-                    />
-                  )}
-                  {selectedShift === 'afternoon' && isEventDay && (
-                    <span
-                      className="w-2 h-2 rounded-full bg-purple-600"
-                      title="Modo Evento activo"
                     />
                   )}
                   <ChevronDown
@@ -1893,25 +1885,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                       className="w-4 h-4 rounded text-villa-magenta focus:ring-villa-magenta accent-villa-magenta cursor-pointer shrink-0"
                     />
                   </label>
-
-                  {/* Opción adicional para Primaria: Modo Evento (1:00 PM) */}
-                  {selectedShift === 'afternoon' && (
-                    <label className="flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap">
-                      <span
-                        className={`text-xs font-semibold ${
-                          isEventDay ? 'text-purple-700 font-bold' : 'text-slate-700'
-                        }`}
-                      >
-                        Modo Evento (1:00 PM)
-                      </span>
-                      <input
-                        type="checkbox"
-                        checked={isEventDay}
-                        onChange={(e) => setEventDay(selectedDay, e.target.checked)}
-                        className="w-4 h-4 rounded text-purple-600 focus:ring-purple-500 accent-purple-600 cursor-pointer shrink-0"
-                      />
-                    </label>
-                  )}
                 </div>
               )}
             </div>
