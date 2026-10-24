@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react'
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import {
   LayoutGrid,
-  Calendar,
+  Users,
   Bell,
   UserPlus,
   UserCog,
@@ -615,7 +615,7 @@ export const MainLayout: React.FC = () => {
                 }`
               }
             >
-              <Calendar className="shrink-0 w-4 h-4" />
+              <Users className="shrink-0 w-4 h-4" />
               {!isSidebarCollapsed && (
                 <span className="text-xs tracking-tight truncate">Plantilla docente</span>
               )}
