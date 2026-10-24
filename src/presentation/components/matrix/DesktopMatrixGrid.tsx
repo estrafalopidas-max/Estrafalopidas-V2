@@ -669,12 +669,12 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
   }, [isMorning, isMeetingDay, scheduleType]);
 
   const SUPPORT_PLAN_GRADE_CLASSROOMS: Record<string, string> = {
-    '6°': '303',
-    '7°': '201',
-    '8°': '103',
-    '9°': '301',
-    '10°': '202',
-    '11°': '102',
+    '6°': 'Aula 303',
+    '7°': 'Aula 201',
+    '8°': 'Aula 103',
+    '9°': 'Aula 301',
+    '10°': 'Aula 202',
+    '11°': 'Aula 102',
   };
 
   const getGradeLevelKey = (grade: GradeEntity) => {
@@ -689,17 +689,28 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     return grade.gradeLevel || grade.fullName;
   };
 
+  const isSupportPlanModality =
+    (scheduleType === 'D' ||
+      (supportPlanLabel && supportPlanLabel.toLowerCase().includes('apoyo'))) &&
+    !isMeetingDay &&
+    shift === 'morning';
+
   const supportPlanRoomGroups = useMemo(() => {
-    if (scheduleType !== 'D' || isMeetingDay || shift !== 'morning') {
+    if (!isSupportPlanModality) {
       return [];
     }
     const groups: Array<{ level: string; room: string; grades: GradeEntity[] }> = [];
     grades.forEach((g) => {
       const level = getGradeLevelKey(g);
-      const room =
+      const rawRoom =
         SUPPORT_PLAN_GRADE_CLASSROOMS[level] ||
-        g.defaultClassroomId?.replace(/aula\s*/i, '').trim() ||
-        'Salón';
+        g.defaultClassroomId ||
+        'Aula Base';
+      const cleanRoom = rawRoom.trim();
+      const room = /^aula\b/i.test(cleanRoom)
+        ? cleanRoom
+        : `Aula ${cleanRoom}`;
+
       const lastGroup = groups[groups.length - 1];
       if (lastGroup && lastGroup.level === level) {
         lastGroup.grades.push(g);
@@ -712,7 +723,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
       }
     });
     return groups;
-  }, [scheduleType, isMeetingDay, shift, grades]);
+  }, [isSupportPlanModality, grades]);
 
   const hasSupportPlanRooms = supportPlanRoomGroups.length > 0;
   const isTransicion = shift === 'transicion-1';

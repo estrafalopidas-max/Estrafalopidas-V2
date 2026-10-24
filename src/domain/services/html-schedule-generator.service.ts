@@ -1579,12 +1579,12 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       }
       const isSupportPlanD = currentShift === 'morning' && scheduleType === 'D' && !isMeetingDay;
       const SUPPORT_ROOMS_MAP: Record<string, string> = {
-        '6°': '303',
-        '7°': '201',
-        '8°': '103',
-        '9°': '301',
-        '10°': '202',
-        '11°': '102',
+        '6°': 'Aula 303',
+        '7°': 'Aula 201',
+        '8°': 'Aula 103',
+        '9°': 'Aula 301',
+        '10°': 'Aula 202',
+        '11°': 'Aula 102',
       };
 
       html += '<table class="schedule-table"><thead>';
@@ -1600,7 +1600,9 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         gradesInFilter.forEach(g => {
           const m = g.match(/^(\d+°?)/);
           const lvl = m ? m[1].replace('°','') + '°' : g;
-          const room = SUPPORT_ROOMS_MAP[lvl] || 'Salón';
+          const rawRoom = SUPPORT_ROOMS_MAP[lvl] || 'Aula Base';
+          const cleanRoom = rawRoom.trim();
+          const room = /^aula\b/i.test(cleanRoom) ? cleanRoom : ('Aula ' + cleanRoom);
           const last = groups[groups.length - 1];
           if (last && last.lvl === lvl) {
             last.count++;

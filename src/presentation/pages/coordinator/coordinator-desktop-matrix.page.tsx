@@ -1916,7 +1916,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                           isSupportPlanDay ? 'text-amber-700 font-bold' : 'text-slate-700'
                         }`}
                       >
-                        {supportPlanModalityLabel}
+                        Planes de apoyo
                       </span>
                       <input
                         type="checkbox"
