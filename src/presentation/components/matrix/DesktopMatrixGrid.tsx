@@ -168,9 +168,9 @@ export function generateMatrixSchedule(
     supportPlanTimes.forEach((timeStr, idx) => {
       periods.push({
         period: 101 + idx,
-        ordinal: 'Plan de apoyo (Materia)',
+        ordinal: 'Plan de apoyo',
         time: timeStr,
-        label: 'Plan de apoyo (Materia)',
+        label: 'Plan de apoyo',
         isSupportPlan: true,
       });
     });
@@ -183,9 +183,9 @@ export function generateMatrixSchedule(
     for (let p = 1; p <= 3; p++) {
       periods.push({
         period: p,
-        ordinal: `Clase ${p}`,
+        ordinal: `${p}ª Hora`,
         time: firstHalfClasses[p - 1],
-        label: `Clase ${p}`,
+        label: `${p}ª Hora`,
       });
     }
 
@@ -199,9 +199,9 @@ export function generateMatrixSchedule(
     for (let p = 4; p <= 6; p++) {
       periods.push({
         period: p,
-        ordinal: `Clase ${p}`,
+        ordinal: `${p}ª Hora`,
         time: secondHalfClasses[p - 4],
-        label: `Clase ${p}`,
+        label: `${p}ª Hora`,
       });
     }
 

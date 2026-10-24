@@ -73,7 +73,7 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
           <div>
             <h3 className="text-sm font-bold">Editar Casilla Horaria</h3>
             <p className="text-[11px] text-slate-300">
-              {block.gradeName} &bull; {block.dayOfWeek.toUpperCase()} &bull; {block.period}ª Hora
+              {block.gradeName} &bull; {block.dayOfWeek.toUpperCase()} &bull; {block.period >= 101 && block.period <= 104 ? 'Plan de apoyo' : `${block.period}ª Hora`}
             </p>
           </div>
           <button

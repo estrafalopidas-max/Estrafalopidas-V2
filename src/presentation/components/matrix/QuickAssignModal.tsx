@@ -460,7 +460,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
                 <span className="flex items-center gap-1 font-medium">
                   <Clock className="w-3.5 h-3.5 text-slate-400" />
                   {period >= 101 && period <= 104
-                    ? `Plan de apoyo (Materia) (${startTime} - ${endTime})`
+                    ? `Plan de apoyo (${startTime} - ${endTime})`
                     : `${period}ª Hora (${startTime} - ${endTime})`}
                 </span>
                 <span>•</span>

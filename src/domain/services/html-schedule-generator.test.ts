@@ -217,8 +217,8 @@ test('getSupportPlanModalityLabel dynamically resolves period-specific and annua
   );
   assert.equal(
     getSupportPlanModalityLabel('2026-10-20'),
-    'Planes de apoyo 3er periodo',
-    'Period 3 must resolve to Planes de apoyo 3er periodo'
+    'Planes de apoyo anuales',
+    'Period 3 must resolve to Planes de apoyo anuales'
   );
   assert.equal(
     getSupportPlanModalityLabel('2026-12-03'),

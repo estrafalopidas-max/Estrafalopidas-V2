@@ -248,12 +248,7 @@ export function getSupportPlanModalityLabel(
   }
 
   const weekData = getCurrentWeekText(validDate);
-  if (
-    weekData.periodNumber > 3 ||
-    (weekData.periodNumber === 3 &&
-      weekData.isRecess &&
-      weekData.recessName?.toLowerCase().includes('cierre'))
-  ) {
+  if (weekData.periodNumber >= 3) {
     return 'Planes de apoyo anuales';
   }
 
