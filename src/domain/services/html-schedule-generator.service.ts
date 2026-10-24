@@ -1577,19 +1577,60 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         html += '<span style="font-size:11px;font-weight:600;color:#1e40af;">Todas las franjas se encuentran disponibles para programación</span>';
         html += '</div>';
       }
-      html += '<table class="schedule-table"><thead><tr>';
+      const isSupportPlanD = currentShift === 'morning' && scheduleType === 'D' && !isMeetingDay;
+      const SUPPORT_ROOMS_MAP: Record<string, string> = {
+        '6°': '303',
+        '7°': '201',
+        '8°': '103',
+        '9°': '301',
+        '10°': '202',
+        '11°': '102',
+      };
+
+      html += '<table class="schedule-table"><thead>';
       if (isTransicionShift) {
+        html += '<tr>';
         gradesInFilter.forEach(g => {
           html += '<th class="time-col-th">Horario ' + scheduleType + '</th>';
           html += '<th>' + g + '</th>';
         });
+        html += '</tr>';
+      } else if (isSupportPlanD) {
+        const groups: Array<{ lvl: string; room: string; count: number }> = [];
+        gradesInFilter.forEach(g => {
+          const m = g.match(/^(\d+°?)/);
+          const lvl = m ? m[1].replace('°','') + '°' : g;
+          const room = SUPPORT_ROOMS_MAP[lvl] || 'Salón';
+          const last = groups[groups.length - 1];
+          if (last && last.lvl === lvl) {
+            last.count++;
+          } else {
+            groups.push({ lvl, room, count: 1 });
+          }
+        });
+
+        html += '<tr style="border-bottom: 1.5px solid #64748b;">';
+        html += '<th class="time-col-th" style="background-color: #334155; color: #ffffff; font-size: 11px; text-transform: uppercase; font-weight: 800;">Salones</th>';
+        groups.forEach(grp => {
+          html += '<th colspan="' + grp.count + '" style="background-color: #7f7f7f; color: #ffffff; font-size: 14px; font-weight: 900; text-align: center; border-right: 1px solid #64748b; letter-spacing: 0.03em;">' + grp.room + '</th>';
+        });
+        html += '</tr>';
+
+        html += '<tr>';
+        html += '<th class="time-col-th">Horario ' + scheduleType + '</th>';
+        gradesInFilter.forEach(g => {
+          html += '<th style="background-color: #b8cce4; color: #0f172a; font-weight: 900; font-size: 13px;">' + g + '</th>';
+        });
+        html += '</tr>';
       } else {
+        html += '<tr>';
         html += '<th class="time-col-th">Horario ' + scheduleType + '</th>';
         gradesInFilter.forEach(g => {
           html += '<th>' + g + '</th>';
         });
+        html += '</tr>';
       }
-      html += '</tr></thead><tbody>';
+      html += '</thead><tbody>';
 
       if (isHoliday) {
         html += '<tr><td colspan="' + totalCols + '" class="holiday-banner-row">📅 Día Festivo Institucional &bull; Sin actividad académica programada</td></tr>';

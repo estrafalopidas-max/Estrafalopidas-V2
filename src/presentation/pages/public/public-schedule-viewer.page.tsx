@@ -528,6 +528,34 @@ export const PublicScheduleViewerPage: React.FC = () => {
     return shiftGrades;
   }, [shiftGrades, filteredBlocks, selectedGrade, selectedTeacher, searchTerm, isHoliday, isBlankSchedule]);
 
+  const SUPPORT_PLAN_GRADE_CLASSROOMS: Record<string, string> = {
+    '6°': '303',
+    '7°': '201',
+    '8°': '103',
+    '9°': '301',
+    '10°': '202',
+    '11°': '102',
+  };
+
+  const isSupportPlanD = selectedShift === 'morning' && activeScheduleType === 'D' && !isMeetingDay;
+
+  const supportPlanGroups = useMemo(() => {
+    if (!isSupportPlanD) return [];
+    const groups: Array<{ level: string; room: string; grades: string[] }> = [];
+    activeGrades.forEach((g) => {
+      const match = g.match(/^(\d+°?)/);
+      const level = match ? `${match[1].replace('°', '')}°` : g;
+      const room = SUPPORT_PLAN_GRADE_CLASSROOMS[level] || 'Salón';
+      const last = groups[groups.length - 1];
+      if (last && last.level === level) {
+        last.grades.push(g);
+      } else {
+        groups.push({ level, room, grades: [g] });
+      }
+    });
+    return groups;
+  }, [isSupportPlanD, activeGrades]);
+
   // Visible period slots for the selected shift and day
   const activePeriodSlots = useMemo(() => {
     const rawSlots = buildDynamicPublicSlots(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
@@ -972,41 +1000,73 @@ export const PublicScheduleViewerPage: React.FC = () => {
           <div className="w-full overflow-hidden">
             <table className="w-full table-fixed border-collapse text-left text-xs">
               <thead>
-                <tr className="bg-slate-50 border-b border-slate-200">
-                  {selectedShift === 'transicion-1' ? (
-                    activeGrades.map((g) => (
-                      <React.Fragment key={`th-pair-${g}`}>
-                        <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
-                          Horario {activeScheduleType}
+                {isSupportPlanD ? (
+                  <>
+                    <tr className="border-b border-slate-400">
+                      <th className="p-2 font-extrabold text-white uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-500 bg-slate-700 text-center">
+                        Salones
+                      </th>
+                      {supportPlanGroups.map((grp, i) => (
+                        <th
+                          key={`room-${grp.room}-${i}`}
+                          colSpan={grp.grades.length}
+                          className="p-2 font-black text-white text-center border-r border-slate-500 last:border-r-0 bg-[#7f7f7f] text-sm sm:text-base tracking-wide"
+                        >
+                          {grp.room}
                         </th>
-                        <th className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
-                          <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
-                            {g}
-                          </span>
-                          {g === 'Transición 1' && (
-                            <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">07:00 - 12:00</div>
-                          )}
-                          {g === 'Transición 2' && (
-                            <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">12:30 - 17:30</div>
-                          )}
-                        </th>
-                      </React.Fragment>
-                    ))
-                  ) : (
-                    <>
-                      <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
+                      ))}
+                    </tr>
+                    <tr className="border-b border-slate-300">
+                      <th className="p-2 font-extrabold text-slate-700 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-300 bg-slate-100 whitespace-nowrap text-center">
                         Horario {activeScheduleType}
                       </th>
                       {activeGrades.map((g) => (
-                        <th key={g} className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
-                          <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
-                            {g}
-                          </span>
+                        <th
+                          key={g}
+                          className="p-1.5 font-black text-slate-900 text-center border-r border-slate-300 last:border-r-0 bg-[#b8cce4] text-xs sm:text-sm"
+                        >
+                          {g}
                         </th>
                       ))}
-                    </>
-                  )}
-                </tr>
+                    </tr>
+                  </>
+                ) : (
+                  <tr className="bg-slate-50 border-b border-slate-200">
+                    {selectedShift === 'transicion-1' ? (
+                      activeGrades.map((g) => (
+                        <React.Fragment key={`th-pair-${g}`}>
+                          <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
+                            Horario {activeScheduleType}
+                          </th>
+                          <th className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
+                            <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
+                              {g}
+                            </span>
+                            {g === 'Transición 1' && (
+                              <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">07:00 - 12:00</div>
+                            )}
+                            {g === 'Transición 2' && (
+                              <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">12:30 - 17:30</div>
+                            )}
+                          </th>
+                        </React.Fragment>
+                      ))
+                    ) : (
+                      <>
+                        <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
+                          Horario {activeScheduleType}
+                        </th>
+                        {activeGrades.map((g) => (
+                          <th key={g} className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
+                            <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
+                              {g}
+                            </span>
+                          </th>
+                        ))}
+                      </>
+                    )}
+                  </tr>
+                )}
               </thead>
               <tbody className="divide-y divide-slate-200">
                 {isHoliday && (

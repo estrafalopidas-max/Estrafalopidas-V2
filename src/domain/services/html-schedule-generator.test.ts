@@ -232,4 +232,23 @@ test('getSupportPlanModalityLabel dynamically resolves period-specific and annua
   );
 });
 
+test('generateStandaloneScheduleHtml renders grouped classrooms header for Horario D in Bachillerato', async () => {
+  const { generateStandaloneScheduleHtml } = await import('./html-schedule-generator.service.ts');
+  const html = generateStandaloneScheduleHtml({
+    timeBlocks: [],
+    teachers: [],
+    academicPeriod: '3er Periodo',
+    academicWeek: 9,
+    dayConfigs: {
+      scheduleTypes: {
+        lunes: 'D',
+        morning_lunes: 'D',
+      },
+    },
+  });
+
+  assert.ok(html.includes('SUPPORT_ROOMS_MAP'), 'Must include SUPPORT_ROOMS_MAP in client script');
+  assert.ok(html.includes('>Salones</th>'), 'Must render Salones header cell in client script');
+});
+
 

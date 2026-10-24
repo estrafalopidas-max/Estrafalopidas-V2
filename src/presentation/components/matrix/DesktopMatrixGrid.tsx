@@ -668,6 +668,55 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     return isMeetingDay ? 'Horario B' : 'Horario A';
   }, [isMorning, isMeetingDay, scheduleType]);
 
+  const SUPPORT_PLAN_GRADE_CLASSROOMS: Record<string, string> = {
+    '6°': '303',
+    '7°': '201',
+    '8°': '103',
+    '9°': '301',
+    '10°': '202',
+    '11°': '102',
+  };
+
+  const getGradeLevelKey = (grade: GradeEntity) => {
+    if (grade.gradeLevel && SUPPORT_PLAN_GRADE_CLASSROOMS[grade.gradeLevel]) {
+      return grade.gradeLevel;
+    }
+    const match = grade.fullName.match(/^(\d+°?)/);
+    if (match) {
+      const num = match[1].replace('°', '');
+      return `${num}°`;
+    }
+    return grade.gradeLevel || grade.fullName;
+  };
+
+  const supportPlanRoomGroups = useMemo(() => {
+    if (scheduleType !== 'D' || isMeetingDay || shift !== 'morning') {
+      return [];
+    }
+    const groups: Array<{ level: string; room: string; grades: GradeEntity[] }> = [];
+    grades.forEach((g) => {
+      const level = getGradeLevelKey(g);
+      const room =
+        SUPPORT_PLAN_GRADE_CLASSROOMS[level] ||
+        g.defaultClassroomId?.replace(/aula\s*/i, '').trim() ||
+        'Salón';
+      const lastGroup = groups[groups.length - 1];
+      if (lastGroup && lastGroup.level === level) {
+        lastGroup.grades.push(g);
+      } else {
+        groups.push({
+          level,
+          room,
+          grades: [g],
+        });
+      }
+    });
+    return groups;
+  }, [scheduleType, isMeetingDay, shift, grades]);
+
+  const hasSupportPlanRooms = supportPlanRoomGroups.length > 0;
+  const isTransicion = shift === 'transicion-1';
+
   if (grades.length === 0) {
     return (
       <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-white shadow-xs">
@@ -680,16 +729,18 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     );
   }
 
-  const isTransicion = shift === 'transicion-1';
-
   const renderCornerHeaderCell = (isFirstCol: boolean, keySuffix: string) => (
     <div
       key={`corner-header-${keySuffix}`}
-      className={`w-36 min-w-[8.5rem] max-w-[8.5rem] sticky top-0 ${
+      className={`w-36 min-w-[8.5rem] max-w-[8.5rem] sticky ${
+        hasSupportPlanRooms ? 'top-9' : 'top-0'
+      } ${
         isFirstCol ? 'left-0 z-40' : 'z-20'
       } backdrop-blur-xs border-r border-b shadow-xs flex flex-col justify-center items-center text-center p-2 transition-colors ${
         isHoliday
           ? 'bg-red-600 text-white font-bold border-red-700'
+          : hasSupportPlanRooms
+          ? 'bg-slate-200/95 border-slate-300'
           : 'bg-slate-200/95 border-gray-300'
       }`}
     >
@@ -743,6 +794,22 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
         grade.defaultClassroomId.trim().toUpperCase() === 'ROTA'
       ? 'Aula (ROTACIÓN)'
       : grade.defaultClassroomId;
+
+    if (hasSupportPlanRooms) {
+      return (
+        <div
+          key={grade.id}
+          className="py-2.5 px-2 border-r border-b border-slate-300 sticky top-9 z-20 bg-[#b8cce4] backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center"
+        >
+          <span className="text-lg font-black text-slate-900 tracking-tight leading-tight">
+            {grade.fullName}
+          </span>
+          <span className="text-[11px] text-slate-600 font-semibold mt-0.5 truncate block max-w-full">
+            {baseClassroom}
+          </span>
+        </div>
+      );
+    }
 
     return (
       <div
@@ -874,6 +941,24 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
             />
           </div>
         )}
+        {/* ROW 0: SALONES GROUPED HEADER (Exclusivo Horario D Bachillerato) */}
+        {hasSupportPlanRooms && (
+          <React.Fragment key="salones-header-row">
+            <div className="w-36 min-w-[8.5rem] max-w-[8.5rem] sticky top-0 left-0 z-40 h-9 bg-slate-700 text-white border-r border-b border-slate-500 font-extrabold text-xs flex items-center justify-center uppercase tracking-wider shadow-xs select-none">
+              Salones
+            </div>
+            {supportPlanRoomGroups.map((grp, idx) => (
+              <div
+                key={`salones-group-${grp.level}-${idx}`}
+                style={{ gridColumn: `span ${grp.grades.length}` }}
+                className="h-9 sticky top-0 z-30 border-r border-b border-slate-500 bg-[#7f7f7f] text-white font-extrabold text-sm sm:text-base flex items-center justify-center text-center shadow-xs select-none tracking-wide"
+              >
+                {grp.room}
+              </div>
+            ))}
+          </React.Fragment>
+        )}
+
         {/* ROW 1: HEADER (Corner Axis + Grade Headers) */}
         {isTransicion ? (
           grades.map((grade, idx) => (
