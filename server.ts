@@ -199,6 +199,57 @@ async function startServer() {
   // JSON parser para las demás rutas API
   app.use('/api', express.json({ limit: '5mb' }));
 
+  const PUBLISHED_SCHEDULE_FILE = '/tmp/ievf_published_schedule.json';
+  let latestPublishedSchedule: Record<string, unknown> | null = (() => {
+    try {
+      if (fs.existsSync(PUBLISHED_SCHEDULE_FILE)) {
+        return JSON.parse(fs.readFileSync(PUBLISHED_SCHEDULE_FILE, 'utf-8'));
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  })();
+
+  app.get('/api/published-schedule', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.status(200).json({ snapshot: latestPublishedSchedule });
+  });
+
+  app.post('/api/published-schedule', (req, res) => {
+    const incoming = req.body?.snapshot || req.body;
+    if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.timeBlocks)) {
+      res.status(400).json({ error: 'Formato de horario publicado inválido.' });
+      return;
+    }
+    const nowMs = Date.now();
+    const isBlank = Boolean(incoming.blankMatrixMode ?? incoming.dayConfigs?.blankMatrixMode ?? incoming.timeBlocks.length === 0);
+    const normalized = {
+      ...incoming,
+      blankMatrixMode: isBlank,
+      updatedAtMs: Number(incoming.updatedAtMs || incoming.dayConfigs?.updatedAtMs || nowMs),
+      timeBlocks: isBlank ? [] : incoming.timeBlocks,
+      dayConfigs: {
+        ...(incoming.dayConfigs || {}),
+        blankMatrixMode: isBlank,
+        updatedAtMs: Number(incoming.updatedAtMs || incoming.dayConfigs?.updatedAtMs || nowMs),
+      },
+      metadata: {
+        ...(incoming.metadata || {}),
+        blankMatrixMode: isBlank,
+        updatedAtMs: Number(incoming.updatedAtMs || incoming.dayConfigs?.updatedAtMs || nowMs),
+        totalBlocks: isBlank ? 0 : incoming.timeBlocks.length,
+      },
+    };
+    latestPublishedSchedule = normalized;
+    try {
+      fs.writeFileSync(PUBLISHED_SCHEDULE_FILE, JSON.stringify(normalized), 'utf-8');
+    } catch {
+      // ignore
+    }
+    res.status(200).json({ ok: true, blankMatrixMode: isBlank, updatedAtMs: normalized.updatedAtMs });
+  });
+
   // Endpoint del Agente Experto en Asignación Horaria
   app.post('/api/schedule-agent/chat', async (req, res) => {
     const body = (req.body || {}) as AgentChatRequest;

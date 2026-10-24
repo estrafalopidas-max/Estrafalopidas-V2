@@ -45,9 +45,27 @@ export const SidebarScheduleAgent: React.FC<SidebarScheduleAgentProps> = ({
   const [input, setInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [chatMode, setChatMode] = useState<'general' | 'fast'>('general');
-  const [isChatBodyExpanded, setIsChatBodyExpanded] = useState<boolean>(true);
+  const [isChatBodyExpanded, setIsChatBodyExpanded] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem('ievf_schedule_agent_open') === 'true';
+    } catch {
+      return false;
+    }
+  });
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const updateChatBodyExpanded = useCallback((updater: boolean | ((prev: boolean) => boolean)) => {
+    setIsChatBodyExpanded((prev) => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      try {
+        localStorage.setItem('ievf_schedule_agent_open', String(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, []);
 
   useEffect(() => {
     if (!isSidebarCollapsed && isChatBodyExpanded) {
@@ -235,7 +253,7 @@ export const SidebarScheduleAgent: React.FC<SidebarScheduleAgentProps> = ({
           type="button"
           onClick={() => {
             onExpandSidebar();
-            setIsChatBodyExpanded(true);
+            updateChatBodyExpanded(true);
             setTimeout(() => inputRef.current?.focus(), 150);
           }}
           className="w-10 h-10 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 flex items-center justify-center transition-colors shadow-2xs cursor-pointer"
@@ -252,7 +270,7 @@ export const SidebarScheduleAgent: React.FC<SidebarScheduleAgentProps> = ({
     <div className="mx-2 mb-2 rounded-xl border border-slate-200 bg-slate-50/90 shadow-2xs flex flex-col overflow-hidden shrink-0">
       {/* Cabecera compacta del agente incrustado */}
       <div
-        onClick={() => setIsChatBodyExpanded((prev) => !prev)}
+        onClick={() => updateChatBodyExpanded((prev) => !prev)}
         className="px-2.5 py-2 bg-slate-900 text-white flex items-center justify-between cursor-pointer select-none"
         title={isChatBodyExpanded ? 'Minimizar chat del agente' : 'Desplegar chat del agente'}
       >

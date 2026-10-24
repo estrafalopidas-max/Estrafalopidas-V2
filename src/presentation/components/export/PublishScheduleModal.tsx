@@ -92,7 +92,7 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
         if (active) {
           setShortenedUrl(short);
         }
-        await publishScheduleToCloud(snapshot, short, 'vf');
+        await publishScheduleToCloud(snapshot, short, 'vf', true);
         if (active) {
           const timestampStr = new Date().toLocaleString('es-CO', {
             dateStyle: 'medium',
@@ -129,7 +129,7 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
       const shortRes = await shortenUrlExternal(cleanShortRouteUrl);
       resolvedShort = typeof shortRes === 'string' ? shortRes : shortRes?.shortUrl || cleanShortRouteUrl;
       setShortenedUrl(resolvedShort);
-      await publishScheduleToCloud(snapshot, resolvedShort, 'vf');
+      await publishScheduleToCloud(snapshot, resolvedShort, 'vf', true);
     } catch (err) {
       console.warn('[PublishScheduleModal] Error sincronizando con Firestore:', err);
     } finally {
@@ -274,9 +274,11 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
                 Franjas Horarias
               </span>
               <span className="text-sm font-bold text-emerald-700">
-                {timeBlocks.length} asignaciones
+                {timeBlocks.length === 0 ? '0 asignaciones (Parrilla en blanco)' : `${timeBlocks.length} asignaciones`}
               </span>
-              <span className="text-[10px] text-slate-500">Casillas 60/40 homologadas</span>
+              <span className="text-[10px] text-slate-500">
+                {timeBlocks.length === 0 ? 'Estado: Parrilla en blanco' : 'Casillas 60/40 homologadas'}
+              </span>
             </div>
           </div>
 

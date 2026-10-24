@@ -131,12 +131,20 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [timeBlocks, setTimeBlocks] = useState<TimeBlockEntity[]>(() => {
     ensureSeedDataLoaded();
     try {
+      const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
       const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          return parsed;
+        if (Array.isArray(parsed)) {
+          if (parsed.length > 0) {
+            return parsed;
+          }
+          if (isBlankMode) {
+            return [];
+          }
         }
+      } else if (isBlankMode) {
+        return [];
       }
     } catch (err) {
       console.warn('[CoordinatorMatrix] Error al leer semilla consolidada 2026:', err);
@@ -246,7 +254,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   // Guarda instantáneamente en localStorage y agrupa cambios antes de sincronizar con Firestore
   const isFirstSyncRenderRef = useRef(true);
   useEffect(() => {
-    if (Array.isArray(timeBlocks) && timeBlocks.length > 0) {
+    const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
+    if (Array.isArray(timeBlocks) && (timeBlocks.length > 0 || isBlankMode)) {
+      if (timeBlocks.length > 0 && isBlankMode) {
+        localStorage.removeItem('ievf_blank_matrix_mode');
+      }
       localStorage.setItem('villaFloraMatrix', JSON.stringify(timeBlocks));
       localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(timeBlocks));
 
@@ -295,11 +307,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     ])
       .then(([t, c, g, b]) => {
         if (!isMounted) return;
-        setTeachers(t);
+        setTeachers((prev) => (JSON.stringify(prev) === JSON.stringify(t) ? prev : t));
         setClassrooms(c);
         setGrades(g);
-        if (b && b.length > 0) {
-          setTimeBlocks(b);
+        const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
+        if (b && (b.length > 0 || isBlankMode)) {
+          setTimeBlocks((prev) => (JSON.stringify(prev) === JSON.stringify(b) ? prev : b));
         }
         setIsLoading(false);
       })
@@ -311,24 +324,39 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     // Real-time subscriptions
     const unsubBlocks = timeBlockRepo.subscribe((blocks) => {
       if (!isMounted) return;
-      setTimeBlocks(blocks);
+      setTimeBlocks((prev) => {
+        if (prev === blocks) return prev;
+        if (prev.length === blocks.length && JSON.stringify(prev) === JSON.stringify(blocks)) {
+          return prev;
+        }
+        return blocks;
+      });
       setIsLoading(false);
     });
     const unsubAbsences = absenceRepo.subscribe((reqs) => {
       if (!isMounted) return;
-      setAbsenceRequests(reqs);
+      setAbsenceRequests((prev) => (JSON.stringify(prev) === JSON.stringify(reqs) ? prev : reqs));
     });
 
     // Real-time propagation of teacher profile & color changes without reload
     const unsubUsers = userRepo.subscribe((allUsers) => {
       if (!isMounted) return;
-      setTeachers(allUsers.filter((u) => u.role === 'teacher'));
+      const nextTeachers = allUsers.filter((u) => u.role === 'teacher');
+      setTeachers((prev) =>
+        prev.length === nextTeachers.length && JSON.stringify(prev) === JSON.stringify(nextTeachers)
+          ? prev
+          : nextTeachers
+      );
     });
 
     const handleTeacherUpdated = () => {
       if (!isMounted) return;
       userRepo.getTeachers().then((t) => {
-        if (isMounted) setTeachers(t);
+        if (isMounted) {
+          setTeachers((prev) =>
+            prev.length === t.length && JSON.stringify(prev) === JSON.stringify(t) ? prev : t
+          );
+        }
       });
     };
 
@@ -343,7 +371,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       window.removeEventListener('users_collection_updated', handleTeacherUpdated);
       window.removeEventListener('teacher_color_updated', handleTeacherUpdated);
     };
-  }, [userRepo, classroomRepo, gradeRepo, timeBlockRepo, absenceRepo]);
+  }, [userRepo, classroomRepo, gradeRepo, timeBlockRepo, absenceRepo, setTeachers]);
 
   // Pending absence requests count
   const pendingRequests = useMemo(
@@ -697,6 +725,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     if (draggedBlock) {
       const previousBlock = { ...draggedBlock };
       const updates: Partial<TimeBlockEntity> = {
+        dayOfWeek: selectedDay,
+        shift: targetGrade.shift || selectedShift,
         gradeId: targetGrade.id,
         gradeName: targetGrade.fullName,
         period: targetSlot.period,
@@ -1282,7 +1312,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       period: data.period,
       startTime: data.startTime,
       endTime: data.endTime,
-      shift: selectedShift,
+      shift: data.grade.shift || selectedShift,
       gradeId: data.grade.id,
       gradeName: data.grade.fullName,
       subject: data.subject,
@@ -1296,17 +1326,38 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       updatedAt: new Date().toISOString(),
     };
 
-    setTimeBlocks((prev) => {
-      const exists = prev.some((b) => b.id === blockId);
-      if (exists) {
-        return prev.map((b) => (b.id === blockId ? newBlock : b));
-      }
-      return [...prev, newBlock];
-    });
+    const nextBlocks = (() => {
+      const filtered = timeBlocks.filter(
+        (b) =>
+          b.id !== blockId &&
+          !(
+            b.dayOfWeek === selectedDay &&
+            b.gradeId === data.grade.id &&
+            b.period === data.period
+          )
+      );
+      return [...filtered, newBlock];
+    })();
 
+    setTimeBlocks(nextBlocks);
     setQuickAssignTarget(null);
 
     try {
+      localStorage.removeItem('ievf_blank_matrix_mode');
+      localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+      localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
+      savePublicScheduleSnapshot(
+        nextBlocks,
+        teachers,
+        currentPeriod || '3° Periodo',
+        currentAcademicWeek || 8,
+        {
+          meetingDays,
+          eventDays,
+          customHolidays,
+          scheduleTypes,
+        }
+      );
       await timeBlockRepo.update(blockId, newBlock);
       window.dispatchEvent(new Event('schedule_matrix_updated'));
     } catch (err) {
@@ -1459,11 +1510,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const handleReloadMatrix = useCallback(async () => {
     setIsLoading(true);
     try {
+      const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
       // 1. Re-leer desde el almacenamiento persistido localmente
       const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
+        if (Array.isArray(parsed) && (parsed.length > 0 || isBlankMode)) {
           setTimeBlocks(parsed);
         }
       }
@@ -1479,7 +1531,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       if (t && t.length > 0) setTeachers(t);
       if (c && c.length > 0) setClassrooms(c);
       if (g && g.length > 0) setGrades(g);
-      if (b && b.length > 0) setTimeBlocks(b);
+      if (b && (b.length > 0 || isBlankMode)) setTimeBlocks(b);
     } catch (err) {
       console.warn('[CoordinatorMatrix] Error al recargar datos de la matriz:', err);
     } finally {

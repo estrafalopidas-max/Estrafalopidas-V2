@@ -4,7 +4,7 @@ import { toTitleCase, getShortTeacherName, getFullTeacherName } from './teacher-
 import { getTeacherExcelIdentity, resolveOfficialTeacherEntry } from './teacher-normalization.service';
 import { DEFAULT_LOGO_BASE64 } from './default-logo-base64';
 import { generateWeekHeaders } from './ChronologyEngine';
-import { resolveCanonicalGradeName, normalizeTimeBlocksGrades } from './grade-normalization.service';
+import { resolveCanonicalGradeName, resolveCanonicalShift, normalizeTimeBlocksGrades } from './grade-normalization.service';
 
 export { DEFAULT_LOGO_BASE64 };
 
@@ -14,6 +14,8 @@ export interface PublicDayConfigs {
   holidayDays: Record<string, boolean>;
   customHolidays: string[];
   scheduleTypes?: Record<string, 'A' | 'B' | 'C'>;
+  blankMatrixMode?: boolean;
+  updatedAtMs?: number;
 }
 
 export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): PublicDayConfigs {
@@ -65,12 +67,22 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     }
   });
 
+  const isLocalBlank = (() => {
+    try {
+      return localStorage.getItem('ievf_blank_matrix_mode') === '1';
+    } catch {
+      return false;
+    }
+  })();
+
   return {
     meetingDays,
     eventDays,
     holidayDays,
     customHolidays,
     scheduleTypes,
+    blankMatrixMode: custom?.blankMatrixMode !== undefined ? custom.blankMatrixMode : isLocalBlank,
+    updatedAtMs: custom?.updatedAtMs,
   };
 }
 
@@ -99,6 +111,8 @@ export interface PublicScheduleSnapshot {
     lastUpdated: string;
     totalBlocks: number;
     totalTeachers: number;
+    blankMatrixMode?: boolean;
+    updatedAtMs?: number;
   };
   timeBlocks: TimeBlockEntity[];
   teachers: Array<{
@@ -160,17 +174,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
 
   // Helper to resolve shift from block or grade name
   const resolveBlockShift = (b: TimeBlockEntity): 'morning' | 'afternoon' | 'transicion-1' => {
-    const g = (b.gradeName || '').trim().toLowerCase();
-    if (g.includes('transición') || g.includes('transicion')) {
-      return 'transicion-1';
-    }
-    if (b.shift === 'morning' || b.shift === 'afternoon' || b.shift === 'transicion-1') {
-      return b.shift;
-    }
-    if (/^[1-5]\./.test(g)) {
-      return 'afternoon';
-    }
-    return 'morning';
+    return resolveCanonicalShift(b);
   };
 
   // Build teacher map for quick lookup with locked canonical colors
@@ -1514,13 +1518,15 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         return true;
       });
 
-      if (!isHoliday && !isMeetingDay && filtered.length === 0) {
+      const shiftGrades = getShiftGradesList(currentShift);
+      const isBlankSchedule = ALL_BLOCKS.length === 0;
+      const hasCustomFilter = !isBlankSchedule && (selectedTeacher !== 'ALL' || searchTokens.length > 0);
+
+      if (!isHoliday && !isMeetingDay && hasCustomFilter && filtered.length === 0) {
         container.innerHTML = '<div class="empty-state"><h3>No hay clases para los filtros seleccionados</h3><p>Prueba seleccionando otro día, jornada, grado o docente.</p></div>';
         return;
       }
 
-      const shiftGrades = getShiftGradesList(currentShift);
-      const hasCustomFilter = selectedTeacher !== 'ALL' || searchTokens.length > 0;
       const gradesInFilter = selectedGrade !== 'ALL'
         ? [selectedGrade]
         : (hasCustomFilter && !isHoliday)
@@ -1539,7 +1545,17 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       const scheduleType = isMeetingDay ? 'B' : 'A';
       const isTransicionShift = currentShift === 'transicion-1';
       const totalCols = isTransicionShift ? (gradesInFilter.length * 2) : (gradesInFilter.length + 1);
-      let html = '<table class="schedule-table"><thead><tr>';
+      let html = '';
+      if (isBlankSchedule) {
+        html += '<div style="background-color:#eff6ff;border-bottom:1px solid #bfdbfe;padding:10px 16px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px;">';
+        html += '<div style="display:flex;align-items:center;gap:8px;color:#1e3a8a;font-size:12px;font-weight:800;">';
+        html += '<span style="background-color:#1d4ed8;color:#ffffff;padding:3px 9px;border-radius:9999px;font-size:10px;text-transform:uppercase;letter-spacing:0.05em;">Estado activo</span>';
+        html += '<span>Parrilla en blanco &bull; Sin asignaciones académicas registradas</span>';
+        html += '</div>';
+        html += '<span style="font-size:11px;font-weight:600;color:#1e40af;">Todas las franjas se encuentran disponibles para programación</span>';
+        html += '</div>';
+      }
+      html += '<table class="schedule-table"><thead><tr>';
       if (isTransicionShift) {
         gradesInFilter.forEach(g => {
           html += '<th class="time-col-th">Horario ' + scheduleType + '</th>';
@@ -2002,7 +2018,13 @@ export function savePublicScheduleSnapshot(
     timeStyle: 'short',
   });
 
-  const effectiveDayConfigs = resolveEffectiveDayConfigs(dayConfigs);
+  const nowMs = Date.now();
+  const isBlankMatrix = timeBlocks.length === 0;
+  const effectiveDayConfigs = resolveEffectiveDayConfigs({
+    ...dayConfigs,
+    blankMatrixMode: isBlankMatrix,
+    updatedAtMs: nowMs,
+  });
   const normalizedPeriod = !academicPeriod || academicPeriod === '3° Periodo' ? '3er Periodo' : academicPeriod;
   const normalizedWeek = !academicWeek || academicWeek === 8 ? 9 : academicWeek;
 
@@ -2021,8 +2043,10 @@ export function savePublicScheduleSnapshot(
       lastUpdated: timestamp,
       totalBlocks: timeBlocks.length,
       totalTeachers: activeTeachers.length,
+      blankMatrixMode: isBlankMatrix,
+      updatedAtMs: nowMs,
     },
-    timeBlocks: normalizeTimeBlocksGrades(timeBlocks),
+    timeBlocks: isBlankMatrix ? [] : normalizeTimeBlocksGrades(timeBlocks),
     teachers: activeTeachers.map((t) => {
       const identity = getTeacherExcelIdentity(t.id, t.displayName);
       return {
@@ -2035,8 +2059,26 @@ export function savePublicScheduleSnapshot(
   };
 
   try {
+    const nowStr = String(nowMs);
+    if (isBlankMatrix) {
+      localStorage.setItem('ievf_blank_matrix_mode', '1');
+    } else {
+      localStorage.removeItem('ievf_blank_matrix_mode');
+    }
     localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(snapshot));
     localStorage.setItem('ievf_last_published_at', timestamp);
+    localStorage.setItem('ievf_local_schedule_updated_at', nowStr);
+    localStorage.setItem('ievf_cloud_schedule_fetched_at', nowStr);
+    if (typeof window !== 'undefined') {
+      window.dispatchEvent(new Event('public_schedule_snapshot_updated'));
+      if (typeof fetch === 'function') {
+        fetch('/api/published-schedule', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ snapshot }),
+        }).catch(() => {});
+      }
+    }
   } catch (err) {
     console.warn('[savePublicScheduleSnapshot] Error saving snapshot to localStorage:', err);
   }

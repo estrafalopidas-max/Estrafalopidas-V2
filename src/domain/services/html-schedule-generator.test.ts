@@ -155,7 +155,7 @@ test('Official 34 teachers roster resolves shortName for cells, fullName for dir
   const { OFFICIAL_TEACHERS_ROSTER, isTeacherPresentAtSlot } = await import('./teacher-normalization.service.ts');
   const { getShortTeacherName, getFullTeacherName } = await import('./teacher-visual-identity.service.ts');
 
-  assert.equal(OFFICIAL_TEACHERS_ROSTER.length, 34, 'Must register all 34 official teachers (32 PDF + Sara Casafus + Paola)');
+  assert.equal(OFFICIAL_TEACHERS_ROSTER.length, 33, 'Must register all 33 official teachers');
   assert.equal(getShortTeacherName('t-trans-1', 'Yessica Bolívar Bolívar'), 'Yessica Bolívar');
   assert.equal(getFullTeacherName('t-trans-1', 'Yessica Bolívar'), 'Yessica Bolívar Bolívar');
   assert.equal(getShortTeacherName('t-101', 'Mariluz Viviana Martínez Cortés'), 'Mariluz Martínez');
@@ -182,3 +182,23 @@ test('Official 34 teachers roster resolves shortName for cells, fullName for dir
   assert.equal(isTeacherPresentAtSlot('t-omar', 'Omar Mosquera', 'miercoles', 3, 'morning').isPresent, false);
   assert.equal(isTeacherPresentAtSlot('t-omar', 'Omar Mosquera', 'lunes', 4, 'morning').isPresent, true);
 });
+
+test('generateStandaloneScheduleHtml and savePublicScheduleSnapshot explicitly render Parrilla en blanco state when timeBlocks is empty', async () => {
+  const { savePublicScheduleSnapshot } = await import('./html-schedule-generator.service.ts');
+  const html = generateStandaloneScheduleHtml({
+    timeBlocks: [],
+    teachers: [],
+    academicPeriod: '1er Periodo',
+    academicWeek: 1,
+  });
+
+  assert.ok(html.includes('Parrilla en blanco'), 'Must include Parrilla en blanco state banner in standalone HTML');
+  assert.ok(html.includes('Sin asignación académica'), 'Must include blank slot cell template');
+  assert.ok(html.includes('const ALL_BLOCKS = [];'), 'Must serialize empty ALL_BLOCKS array');
+
+  const snap = savePublicScheduleSnapshot([], [], '1er Periodo', 1);
+  assert.equal(snap.timeBlocks.length, 0, 'Snapshot timeBlocks must be empty');
+  assert.equal(snap.metadata.blankMatrixMode, true, 'Snapshot metadata must mark blankMatrixMode as true');
+  assert.equal(snap.dayConfigs?.blankMatrixMode, true, 'Snapshot dayConfigs must mark blankMatrixMode as true');
+});
+

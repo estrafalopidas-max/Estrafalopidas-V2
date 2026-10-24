@@ -26,7 +26,7 @@ import { TimeBlockEntity, DayOfWeek } from '../../../domain/entities/time-block.
 import { ShiftType } from '../../../domain/entities/grade.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { getTodayDayOfWeek } from '../../../domain/services/ChronologyEngine';
-import { normalizeTimeBlocksGrades } from '../../../domain/services/grade-normalization.service';
+import { normalizeTimeBlocksGrades, resolveCanonicalShift } from '../../../domain/services/grade-normalization.service';
 import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed';
 import { getTeacherExcelIdentity } from '../../../domain/services/teacher-normalization.service';
 import { getFullTeacherName } from '../../../domain/services/teacher-visual-identity.service';
@@ -202,24 +202,7 @@ function buildDynamicPublicSlots(
 }
 
 function resolveBlockShift(b: TimeBlockEntity): ShiftType {
-  const g = (b.gradeName || '').trim().toLowerCase();
-  if (g.includes('transición') || g.includes('transicion')) {
-    return 'transicion-1';
-  }
-  const s = String(b.shift || '').toLowerCase().trim();
-  if (s === 'morning' || s === 'manana' || s === 'mañana' || s === 'bachillerato') {
-    return 'morning';
-  }
-  if (s === 'afternoon' || s === 'tarde' || s === 'primaria') {
-    return 'afternoon';
-  }
-  if (s.includes('transicion') || s.includes('transición')) {
-    return 'transicion-1';
-  }
-  if (/^[1-5]\./.test(g)) {
-    return 'afternoon';
-  }
-  return 'morning';
+  return resolveCanonicalShift(b);
 }
 
 export const PublicScheduleViewerPage: React.FC = () => {
@@ -227,15 +210,51 @@ export const PublicScheduleViewerPage: React.FC = () => {
 
   // Initial local snapshot or fallback
   const initialSnapshot = useMemo<PublicScheduleSnapshot | null>(() => {
-    ensureSeedDataLoaded();
+    const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
     const snap = getPublicScheduleSnapshot();
-    if (snap && snap.timeBlocks && snap.timeBlocks.length > 0) {
-      return snap;
+
+    if (snap) {
+      const snapIsBlank =
+        isBlankMode ||
+        Boolean(snap.metadata?.blankMatrixMode ?? snap.dayConfigs?.blankMatrixMode) ||
+        (Array.isArray(snap.timeBlocks) && snap.timeBlocks.length === 0);
+
+      if (snapIsBlank) {
+        return {
+          ...snap,
+          timeBlocks: [],
+          metadata: {
+            ...snap.metadata,
+            totalBlocks: 0,
+            blankMatrixMode: true,
+          },
+        };
+      }
+
+      const savedBlocksRaw = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
+      if (savedBlocksRaw) {
+        try {
+          const liveBlocks = JSON.parse(savedBlocksRaw);
+          if (Array.isArray(liveBlocks)) {
+            return {
+              ...snap,
+              timeBlocks: liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [],
+            };
+          }
+        } catch {
+          // ignore
+        }
+      }
+      if (Array.isArray(snap.timeBlocks)) {
+        return snap;
+      }
     }
+
+    ensureSeedDataLoaded();
     try {
-      const savedBlocks = localStorage.getItem('ievf_time_blocks_v1') || localStorage.getItem('villaFloraMatrix');
+      const savedBlocks = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       const savedUsers = localStorage.getItem('ievf_users_v1');
-      const blocks: TimeBlockEntity[] = savedBlocks ? JSON.parse(savedBlocks) : [];
+      const blocks: TimeBlockEntity[] = isBlankMode ? [] : (savedBlocks ? JSON.parse(savedBlocks) : []);
       const users: UserEntity[] = savedUsers ? JSON.parse(savedUsers) : [];
 
       return {
@@ -246,6 +265,7 @@ export const PublicScheduleViewerPage: React.FC = () => {
           lastUpdated: 'Horario Escolar Vigente',
           totalBlocks: blocks.length,
           totalTeachers: users.length,
+          blankMatrixMode: blocks.length === 0,
         },
         timeBlocks: blocks,
         teachers: users.map((u) => {
@@ -278,9 +298,9 @@ export const PublicScheduleViewerPage: React.FC = () => {
       // Ignore history security errors in restricted contexts
     }
 
-    // Suscripción en tiempo real a Firestore
+    // Suscripción en tiempo real a Firestore y eventos locales
     const unsubscribe = subscribeToPublishedSchedule((cloudData) => {
-      if (cloudData && cloudData.timeBlocks && cloudData.timeBlocks.length > 0) {
+      if (cloudData && Array.isArray(cloudData.timeBlocks)) {
         setSnapshot(cloudData);
       }
     });
@@ -318,9 +338,15 @@ export const PublicScheduleViewerPage: React.FC = () => {
   }, [isGradeMenuOpen, isTeacherMenuOpen]);
 
   const rawTimeBlocks = snapshot?.timeBlocks || [];
+  const isBlankSchedule = useMemo(
+    () =>
+      Boolean(snapshot?.metadata?.blankMatrixMode ?? snapshot?.dayConfigs?.blankMatrixMode) ||
+      rawTimeBlocks.length === 0,
+    [snapshot?.metadata?.blankMatrixMode, snapshot?.dayConfigs?.blankMatrixMode, rawTimeBlocks.length]
+  );
   const timeBlocks = useMemo(
-    () => normalizeTimeBlocksGrades(rawTimeBlocks),
-    [rawTimeBlocks]
+    () => (isBlankSchedule ? [] : normalizeTimeBlocksGrades(rawTimeBlocks)),
+    [rawTimeBlocks, isBlankSchedule]
   );
   const teachers = useMemo(() => {
     const rawList = snapshot?.teachers || [];
@@ -457,13 +483,13 @@ export const PublicScheduleViewerPage: React.FC = () => {
   // Visible grades in columns for the selected shift
   const activeGrades = useMemo(() => {
     if (selectedGrade !== 'ALL') return [selectedGrade];
-    const hasCustomFilter = selectedTeacher !== 'ALL' || Boolean(searchTerm.trim());
+    const hasCustomFilter = !isBlankSchedule && (selectedTeacher !== 'ALL' || Boolean(searchTerm.trim()));
     if (hasCustomFilter && !isHoliday) {
       const presentInFiltered = new Set(filteredBlocks.map((b) => b.gradeName));
       return shiftGrades.filter((g) => presentInFiltered.has(g));
     }
     return shiftGrades;
-  }, [shiftGrades, filteredBlocks, selectedGrade, selectedTeacher, searchTerm, isHoliday]);
+  }, [shiftGrades, filteredBlocks, selectedGrade, selectedTeacher, searchTerm, isHoliday, isBlankSchedule]);
 
   // Visible period slots for the selected shift and day
   const activePeriodSlots = useMemo(() => {
@@ -860,6 +886,12 @@ export const PublicScheduleViewerPage: React.FC = () => {
 
           {/* Información de Periodo y Semana Académica junto a los días */}
           <div className="flex items-center gap-3 bg-slate-100 border border-slate-200/90 rounded-2xl px-4 py-2 text-right shrink-0">
+            {isBlankSchedule && (
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-200 text-[11px] font-extrabold tracking-wide">
+                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                Parrilla en blanco
+              </span>
+            )}
             <div className="leading-snug">
               <div className="text-sm font-extrabold text-[#0c4da2]">
                 {displayAcademicPeriod}
@@ -874,7 +906,24 @@ export const PublicScheduleViewerPage: React.FC = () => {
 
       {/* Matriz / Cuadrícula de Horarios en Vivo (Por Jornada y por Día) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
-        {!isHoliday && !isMeetingDay && filteredBlocks.length === 0 ? (
+        {isBlankSchedule && (
+          <div className="bg-blue-50/90 border-b border-blue-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2 text-blue-950 text-xs font-extrabold">
+              <span className="px-2.5 py-0.5 rounded-full bg-blue-700 text-white text-[10px] uppercase tracking-wider font-black">
+                Estado activo
+              </span>
+              <span>Parrilla en blanco &bull; Sin asignaciones académicas registradas</span>
+            </div>
+            <span className="text-[11px] font-semibold text-blue-800">
+              Todas las franjas se encuentran disponibles para programación
+            </span>
+          </div>
+        )}
+        {!isBlankSchedule &&
+        !isHoliday &&
+        !isMeetingDay &&
+        filteredBlocks.length === 0 &&
+        (selectedTeacher !== 'ALL' || searchTerm.trim().length > 0) ? (
           <div className="p-12 text-center space-y-3">
             <Info className="w-10 h-10 text-slate-400 mx-auto" />
             <h3 className="text-base font-bold text-slate-700">No se encontraron asignaciones para esta selección</h3>

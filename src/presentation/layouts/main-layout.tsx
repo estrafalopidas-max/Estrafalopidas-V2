@@ -32,10 +32,11 @@ import { UserEntity } from '../../domain/entities/user.entity';
 import { TimeBlockEntity } from '../../domain/entities/time-block.entity';
 import { FirestoreUserRepository } from '../../infrastructure/repositories/firestore-user.repository';
 import { getCurrentWeekText, getOrdinalSuffix } from '../../domain/services/ChronologyEngine';
-import { ensureSeedDataLoaded } from '../../infrastructure/seed/initial-seed';
+import { ensureSeedDataLoaded, generateSeedBlocks, SEED_TEACHERS, SEED_GRADES } from '../../infrastructure/seed/initial-seed';
 import { savePublicScheduleSnapshot } from '../../domain/services/html-schedule-generator.service';
 import { publishScheduleToCloud } from '../../infrastructure/firebase/firebase-client';
-import { ResetConfirmationModal } from '../components/common/ResetConfirmationModal';
+import { ResetConfirmationModal, SchoolYearResetMode } from '../components/common/ResetConfirmationModal';
+import { generateAutomaticScheduleDistribution } from '../../domain/services/auto-schedule-distributor.service';
 import { PublishScheduleModal } from '../components/export/PublishScheduleModal';
 import { SidebarScheduleAgent } from '../components/agent/SidebarScheduleAgent';
 
@@ -190,10 +191,13 @@ export const MainLayout: React.FC = () => {
 
   const getCurrentTimeBlocks = useCallback((): TimeBlockEntity[] => {
     try {
+      if (localStorage.getItem('ievf_blank_matrix_mode') === '1') {
+        return [];
+      }
       const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       if (saved) {
         const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (err) {
       console.warn('[MainLayout] Error leyendo bloques de tiempo para publicación:', err);
@@ -219,45 +223,96 @@ export const MainLayout: React.FC = () => {
   // Estado para el modal de validación de intención positiva (Hard-Confirm Modal)
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
 
-  // Ejecución y Limpieza de Factory Reset tras Hard-Confirm en ResetConfirmationModal
-  const handleExecuteFactoryReset = useCallback(async () => {
-    // 1. Vaciar el localStorage preservando los colores bloqueados ad perpetuum
-    const lockedColorsBackup = localStorage.getItem('ievf_locked_teacher_colors_v1');
-    localStorage.clear();
-    if (lockedColorsBackup) {
-      localStorage.setItem('ievf_locked_teacher_colors_v1', lockedColorsBackup);
-    }
+  // Ejecución protegida de Inicio de Año Escolar (3 opciones: 'blank' | 'auto' | 'template')
+  const handleExecuteFactoryReset = useCallback(
+    async (mode: SchoolYearResetMode = 'template') => {
+      ensureSeedDataLoaded();
 
-    // 2. Restaurar semilla institucional oficial del MEN
-    ensureSeedDataLoaded();
-
-    // 3. Sincronizar la semilla restaurada con Firestore para que otros navegadores vean el reset de inmediato
-    try {
-      const seedBlocksRaw = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
-      const seedUsersRaw = localStorage.getItem('ievf_users_v1');
-      const seedBlocks: TimeBlockEntity[] = seedBlocksRaw ? JSON.parse(seedBlocksRaw) : [];
-      const seedUsers: UserEntity[] = seedUsersRaw ? JSON.parse(seedUsersRaw) : [];
-      const seedTeachers = seedUsers.filter((u) => !u.role || u.role === 'teacher');
-
-      if (seedBlocks.length > 0) {
-        const snapshot = savePublicScheduleSnapshot(
-          seedBlocks,
-          seedTeachers,
-          contextAcademicPeriod || '3° Periodo',
-          currentAcademicWeek || 8
-        );
-        await publishScheduleToCloud(snapshot);
+      // Obtener docentes y grados actuales registrados para conservarlos
+      let currentTeachers: UserEntity[] = [];
+      try {
+        const usersRaw = localStorage.getItem('ievf_users_v1');
+        if (usersRaw) {
+          const parsedUsers: UserEntity[] = JSON.parse(usersRaw);
+          currentTeachers = parsedUsers.filter((u) => !u.role || u.role === 'teacher');
+        }
+      } catch {
+        // ignore
       }
-    } catch (err) {
-      console.warn('[FactoryReset] Error sincronizando semilla con Firestore:', err);
-    }
+      if (currentTeachers.length === 0) {
+        currentTeachers = teachers.length > 0 ? teachers : SEED_TEACHERS;
+      }
 
-    // 4. Cerrar el modal
-    setIsResetModalOpen(false);
+      let currentGrades = SEED_GRADES;
+      try {
+        const gradesRaw = localStorage.getItem('ievf_grades_v1');
+        if (gradesRaw) {
+          const parsedGrades = JSON.parse(gradesRaw);
+          if (Array.isArray(parsedGrades) && parsedGrades.length > 0) {
+            currentGrades = parsedGrades;
+          }
+        }
+      } catch {
+        // ignore
+      }
 
-    // 5. Recargar el entorno para reiniciar todos los estados y contextos globales a sus valores por defecto
-    window.location.reload();
-  }, [contextAcademicPeriod, currentAcademicWeek]);
+      let targetBlocks: TimeBlockEntity[] = [];
+
+      if (mode === 'blank') {
+        // Opción 1: Reiniciar desde cero (Parrilla en blanco) conservando docentes y asignaturas
+        localStorage.setItem('ievf_blank_matrix_mode', '1');
+        localStorage.setItem('villaFloraMatrix', '[]');
+        localStorage.setItem('ievf_time_blocks_v1', '[]');
+        localStorage.setItem('ievf_absence_requests_v1', '[]');
+        targetBlocks = [];
+      } else if (mode === 'auto') {
+        // Opción 2: Proponer distribución automática sin cruces ni choques de docentes
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        targetBlocks = generateAutomaticScheduleDistribution(currentTeachers, currentGrades);
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(targetBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(targetBlocks));
+        localStorage.setItem('ievf_absence_requests_v1', '[]');
+      } else {
+        // Opción 3: Restaurar plantilla base institucional
+        const lockedColorsBackup = localStorage.getItem('ievf_locked_teacher_colors_v1');
+        const usersBackup = localStorage.getItem('ievf_users_v1');
+        const subjectsBackup = localStorage.getItem('ievf_official_subjects_v1');
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        if (lockedColorsBackup) {
+          localStorage.setItem('ievf_locked_teacher_colors_v1', lockedColorsBackup);
+        }
+        if (usersBackup) {
+          localStorage.setItem('ievf_users_v1', usersBackup);
+        }
+        if (subjectsBackup) {
+          localStorage.setItem('ievf_official_subjects_v1', subjectsBackup);
+        }
+        targetBlocks = generateSeedBlocks();
+        localStorage.setItem('ievf_baseline_2026_v1', JSON.stringify(targetBlocks));
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(targetBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(targetBlocks));
+      }
+
+      // Notificar inmediatamente a los suscriptores locales antes de la escritura asíncrona en la nube
+      const snapshot = savePublicScheduleSnapshot(
+        targetBlocks,
+        currentTeachers,
+        contextAcademicPeriod || '3° Periodo',
+        currentAcademicWeek || 8
+      );
+      window.dispatchEvent(new Event('schedule_matrix_updated'));
+      window.dispatchEvent(new Event('public_schedule_snapshot_updated'));
+
+      try {
+        await publishScheduleToCloud(snapshot, undefined, 'vf', true);
+      } catch (err) {
+        console.warn('[SchoolYearInit] Error sincronizando con Firestore:', err);
+      }
+
+      setIsResetModalOpen(false);
+    },
+    [contextAcademicPeriod, currentAcademicWeek, teachers]
+  );
 
   // Gestión de Instalación PWA (Zero-Privilege Native Simulation)
   const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
@@ -642,19 +697,19 @@ export const MainLayout: React.FC = () => {
               getTimeBlocks={getCurrentTimeBlocks}
             />
 
-            {/* Zona de Peligro: Relocalización Periférica de Comandos Destructivos */}
+            {/* Zona de Configuración Protegida: Inicio de Año Escolar / Restablecimiento */}
             <div className={`border-t border-slate-100 w-full shrink-0 space-y-2 ${isSidebarCollapsed ? 'p-1.5' : 'px-3 py-2'}`}>
               <button
                 type="button"
                 onClick={() => setIsResetModalOpen(true)}
-                className={`group w-full flex items-center text-slate-500 bg-transparent hover:bg-red-50 hover:text-red-700 transition-colors rounded-md text-xs font-normal whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer ${
+                className={`group w-full flex items-center text-slate-600 bg-transparent hover:bg-amber-50 hover:text-amber-800 transition-colors rounded-md text-xs font-semibold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer ${
                   isSidebarCollapsed ? 'justify-center py-2 px-0' : 'justify-start gap-2 py-1.5 px-3'
                 }`}
-                title="Restaurar toda la matriz y horarios a la configuración de fábrica original (borra modificaciones locales)"
-                aria-label="Reset de fábrica"
+                title="Inicio de año escolar: Reiniciar en blanco, proponer distribución automática o restaurar plantilla base"
+                aria-label="Inicio de año escolar"
               >
-                <Trash2 className="w-4 h-4 text-slate-400 group-hover:text-red-600 transition-colors shrink-0" />
-                {!isSidebarCollapsed && <span className="truncate">Reset de fábrica</span>}
+                <RotateCcw className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" />
+                {!isSidebarCollapsed && <span className="truncate">Inicio de año escolar</span>}
               </button>
             </div>
           </div>

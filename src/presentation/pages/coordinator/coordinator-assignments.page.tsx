@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Calendar, Users, Clock, BookOpen, UserPlus, UserCog, Pencil, Search, X } from 'lucide-react';
 import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 import { useTeacherLoad } from '../../hooks/useTeacherLoad';
@@ -16,9 +16,23 @@ const normalizeText = (text: string): string =>
 export const CoordinatorAssignmentsPage: React.FC = () => {
   const { teachers, getTeacherColor, openTeacherModal } = useCoordinatorMatrix();
   const [searchQuery, setSearchQuery] = useState('');
+  const [matrixRevision, setMatrixRevision] = useState(0);
+
+  useEffect(() => {
+    const handleMatrixUpdate = () => setMatrixRevision((r) => r + 1);
+    window.addEventListener('schedule_matrix_updated', handleMatrixUpdate);
+    window.addEventListener('storage', handleMatrixUpdate);
+    return () => {
+      window.removeEventListener('schedule_matrix_updated', handleMatrixUpdate);
+      window.removeEventListener('storage', handleMatrixUpdate);
+    };
+  }, []);
 
   const timeBlocks = useMemo(() => {
     try {
+      if (localStorage.getItem('ievf_blank_matrix_mode') === '1') {
+        return [];
+      }
       const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       if (saved) return JSON.parse(saved);
     } catch {
@@ -31,7 +45,7 @@ export const CoordinatorAssignmentsPage: React.FC = () => {
     } catch {
       return [];
     }
-  }, []);
+  }, [matrixRevision]);
 
   const { getTeacherLoad } = useTeacherLoad(teachers, timeBlocks);
 

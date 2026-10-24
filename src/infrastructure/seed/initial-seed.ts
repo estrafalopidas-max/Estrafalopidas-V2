@@ -1082,6 +1082,9 @@ export function ensureSeedDataLoaded() {
     localStorage.setItem('ievf_users_v1', JSON.stringify(mergedTeachers));
   } else {
     try {
+      const seedTeacherById = new Map<string, UserEntity>();
+      SEED_TEACHERS.forEach((st) => seedTeacherById.set(st.id, st));
+
       const existingRaw = localStorage.getItem('ievf_users_v1');
       if (existingRaw) {
         const parsed = JSON.parse(existingRaw);
@@ -1098,15 +1101,42 @@ export function ensureSeedDataLoaded() {
             })
             .map((u: any) => {
               let nextUser = u;
-              if (u?.id === 't-m-isabel' && u.shortName !== 'Mª Isabel Giraldo') {
+              const canonicalSeed = u?.id ? seedTeacherById.get(u.id) : undefined;
+              if (canonicalSeed) {
+                if (!Array.isArray(nextUser.assignedGradeIds) || nextUser.assignedGradeIds.length === 0) {
+                  changed = true;
+                  nextUser = { ...nextUser, assignedGradeIds: [...(canonicalSeed.assignedGradeIds || [])] };
+                }
+                if (!nextUser.groupDirection && canonicalSeed.groupDirection) {
+                  changed = true;
+                  nextUser = { ...nextUser, groupDirection: canonicalSeed.groupDirection };
+                }
+                if (!nextUser.academicLevel && canonicalSeed.academicLevel) {
+                  changed = true;
+                  nextUser = { ...nextUser, academicLevel: canonicalSeed.academicLevel };
+                }
+                if (!nextUser.entrySchedule && canonicalSeed.entrySchedule) {
+                  changed = true;
+                  nextUser = { ...nextUser, entrySchedule: canonicalSeed.entrySchedule };
+                }
+                if (!Array.isArray(nextUser.subjects) || nextUser.subjects.length === 0) {
+                  changed = true;
+                  nextUser = {
+                    ...nextUser,
+                    subjects: [...(canonicalSeed.subjects || [])],
+                    specialty: [...(canonicalSeed.specialty || canonicalSeed.subjects || [])],
+                  };
+                }
+              }
+              if (u?.id === 't-m-isabel' && nextUser.shortName !== 'Mª Isabel Giraldo') {
                 changed = true;
                 nextUser = { ...nextUser, shortName: 'Mª Isabel Giraldo' };
               }
-              if (u?.id === 't-alejandra' && u.shortName !== 'Alejandra Pérez') {
+              if (u?.id === 't-alejandra' && nextUser.shortName !== 'Alejandra Pérez') {
                 changed = true;
                 nextUser = { ...nextUser, shortName: 'Alejandra Pérez' };
               }
-              if (u?.id === 't-betty' && u.shortName !== 'Betty Vásquez') {
+              if (u?.id === 't-betty' && nextUser.shortName !== 'Betty Vásquez') {
                 changed = true;
                 nextUser = { ...nextUser, shortName: 'Betty Vásquez' };
               }
@@ -1188,7 +1218,15 @@ export function ensureSeedDataLoaded() {
     localStorage.setItem('ievf_absence_requests_v1', JSON.stringify(SEED_ABSENCE_REQUESTS));
   }
 
-  if (!isCurrentVersion) {
+  const isBlankMatrixMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
+
+  if (isBlankMatrixMode) {
+    if (!localStorage.getItem('ievf_baseline_2026_v1')) {
+      localStorage.setItem('ievf_baseline_2026_v1', JSON.stringify(generateSeedBlocks()));
+    }
+    localStorage.setItem('ievf_time_blocks_v1', '[]');
+    localStorage.setItem('villaFloraMatrix', '[]');
+  } else if (!isCurrentVersion) {
     const seedBlocks = generateSeedBlocks();
     localStorage.setItem('ievf_baseline_2026_v1', JSON.stringify(seedBlocks));
     try {

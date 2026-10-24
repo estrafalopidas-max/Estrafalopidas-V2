@@ -17,7 +17,7 @@ import {
   PublicDayConfigs,
   resolveEffectiveDayConfigs,
 } from '../../domain/services/html-schedule-generator.service';
-import { resolveCanonicalGradeName } from '../../domain/services/grade-normalization.service';
+import { resolveCanonicalGradeName, resolveCanonicalShift, normalizeTimeBlocksGrades } from '../../domain/services/grade-normalization.service';
 
 const app = initializeApp(firebaseConfig);
 
@@ -87,6 +87,7 @@ export function handleFirestoreError(
 
 const QUOTA_BACKOFF_KEY = 'ievf_fb_quota_backoff_until';
 const LAST_PUBLISHED_HASH_KEY = 'ievf_last_published_hash_v1';
+const LOCAL_UPDATED_AT_KEY = 'ievf_local_schedule_updated_at';
 
 function isQuotaExceededError(error: unknown): boolean {
   const msg = error instanceof Error ? error.message : String(error);
@@ -100,7 +101,9 @@ function isQuotaExceededError(error: unknown): boolean {
 
 function isQuotaBackedOff(): boolean {
   try {
-    const until = Number(sessionStorage.getItem(QUOTA_BACKOFF_KEY) || '0');
+    const until = Number(
+      localStorage.getItem(QUOTA_BACKOFF_KEY) || sessionStorage.getItem(QUOTA_BACKOFF_KEY) || '0'
+    );
     return Date.now() < until;
   } catch {
     return false;
@@ -109,7 +112,9 @@ function isQuotaBackedOff(): boolean {
 
 function markQuotaBackedOff(): void {
   try {
-    sessionStorage.setItem(QUOTA_BACKOFF_KEY, String(Date.now() + 15 * 60 * 1000));
+    const untilStr = String(Date.now() + 15 * 60 * 1000);
+    localStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
+    sessionStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
   } catch {
     // ignore
   }
@@ -220,12 +225,67 @@ export async function publishScheduleToCloud(
   shortCode = 'vf',
   forceWrite = false
 ): Promise<void> {
+  const nowMs = Date.now();
+  const isBlankMatrix =
+    Boolean(snapshot.metadata?.blankMatrixMode ?? snapshot.dayConfigs?.blankMatrixMode) ||
+    snapshot.timeBlocks.filter((b) => b.id !== DAY_CONFIG_BLOCK_ID).length === 0;
+
+  const effectiveDayConfigs = resolveEffectiveDayConfigs({
+    ...snapshot.dayConfigs,
+    blankMatrixMode: isBlankMatrix,
+    updatedAtMs: nowMs,
+  });
+
+  const normalizedSnapshot: PublicScheduleSnapshot = {
+    ...snapshot,
+    timeBlocks: isBlankMatrix ? [] : snapshot.timeBlocks,
+    dayConfigs: effectiveDayConfigs,
+    metadata: {
+      ...snapshot.metadata,
+      totalBlocks: isBlankMatrix ? 0 : snapshot.timeBlocks.length,
+      blankMatrixMode: isBlankMatrix,
+      updatedAtMs: nowMs,
+    },
+  };
+
+  try {
+    const nowStr = String(nowMs);
+    if (isBlankMatrix) {
+      localStorage.setItem('ievf_blank_matrix_mode', '1');
+    } else {
+      localStorage.removeItem('ievf_blank_matrix_mode');
+    }
+    localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(normalizedSnapshot));
+    localStorage.setItem(LAST_FETCH_KEY, nowStr);
+    localStorage.setItem(LOCAL_UPDATED_AT_KEY, nowStr);
+  } catch {
+    // ignore
+  }
+
+  if (typeof window !== 'undefined' && typeof fetch === 'function') {
+    try {
+      await fetch('/api/published-schedule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          snapshot: {
+            ...normalizedSnapshot,
+            shortUrl,
+            shortCode,
+          },
+        }),
+      });
+    } catch {
+      // ignore network error
+    }
+  }
+
   if (isQuotaBackedOff()) {
     return;
   }
 
   const docPath = `${SCHEDULE_COLLECTION}/${OFFICIAL_DOC_ID}`;
-  const sanitizedBlocks = snapshot.timeBlocks
+  const sanitizedBlocks = normalizedSnapshot.timeBlocks
     .filter((b) => b.id !== DAY_CONFIG_BLOCK_ID)
     .slice(0, 1499)
     .map((b) => ({
@@ -242,14 +302,13 @@ export async function publishScheduleToCloud(
       gradeId: String(b.gradeId || ''),
       status: String(b.status || 'covered'),
       block_type: String(b.block_type || 'class'),
-      shift: String(b.shift || 'morning'),
+      shift: resolveCanonicalShift(b),
       motivo_novedad: b.motivo_novedad ? String(b.motivo_novedad) : null,
       notes: b.notes ? String(b.notes) : null,
       replacementTeacherName: b.replacementTeacherName ? String(b.replacementTeacherName) : null,
       replacementTeacherId: b.replacementTeacherId ? String(b.replacementTeacherId) : null,
     }));
 
-  const effectiveDayConfigs = resolveEffectiveDayConfigs(snapshot.dayConfigs);
   sanitizedBlocks.push({
     id: DAY_CONFIG_BLOCK_ID,
     dayOfWeek: 'lunes',
@@ -271,20 +330,20 @@ export async function publishScheduleToCloud(
     replacementTeacherId: null,
   });
 
-  const sanitizedTeachers = snapshot.teachers.slice(0, 300).map((t) => ({
+  const sanitizedTeachers = normalizedSnapshot.teachers.slice(0, 300).map((t) => ({
     id: String(t.id || ''),
     displayName: String(t.displayName || 'Docente'),
     color: String(t.color || '#007DC5'),
   }));
 
-  // Deduplicación estricta por hash de contenido: evita escrituras redundantes en Firestore si la grilla no cambió
   const contentFingerprint = computeSimpleHash(
     JSON.stringify({
       b: sanitizedBlocks,
       t: sanitizedTeachers,
-      p: snapshot.metadata.academicPeriod,
-      w: snapshot.metadata.academicWeek,
+      p: normalizedSnapshot.metadata.academicPeriod,
+      w: normalizedSnapshot.metadata.academicWeek,
       s: shortUrl || '',
+      blank: isBlankMatrix,
     })
   );
 
@@ -300,10 +359,10 @@ export async function publishScheduleToCloud(
   }
 
   const payload: Record<string, unknown> = {
-    institutionName: String(snapshot.metadata.institutionName || 'Institución Educativa Villa Flora').slice(0, 200),
-    academicPeriod: String(snapshot.metadata.academicPeriod || '3° Periodo').slice(0, 100),
-    academicWeek: Math.max(1, Math.min(52, Math.round(Number(snapshot.metadata.academicWeek || 8)))),
-    lastUpdated: String(snapshot.metadata.lastUpdated || new Date().toLocaleString('es-CO')).slice(0, 100),
+    institutionName: String(normalizedSnapshot.metadata.institutionName || 'Institución Educativa Villa Flora').slice(0, 200),
+    academicPeriod: String(normalizedSnapshot.metadata.academicPeriod || '3° Periodo').slice(0, 100),
+    academicWeek: Math.max(1, Math.min(52, Math.round(Number(normalizedSnapshot.metadata.academicWeek || 8)))),
+    lastUpdated: String(normalizedSnapshot.metadata.lastUpdated || new Date().toLocaleString('es-CO')).slice(0, 100),
     shortCode: String(shortCode || 'vf').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50) || 'vf',
     timeBlocks: sanitizedBlocks,
     teachers: sanitizedTeachers,
@@ -330,18 +389,119 @@ export async function publishScheduleToCloud(
 
 export function subscribeToPublishedSchedule(
   onUpdate: (data: CloudPublishedScheduleData) => void,
-  forceRefresh = false
+  _forceRefresh = false
 ): () => void {
-  const docPath = `${SCHEDULE_COLLECTION}/${OFFICIAL_DOC_ID}`;
+  let lastAppliedUpdatedAtMs = 0;
+
+  const applyPublishedData = (parsed: CloudPublishedScheduleData, updatedAtMs?: number) => {
+    const incomingTs = Number(
+      updatedAtMs || parsed.metadata?.updatedAtMs || parsed.dayConfigs?.updatedAtMs || 0
+    );
+    if (incomingTs > 0 && lastAppliedUpdatedAtMs > 0 && incomingTs < lastAppliedUpdatedAtMs) {
+      return;
+    }
+    if (incomingTs > 0) {
+      lastAppliedUpdatedAtMs = incomingTs;
+    }
+
+    const isBlank =
+      Boolean(parsed.metadata?.blankMatrixMode ?? parsed.dayConfigs?.blankMatrixMode) ||
+      (Array.isArray(parsed.timeBlocks) && parsed.timeBlocks.length === 0);
+
+    const normalizedBlocks = isBlank
+      ? []
+      : normalizeTimeBlocksGrades(Array.isArray(parsed.timeBlocks) ? parsed.timeBlocks : []);
+
+    const finalData: CloudPublishedScheduleData = {
+      ...parsed,
+      timeBlocks: normalizedBlocks,
+      metadata: {
+        ...parsed.metadata,
+        totalBlocks: normalizedBlocks.length,
+        blankMatrixMode: isBlank,
+        updatedAtMs: incomingTs || Date.now(),
+      },
+      dayConfigs: resolveEffectiveDayConfigs({
+        ...parsed.dayConfigs,
+        blankMatrixMode: isBlank,
+        updatedAtMs: incomingTs || Date.now(),
+      }),
+    };
+
+    try {
+      if (isBlank) {
+        localStorage.setItem('ievf_blank_matrix_mode', '1');
+        localStorage.setItem('villaFloraMatrix', '[]');
+        localStorage.setItem('ievf_time_blocks_v1', '[]');
+      } else {
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(normalizedBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(normalizedBlocks));
+      }
+      localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(finalData));
+      localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
+      if (finalData.dayConfigs) {
+        if (finalData.dayConfigs.meetingDays) {
+          localStorage.setItem('ievf_meeting_days', JSON.stringify(finalData.dayConfigs.meetingDays));
+        }
+        if (finalData.dayConfigs.eventDays) {
+          localStorage.setItem('ievf_event_days', JSON.stringify(finalData.dayConfigs.eventDays));
+        }
+        if (Array.isArray(finalData.dayConfigs.customHolidays)) {
+          localStorage.setItem('ievf_custom_holidays', JSON.stringify(finalData.dayConfigs.customHolidays));
+        }
+      }
+      if (finalData.metadata?.lastUpdated) {
+        localStorage.setItem('ievf_last_published_at', finalData.metadata.lastUpdated);
+      }
+      if (finalData.shortUrl) {
+        localStorage.setItem('ievf_active_short_url', finalData.shortUrl);
+      }
+    } catch {
+      // ignore storage errors
+    }
+
+    onUpdate(finalData);
+  };
 
   const loadFromLocalCache = (): boolean => {
     try {
+      const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
+      const liveBlocksRaw = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       const cachedRaw = localStorage.getItem('ievf_public_schedule_snapshot');
       if (cachedRaw) {
         const cachedData = JSON.parse(cachedRaw) as CloudPublishedScheduleData;
-        if (cachedData && Array.isArray(cachedData.timeBlocks) && cachedData.timeBlocks.length > 0) {
-          onUpdate(cachedData);
-          return true;
+        if (cachedData) {
+          const snapIsBlank =
+            isBlankMode ||
+            Boolean(cachedData.metadata?.blankMatrixMode ?? cachedData.dayConfigs?.blankMatrixMode) ||
+            (Array.isArray(cachedData.timeBlocks) && cachedData.timeBlocks.length === 0);
+
+          if (snapIsBlank) {
+            cachedData.timeBlocks = [];
+            cachedData.metadata = {
+              ...cachedData.metadata,
+              totalBlocks: 0,
+              blankMatrixMode: true,
+            };
+            onUpdate(cachedData);
+            return true;
+          }
+          if (liveBlocksRaw) {
+            try {
+              const liveBlocks = JSON.parse(liveBlocksRaw);
+              if (Array.isArray(liveBlocks)) {
+                cachedData.timeBlocks =
+                  liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [];
+              }
+            } catch {
+              // ignore
+            }
+          }
+          if (Array.isArray(cachedData.timeBlocks)) {
+            onUpdate(cachedData);
+            return true;
+          }
         }
       }
     } catch {
@@ -350,100 +510,117 @@ export function subscribeToPublishedSchedule(
     return false;
   };
 
-  const hasLocal = loadFromLocalCache();
+  loadFromLocalCache();
 
-  // Escucha eventos locales (misma pestaña o pestañas del mismo navegador) con costo 0 en Firestore
+  const fetchServerSnapshot = async (): Promise<boolean> => {
+    if (typeof window === 'undefined' || typeof fetch !== 'function') return false;
+    try {
+      const res = await fetch('/api/published-schedule', { cache: 'no-store' });
+      if (!res.ok) return false;
+      const data = await res.json();
+      const serverSnap = data?.snapshot;
+      if (serverSnap && Array.isArray(serverSnap.timeBlocks)) {
+        applyPublishedData(
+          serverSnap as CloudPublishedScheduleData,
+          Number(serverSnap.updatedAtMs || serverSnap.metadata?.updatedAtMs || serverSnap.dayConfigs?.updatedAtMs || Date.now())
+        );
+        return true;
+      }
+    } catch {
+      // ignore
+    }
+    return false;
+  };
+
   const handleLocalStorageUpdate = () => {
     loadFromLocalCache();
   };
   window.addEventListener('storage', handleLocalStorageUpdate);
   window.addEventListener('schedule_matrix_updated', handleLocalStorageUpdate);
+  window.addEventListener('public_schedule_snapshot_updated', handleLocalStorageUpdate);
 
-  // Evita lecturas innecesarias a Firestore si el caché local es reciente (< 2 min) o si la cuota está en pausa
-  const lastFetch = Number(localStorage.getItem(LAST_FETCH_KEY) || '0');
-  const isCacheFresh = hasLocal && Date.now() - lastFetch < FETCH_CACHE_TTL_MS;
+  const handleVisibilityOrFocus = () => {
+    void fetchServerSnapshot();
+  };
+  window.addEventListener('focus', handleVisibilityOrFocus);
+  document.addEventListener('visibilitychange', handleVisibilityOrFocus);
 
-  if (!forceRefresh && (isCacheFresh || isQuotaBackedOff())) {
-    return () => {
-      window.removeEventListener('storage', handleLocalStorageUpdate);
-      window.removeEventListener('schedule_matrix_updated', handleLocalStorageUpdate);
-    };
-  }
+  const pollInterval = window.setInterval(() => {
+    void fetchServerSnapshot();
+  }, 2500);
 
-  // Lectura puntual única (getDoc) en lugar de mantener un WebSocket permanente (onSnapshot)
-  getDoc(doc(db, SCHEDULE_COLLECTION, OFFICIAL_DOC_ID))
-    .then((snapshot) => {
-      if (!snapshot.exists()) return;
-      const raw = snapshot.data();
-      if (!raw || !Array.isArray(raw.timeBlocks)) return;
+  void fetchServerSnapshot().then((foundInServer) => {
+    if (isQuotaBackedOff()) return;
+    getDoc(doc(db, SCHEDULE_COLLECTION, OFFICIAL_DOC_ID))
+      .then((snapshot) => {
+        if (!snapshot.exists()) return;
+        const raw = snapshot.data();
+        if (!raw || !Array.isArray(raw.timeBlocks)) return;
 
-      let extractedDayConfigs: PublicDayConfigs | undefined;
-      const cleanBlocks = raw.timeBlocks.filter((b: any) => {
-        if (b && b.id === DAY_CONFIG_BLOCK_ID) {
-          try {
-            extractedDayConfigs = JSON.parse(b.subject);
-          } catch {
-            // ignore
+        let extractedDayConfigs: PublicDayConfigs | undefined;
+        const cleanBlocks = raw.timeBlocks.filter((b: any) => {
+          if (b && b.id === DAY_CONFIG_BLOCK_ID) {
+            try {
+              extractedDayConfigs = JSON.parse(b.subject);
+            } catch {
+              // ignore
+            }
+            return false;
           }
-          return false;
+          return true;
+        });
+
+        const cloudIsBlank =
+          Boolean(extractedDayConfigs?.blankMatrixMode) || cleanBlocks.length === 0;
+        const cloudUpdatedAtMs = Number(extractedDayConfigs?.updatedAtMs || 0);
+
+        // Si el servidor en memoria ya entregó una versión más reciente (por ejemplo durante la misma sesión), respetarla
+        if (foundInServer && lastAppliedUpdatedAtMs > 0 && cloudUpdatedAtMs < lastAppliedUpdatedAtMs) {
+          return;
         }
-        return true;
+
+        const effectiveBlocks = cloudIsBlank ? [] : normalizeTimeBlocksGrades(cleanBlocks);
+        const resolvedConfigs = resolveEffectiveDayConfigs({
+          ...extractedDayConfigs,
+          blankMatrixMode: cloudIsBlank,
+        });
+
+        const parsed: CloudPublishedScheduleData = {
+          metadata: {
+            institutionName: raw.institutionName || 'Institución Educativa Villa Flora',
+            academicPeriod: raw.academicPeriod || '3° Periodo',
+            academicWeek: Number(raw.academicWeek || 8),
+            lastUpdated: raw.lastUpdated || 'Sincronizado',
+            totalBlocks: effectiveBlocks.length,
+            totalTeachers: Array.isArray(raw.teachers) ? raw.teachers.length : 0,
+            blankMatrixMode: cloudIsBlank,
+            updatedAtMs: cloudUpdatedAtMs || Date.now(),
+          },
+          timeBlocks: effectiveBlocks,
+          teachers: Array.isArray(raw.teachers) ? raw.teachers : [],
+          dayConfigs: resolvedConfigs,
+          shortUrl: raw.shortUrl,
+          shortCode: raw.shortCode,
+        };
+
+        applyPublishedData(parsed, cloudUpdatedAtMs);
+      })
+      .catch((error) => {
+        if (isQuotaExceededError(error)) {
+          markQuotaBackedOff();
+          return;
+        }
+        console.warn('[Firebase] Lectura remota omitida, usando instantánea local:', error);
       });
-
-      const resolvedConfigs = resolveEffectiveDayConfigs(extractedDayConfigs);
-
-      const parsed: CloudPublishedScheduleData = {
-        metadata: {
-          institutionName: raw.institutionName || 'Institución Educativa Villa Flora',
-          academicPeriod: raw.academicPeriod || '3° Periodo',
-          academicWeek: Number(raw.academicWeek || 8),
-          lastUpdated: raw.lastUpdated || 'Sincronizado',
-          totalBlocks: cleanBlocks.length,
-          totalTeachers: Array.isArray(raw.teachers) ? raw.teachers.length : 0,
-        },
-        timeBlocks: cleanBlocks,
-        teachers: Array.isArray(raw.teachers) ? raw.teachers : [],
-        dayConfigs: resolvedConfigs,
-        shortUrl: raw.shortUrl,
-        shortCode: raw.shortCode,
-      };
-
-      try {
-        localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(parsed));
-        localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
-        if (extractedDayConfigs) {
-          if (extractedDayConfigs.meetingDays) {
-            localStorage.setItem('ievf_meeting_days', JSON.stringify(extractedDayConfigs.meetingDays));
-          }
-          if (extractedDayConfigs.eventDays) {
-            localStorage.setItem('ievf_event_days', JSON.stringify(extractedDayConfigs.eventDays));
-          }
-          if (Array.isArray(extractedDayConfigs.customHolidays)) {
-            localStorage.setItem('ievf_custom_holidays', JSON.stringify(extractedDayConfigs.customHolidays));
-          }
-        }
-        if (raw.lastUpdated) {
-          localStorage.setItem('ievf_last_published_at', raw.lastUpdated);
-        }
-        if (raw.shortUrl) {
-          localStorage.setItem('ievf_active_short_url', raw.shortUrl);
-        }
-      } catch {
-        // Ignore storage quota errors
-      }
-
-      onUpdate(parsed);
-    })
-    .catch((error) => {
-      if (isQuotaExceededError(error)) {
-        markQuotaBackedOff();
-        return;
-      }
-      console.warn('[Firebase] Lectura remota omitida, usando instantánea local:', error);
-    });
+  });
 
   return () => {
+    window.clearInterval(pollInterval);
     window.removeEventListener('storage', handleLocalStorageUpdate);
     window.removeEventListener('schedule_matrix_updated', handleLocalStorageUpdate);
+    window.removeEventListener('public_schedule_snapshot_updated', handleLocalStorageUpdate);
+    window.removeEventListener('focus', handleVisibilityOrFocus);
+    document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
   };
 }
+
