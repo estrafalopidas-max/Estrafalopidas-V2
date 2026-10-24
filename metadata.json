@@ -1,0 +1,6 @@
+{
+  "name": "Horarios I.E. Villa Flora",
+  "description": "Motor B2B de Agendamiento Escolar y Gestión de Ausencias de la Institución Educativa Villa Flora.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

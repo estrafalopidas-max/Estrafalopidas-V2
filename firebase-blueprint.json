@@ -1,0 +1,74 @@
+{
+  "entities": {
+    "PublishedSchedule": {
+      "title": "PublishedSchedule",
+      "description": "Snapshot oficial del horario escolar publicado para consulta pública en tiempo real.",
+      "type": "object",
+      "properties": {
+        "institutionName": {
+          "type": "string",
+          "description": "Nombre oficial de la institución educativa",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "academicPeriod": {
+          "type": "string",
+          "description": "Periodo académico vigente",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "academicWeek": {
+          "type": "integer",
+          "description": "Semana académica vigente"
+        },
+        "lastUpdated": {
+          "type": "string",
+          "description": "Fecha y hora formateada de la última publicación",
+          "minLength": 1,
+          "maxLength": 100
+        },
+        "shortUrl": {
+          "type": "string",
+          "description": "Enlace corto generado para ocultar la ruta pública",
+          "maxLength": 300
+        },
+        "shortCode": {
+          "type": "string",
+          "description": "Código corto interno de redirección",
+          "maxLength": 50,
+          "pattern": "^[a-zA-Z0-9_\\-]+$"
+        },
+        "timeBlocks": {
+          "type": "array",
+          "description": "Lista de bloques horarios asignados"
+        },
+        "teachers": {
+          "type": "array",
+          "description": "Lista de docentes activos con sus colores e identificadores"
+        },
+        "updatedAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Marca de tiempo del servidor de la última actualización"
+        }
+      },
+      "required": [
+        "institutionName",
+        "academicPeriod",
+        "academicWeek",
+        "lastUpdated",
+        "timeBlocks",
+        "teachers",
+        "updatedAt"
+      ]
+    }
+  },
+  "firestore": {
+    "/published_schedules/{scheduleId}": {
+      "schema": {
+        "$ref": "#/entities/PublishedSchedule"
+      },
+      "description": "Documento singleton (official) con la parrilla horaria publicada para consulta pública y su enlace corto."
+    }
+  }
+}

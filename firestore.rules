@@ -1,0 +1,80 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidPublishedSchedule(data) {
+      return data.keys().hasAll([
+        'institutionName',
+        'academicPeriod',
+        'academicWeek',
+        'lastUpdated',
+        'timeBlocks',
+        'teachers',
+        'updatedAt'
+      ]) &&
+      data.keys().hasOnly([
+        'institutionName',
+        'academicPeriod',
+        'academicWeek',
+        'lastUpdated',
+        'shortUrl',
+        'shortCode',
+        'timeBlocks',
+        'teachers',
+        'updatedAt'
+      ]) &&
+      data.institutionName is string && data.institutionName.size() >= 1 && data.institutionName.size() <= 200 &&
+      data.academicPeriod is string && data.academicPeriod.size() >= 1 && data.academicPeriod.size() <= 100 &&
+      data.academicWeek is int && data.academicWeek >= 1 && data.academicWeek <= 52 &&
+      data.lastUpdated is string && data.lastUpdated.size() >= 1 && data.lastUpdated.size() <= 100 &&
+      (!('shortUrl' in data) || (data.shortUrl is string && data.shortUrl.size() <= 300)) &&
+      (!('shortCode' in data) || (data.shortCode is string && data.shortCode.size() <= 50 && data.shortCode.matches('^[a-zA-Z0-9_\\-]+$'))) &&
+      data.timeBlocks is list && data.timeBlocks.size() <= 1500 &&
+      data.teachers is list && data.teachers.size() <= 300 &&
+      data.updatedAt == request.time;
+    }
+
+    match /test/{docId} {
+      allow get: if isValidId(docId);
+    }
+
+    match /published_schedules/{scheduleId} {
+      allow get: if isValidId(scheduleId);
+
+      allow create: if isValidId(scheduleId) &&
+        scheduleId == 'official' &&
+        isValidPublishedSchedule(incoming());
+
+      allow update: if isValidId(scheduleId) &&
+        scheduleId == 'official' &&
+        isValidPublishedSchedule(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'institutionName',
+          'academicPeriod',
+          'academicWeek',
+          'lastUpdated',
+          'shortUrl',
+          'shortCode',
+          'timeBlocks',
+          'teachers',
+          'updatedAt'
+        ]);
+    }
+  }
+}

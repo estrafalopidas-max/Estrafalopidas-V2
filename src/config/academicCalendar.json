@@ -1,0 +1,47 @@
+{
+  "year": 2026,
+  "totalPeriods": 3,
+  "totalWeeks": 40,
+  "startDate": "2026-01-26",
+  "endDate": "2026-12-11",
+  "currentAcademicWeek": 34,
+  "currentPeriod": "3°",
+  "periods": [
+    {
+      "id": "period1",
+      "name": "1°",
+      "label": "1° Periodo",
+      "weeks": 13,
+      "startDate": "2026-01-26",
+      "endDate": "2026-05-01"
+    },
+    {
+      "id": "period2",
+      "name": "2°",
+      "label": "2° Periodo",
+      "weeks": 13,
+      "startDate": "2026-05-04",
+      "endDate": "2026-08-28"
+    },
+    {
+      "id": "period3",
+      "name": "3°",
+      "label": "3° Periodo",
+      "weeks": 14,
+      "startDate": "2026-08-24",
+      "endDate": "2026-12-06"
+    }
+  ],
+  "institutionalDevelopmentWeeks": [
+    { "startDate": "2026-01-12", "endDate": "2026-01-25", "weeks": 2, "label": "Desarrollo Institucional (Enero)" },
+    { "startDate": "2026-03-30", "endDate": "2026-04-05", "weeks": 1, "label": "Desarrollo Institucional (Semana Santa)" },
+    { "startDate": "2026-07-06", "endDate": "2026-07-12", "weeks": 1, "label": "Desarrollo Institucional (Julio)" },
+    { "startDate": "2026-10-05", "endDate": "2026-10-11", "weeks": 1, "label": "Desarrollo Institucional (Octubre)" },
+    { "startDate": "2026-12-07", "endDate": "2026-12-13", "weeks": 1, "label": "Desarrollo Institucional (Diciembre)" }
+  ],
+  "teacherVacations": [
+    { "startDate": "2025-12-22", "endDate": "2026-01-11", "weeks": 3, "label": "Vacaciones de Docentes y Directivos Docentes" },
+    { "startDate": "2026-06-22", "endDate": "2026-07-05", "weeks": 2, "label": "Vacaciones de Docentes y Directivos Docentes (Mitad de Año)" },
+    { "startDate": "2026-12-14", "endDate": "2026-12-27", "weeks": 2, "label": "Vacaciones de Docentes y Directivos Docentes (Fin de Año)" }
+  ]
+}
