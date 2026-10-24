@@ -202,3 +202,34 @@ test('generateStandaloneScheduleHtml and savePublicScheduleSnapshot explicitly r
   assert.equal(snap.dayConfigs?.blankMatrixMode, true, 'Snapshot dayConfigs must mark blankMatrixMode as true');
 });
 
+test('getSupportPlanModalityLabel dynamically resolves period-specific and annual support plan labels for Horario D', async () => {
+  const { getSupportPlanModalityLabel } = await import('./ChronologyEngine.ts');
+
+  assert.equal(
+    getSupportPlanModalityLabel('2026-03-10'),
+    'Planes de apoyo 1er periodo',
+    'Period 1 must resolve to Planes de apoyo 1er periodo'
+  );
+  assert.equal(
+    getSupportPlanModalityLabel('2026-06-10'),
+    'Planes de apoyo 2do periodo',
+    'Period 2 must resolve to Planes de apoyo 2do periodo'
+  );
+  assert.equal(
+    getSupportPlanModalityLabel('2026-10-20'),
+    'Planes de apoyo 3er periodo',
+    'Period 3 must resolve to Planes de apoyo 3er periodo'
+  );
+  assert.equal(
+    getSupportPlanModalityLabel('2026-12-03'),
+    'Planes de apoyo anuales',
+    'Year-end closure must resolve to Planes de apoyo anuales'
+  );
+  assert.equal(
+    getSupportPlanModalityLabel('2026-10-20', 'Anual'),
+    'Planes de apoyo anuales',
+    'Explicit annual override must resolve to Planes de apoyo anuales'
+  );
+});
+
+

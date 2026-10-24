@@ -13,7 +13,7 @@ export interface PublicDayConfigs {
   eventDays: Record<string, boolean>;
   holidayDays: Record<string, boolean>;
   customHolidays: string[];
-  scheduleTypes?: Record<string, 'A' | 'B' | 'C'>;
+  scheduleTypes?: Record<string, 'A' | 'B' | 'C' | 'D'>;
   blankMatrixMode?: boolean;
   updatedAtMs?: number;
 }
@@ -22,7 +22,7 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
   let storedMeeting: Record<string, boolean> = {};
   let storedEvent: Record<string, boolean> = {};
   let storedCustomHolidays: string[] = [];
-  let storedScheduleTypes: Record<string, 'A' | 'B' | 'C'> = {};
+  let storedScheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> = {};
 
   try {
     const m = localStorage.getItem('ievf_meeting_days');
@@ -1251,7 +1251,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       return String(h).padStart(2, '0') + ':' + String(mins).padStart(2, '0');
     }
 
-    function buildShiftPeriodSlots(shift, isMeeting, isEvent) {
+    function buildShiftPeriodSlots(shift, isMeeting, isEvent, scheduleType) {
       if (shift === 'transicion-1') {
         const list = [];
         if (isMeeting) {
@@ -1311,6 +1311,27 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       }
 
       // morning (Bachillerato)
+      if (scheduleType === 'D' && !isMeeting) {
+        return [
+          { period: 101, time: '06:10 - 06:40', label: 'Plan de apoyo (Materia)' },
+          { period: 102, time: '06:40 - 07:10', label: 'Plan de apoyo (Materia)' },
+          { period: 103, time: '07:10 - 07:40', label: 'Plan de apoyo (Materia)' },
+          { period: 104, time: '07:40 - 08:10', label: 'Plan de apoyo (Materia)' },
+          { period: 1, time: '08:10 - 08:45', label: 'Clase 1' },
+          { period: 2, time: '08:45 - 09:20', label: 'Clase 2' },
+          { period: 3, time: '09:20 - 09:55', label: 'Clase 3' },
+          { period: 0, time: '09:55 - 10:25', label: 'Descanso Pedagógico y Alimentación Escolar', isBreak: true },
+          { period: 4, time: '10:25 - 11:00', label: 'Clase 4' },
+          { period: 5, time: '11:00 - 11:35', label: 'Clase 5' },
+          { period: 6, time: '11:35 - 12:10', label: 'Clase 6' },
+          { period: -1, time: '12:40 - 17:35', label: 'Salida General / Jornada Media Técnica', isTransition: true, mediaTecnicaOnly: true },
+          { period: 7, time: '12:40 - 13:35', label: '7ª Hora', mediaTecnicaOnly: true },
+          { period: 8, time: '13:35 - 14:30', label: '8ª Hora', mediaTecnicaOnly: true },
+          { period: 9, time: '14:30 - 15:25', label: '9ª Hora', mediaTecnicaOnly: true },
+          { period: 10, time: '15:45 - 16:40', label: '10ª Hora', mediaTecnicaOnly: true },
+          { period: 11, time: '16:40 - 17:35', label: '11ª Hora', mediaTecnicaOnly: true }
+        ];
+      }
       if (!isMeeting) {
         return [
           { period: 1, time: '06:10 - 07:05', label: '1ª Hora' },
@@ -1533,8 +1554,10 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           ? shiftGrades.filter(g => filtered.some(b => b.grade === g))
           : shiftGrades;
 
-      const rawPeriods = buildShiftPeriodSlots(currentShift, isMeetingDay, isEventDay);
-      const hasMediaTecnicaInFiltered = filtered.some(b => b.period >= 7);
+      const rawScheduleType = SCHEDULE_TYPES[currentShift + '_' + currentDay] || SCHEDULE_TYPES[currentDay] || 'A';
+      const scheduleType = (currentShift === 'morning' && rawScheduleType === 'D' && !isMeetingDay) ? 'D' : (isMeetingDay ? 'B' : 'A');
+      const rawPeriods = buildShiftPeriodSlots(currentShift, isMeetingDay, isEventDay, scheduleType);
+      const hasMediaTecnicaInFiltered = filtered.some(b => b.period >= 7 && b.period <= 11);
       const activePeriods = rawPeriods.filter(slot => {
         if (!slot.mediaTecnicaOnly) return true;
         if (!hasMediaTecnicaInFiltered) return false;
@@ -1542,7 +1565,6 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         return filtered.some(b => b.period === slot.period);
       });
 
-      const scheduleType = isMeetingDay ? 'B' : 'A';
       const isTransicionShift = currentShift === 'transicion-1';
       const totalCols = isTransicionShift ? (gradesInFilter.length * 2) : (gradesInFilter.length + 1);
       let html = '';
@@ -1643,7 +1665,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
 
           const cellBlocks = filtered.filter(b => b.period === slot.period && b.grade === grade);
           const isSeniorHigh = grade.startsWith('10') || grade.startsWith('11');
-          const isBeyondRegularMorning = currentShift === 'morning' && slot.period > 6 && !isSeniorHigh;
+          const isBeyondRegularMorning = currentShift === 'morning' && slot.period >= 7 && slot.period <= 11 && !isSeniorHigh;
 
           html += '<td>';
           if (cellBlocks.length === 0) {
@@ -1780,8 +1802,10 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
             : (hasCustomFilter && !isHoliday)
               ? shiftGrades.filter(g => filtered.some(b => b.grade === g))
               : shiftGrades;
-          const rawPeriods = buildShiftPeriodSlots(currentShift, isMeetingDay, isEventDay);
-          const hasMT = filtered.some(b => b.period >= 7);
+          const rawScheduleType = SCHEDULE_TYPES[currentShift + '_' + currentDay] || SCHEDULE_TYPES[currentDay] || 'A';
+          const pdfScheduleType = (currentShift === 'morning' && rawScheduleType === 'D' && !isMeetingDay) ? 'D' : (isMeetingDay ? 'B' : 'A');
+          const rawPeriods = buildShiftPeriodSlots(currentShift, isMeetingDay, isEventDay, pdfScheduleType);
+          const hasMT = filtered.some(b => b.period >= 7 && b.period <= 11);
           const activePeriods = rawPeriods.filter(slot => {
             if (!slot.mediaTecnicaOnly) return true;
             if (!hasMT) return false;
@@ -1830,7 +1854,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           ctx.fillStyle = '#334155';
           ctx.font = '800 12px sans-serif';
           ctx.textAlign = 'left';
-          ctx.fillText('HORARIO ' + (isMeetingDay ? 'B' : 'A'), padX + 12, curY + 21);
+          ctx.fillText('HORARIO ' + pdfScheduleType, padX + 12, curY + 21);
           grades.forEach((g, idx) => {
             ctx.fillStyle = '#0f172a';
             ctx.font = '800 13px sans-serif';

@@ -74,7 +74,8 @@ function formatMinToTime(m: number): string {
 function buildDynamicPublicSlots(
   shift: ShiftType,
   isMeetingDay: boolean,
-  isEventDay: boolean
+  isEventDay: boolean,
+  scheduleType: 'A' | 'B' | 'C' | 'D' = 'A'
 ): PublicSlotConfig[] {
   if (shift === 'transicion-1') {
     const list: PublicSlotConfig[] = [];
@@ -146,6 +147,33 @@ function buildDynamicPublicSlots(
   }
 
   // morning (Bachillerato)
+  if (scheduleType === 'D' && !isMeetingDay) {
+    return [
+      { period: 101, time: '06:10 - 06:40', label: 'Plan de apoyo (Materia)' },
+      { period: 102, time: '06:40 - 07:10', label: 'Plan de apoyo (Materia)' },
+      { period: 103, time: '07:10 - 07:40', label: 'Plan de apoyo (Materia)' },
+      { period: 104, time: '07:40 - 08:10', label: 'Plan de apoyo (Materia)' },
+      { period: 1, time: '08:10 - 08:45', label: 'Clase 1' },
+      { period: 2, time: '08:45 - 09:20', label: 'Clase 2' },
+      { period: 3, time: '09:20 - 09:55', label: 'Clase 3' },
+      { period: 0, time: '09:55 - 10:25', label: 'Descanso Pedagógico y Alimentación Escolar', isBreak: true },
+      { period: 4, time: '10:25 - 11:00', label: 'Clase 4' },
+      { period: 5, time: '11:00 - 11:35', label: 'Clase 5' },
+      { period: 6, time: '11:35 - 12:10', label: 'Clase 6' },
+      {
+        period: -1,
+        time: '12:40 - 17:35',
+        label: 'Salida General / Jornada Media Técnica',
+        isTransition: true,
+        mediaTecnicaOnly: true,
+      },
+      { period: 7, time: '12:40 - 13:35', label: '7ª Hora', mediaTecnicaOnly: true },
+      { period: 8, time: '13:35 - 14:30', label: '8ª Hora', mediaTecnicaOnly: true },
+      { period: 9, time: '14:30 - 15:25', label: '9ª Hora', mediaTecnicaOnly: true },
+      { period: 10, time: '15:45 - 16:40', label: '10ª Hora', mediaTecnicaOnly: true },
+      { period: 11, time: '16:40 - 17:35', label: '11ª Hora', mediaTecnicaOnly: true },
+    ];
+  }
   if (!isMeetingDay) {
     return [
       { period: 1, time: '06:10 - 07:05', label: '1ª Hora' },
@@ -371,7 +399,16 @@ export const PublicScheduleViewerPage: React.FC = () => {
       : dayConfigs.meetingDays?.[selectedDay]
   );
   const isEventDay = Boolean(dayConfigs.eventDays?.[selectedDay]);
-  const activeScheduleType = isMeetingDay ? 'B' : 'A';
+  const rawDayScheduleType =
+    dayConfigs.scheduleTypes?.[`${selectedShift}_${selectedDay}`] ||
+    dayConfigs.scheduleTypes?.[selectedDay] ||
+    'A';
+  const activeScheduleType: 'A' | 'B' | 'C' | 'D' =
+    selectedShift === 'morning' && rawDayScheduleType === 'D' && !isMeetingDay
+      ? 'D'
+      : isMeetingDay
+      ? 'B'
+      : 'A';
 
   const displayAcademicPeriod = useMemo(() => {
     const raw = snapshot?.metadata.academicPeriod;
@@ -493,15 +530,15 @@ export const PublicScheduleViewerPage: React.FC = () => {
 
   // Visible period slots for the selected shift and day
   const activePeriodSlots = useMemo(() => {
-    const rawSlots = buildDynamicPublicSlots(selectedShift, isMeetingDay, isEventDay);
-    const hasMediaTecnicaInFiltered = filteredBlocks.some((b) => b.period >= 7);
+    const rawSlots = buildDynamicPublicSlots(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
+    const hasMediaTecnicaInFiltered = filteredBlocks.some((b) => b.period >= 7 && b.period <= 11);
     return rawSlots.filter((slot) => {
       if (!slot.mediaTecnicaOnly) return true;
       if (!hasMediaTecnicaInFiltered) return false;
       if (slot.isTransition) return true;
       return filteredBlocks.some((b) => b.period === slot.period);
     });
-  }, [selectedShift, isMeetingDay, isEventDay, filteredBlocks]);
+  }, [selectedShift, isMeetingDay, isEventDay, activeScheduleType, filteredBlocks]);
 
   const logoUrl = '/assets/aistudio/logo_html_859fb25c.png';
 
@@ -1194,7 +1231,7 @@ export const PublicScheduleViewerPage: React.FC = () => {
                         );
                         const isSeniorHigh = grade.startsWith('10') || grade.startsWith('11');
                         const isBeyondRegularMorning =
-                          selectedShift === 'morning' && slot.period > 6 && !isSeniorHigh;
+                          selectedShift === 'morning' && slot.period >= 7 && slot.period <= 11 && !isSeniorHigh;
                         const primaryBlock =
                           cellBlocks.length > 0
                             ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]

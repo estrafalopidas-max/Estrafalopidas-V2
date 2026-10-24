@@ -41,7 +41,7 @@ import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 import { ALL_OFFICIAL_MATERIAS, getSubjectShortName, getSubjectOfficialName } from '../../../domain/constants/subjects';
 import { useTeacherLoad, calculateTeacherAssignedHours } from '../../hooks/useTeacherLoad';
 import { TeacherPoolSidebar } from '../../components/matrix/TeacherPoolSidebar';
-import { getTodayDayOfWeek } from '../../../domain/services/ChronologyEngine';
+import { getTodayDayOfWeek, getSupportPlanModalityLabel } from '../../../domain/services/ChronologyEngine';
 
 import {
   Calendar,
@@ -161,8 +161,18 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
   const isMeetingDay = Boolean(meetingDays[`${selectedShift}_${selectedDay}`] ?? meetingDays[selectedDay]);
   const isEventDay = false;
-  const activeScheduleType: 'A' | 'B' | 'C' =
+  const rawScheduleType =
     scheduleTypes[`${selectedShift}_${selectedDay}`] || scheduleTypes[selectedDay] || 'A';
+  const isSupportPlanDay = selectedShift === 'morning' && rawScheduleType === 'D' && !isMeetingDay;
+  const activeScheduleType: 'A' | 'B' | 'C' | 'D' = isSupportPlanDay
+    ? 'D'
+    : isMeetingDay
+    ? 'B'
+    : 'A';
+  const supportPlanModalityLabel = useMemo(
+    () => getSupportPlanModalityLabel(new Date(), currentPeriod),
+    [currentPeriod]
+  );
   const activeDayHeader = useMemo(() => weekHeaders.find((w) => w.id === selectedDay), [weekHeaders, selectedDay]);
   const [isGradeMenuOpen, setIsGradeMenuOpen] = useState(false);
   const gradeMenuRef = useRef<HTMLDivElement>(null);
@@ -709,7 +719,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     }
 
     // Period timing calculations with dynamic schedule
-    const { periods: periodDefs } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay);
+    const { periods: periodDefs } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
     const periodInfo = periodDefs.find((p) => p.period === targetSlot.period);
     const isTargetT2 = targetGrade.id === 'g-trans-2' || targetGrade.fullName === 'Transición 2';
     const rawTimeRange =
@@ -955,7 +965,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         const minP = Math.min(lastSelectedCoord.periodIndex, data.periodIndex);
         const maxP = Math.max(lastSelectedCoord.periodIndex, data.periodIndex);
 
-        const { periods: allPeriods } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay);
+        const { periods: allPeriods } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
         const next = new Set(selectedCellIds);
 
         for (let g = minG; g <= maxG; g++) {
@@ -984,14 +994,14 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         setSelectedCellIds(new Set());
       }
     },
-    [lastSelectedCoord, selectedCellIds, selectedShift, isMeetingDay, isEventDay, filteredGrades]
+    [lastSelectedCoord, selectedCellIds, selectedShift, isMeetingDay, isEventDay, activeScheduleType, filteredGrades]
   );
 
   // Resolución de entidades de bloque según IDs de celda o bloque
   const resolveBlocksForIds = useCallback(
     (ids: string[] | Set<string>): TimeBlockEntity[] => {
       const idList = Array.from(ids);
-      const { periods: allPeriods } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay);
+      const { periods: allPeriods } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
       const batchBlocks: TimeBlockEntity[] = [];
 
       idList.forEach((sId) => {
@@ -1044,7 +1054,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
       return batchBlocks;
     },
-    [timeBlocks, selectedShift, isMeetingDay, isEventDay, selectedDay, grades]
+    [timeBlocks, selectedShift, isMeetingDay, isEventDay, activeScheduleType, selectedDay, grades]
   );
 
   // Micro-interacción de Papelera en Celda: Dispara modal individual o por lote
@@ -1270,7 +1280,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   // Flujo de Asignación Inversa: Clic en celda vacía abre modal ágil de asignación rápida
   const handleEmptyClick = useCallback(
     (grade: GradeEntity, period: number, block: TimeBlockEntity | null, _slotId: string) => {
-      const { periods: periodDefs } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay);
+      const { periods: periodDefs } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
       const periodInfo = periodDefs.find((p) => p.period === period);
       const isT2 = grade.id === 'g-trans-2' || grade.fullName === 'Transición 2';
       const [startTime, endTime] = (
@@ -1286,7 +1296,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         endTime: endTime.trim(),
       });
     },
-    [selectedShift, isMeetingDay, isEventDay]
+    [selectedShift, isMeetingDay, isEventDay, activeScheduleType]
   );
 
   const handleQuickAssignConfirm = async (data: {
@@ -1815,11 +1825,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                 className={`h-8 w-full flex items-center justify-between gap-2 px-3 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs ${
                   activeDayHeader?.isHoliday
                     ? 'bg-red-50 border-red-300 text-red-900 ring-1 ring-red-300/60'
-                    : isMeetingDay
+                    : isMeetingDay || isSupportPlanDay
                     ? 'bg-amber-50 border-amber-300 text-amber-950 ring-1 ring-amber-300/60'
                     : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
                 }`}
-                title="Configurar Día festivo y Atención a padres"
+                title="Configurar modalidades del día"
               >
                 <span className="flex items-center gap-2 truncate">
                   <Clock className="w-3.5 h-3.5 text-villa-blue-light shrink-0" />
@@ -1838,6 +1848,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                       title="Atención a padres activa"
                     />
                   )}
+                  {isSupportPlanDay && (
+                    <span
+                      className="w-2 h-2 rounded-full bg-amber-500"
+                      title={`${supportPlanModalityLabel} (Horario D) activo`}
+                    />
+                  )}
                   <ChevronDown
                     className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-150 ${
                       isModeMenuOpen ? 'rotate-180' : ''
@@ -1847,9 +1863,9 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
               </button>
 
               {isModeMenuOpen && (
-                <div className="absolute left-0 mt-1.5 w-full bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
+                <div className="absolute left-0 mt-1.5 min-w-full w-max bg-white rounded-2xl shadow-xl border border-slate-200 py-2 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
                   {/* Opción 1: Día festivo */}
-                  <label className="flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap">
+                  <label className="flex items-center justify-between gap-3 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap">
                     <span
                       className={`text-xs font-semibold ${
                         activeDayHeader?.isHoliday ? 'text-red-600 font-bold' : 'text-slate-700'
@@ -1870,7 +1886,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                   </label>
 
                   {/* Opción 2: Atención a padres */}
-                  <label className="flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap">
+                  <label className="flex items-center justify-between gap-3 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap">
                     <span
                       className={`text-xs font-semibold ${
                         isMeetingDay ? 'text-villa-magenta font-bold' : 'text-slate-700'
@@ -1881,10 +1897,43 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                     <input
                       type="checkbox"
                       checked={isMeetingDay}
-                      onChange={(e) => setMeetingDay(selectedDay, e.target.checked, selectedShift)}
+                      onChange={(e) => {
+                        const checked = e.target.checked;
+                        setMeetingDay(selectedDay, checked, selectedShift);
+                        if (selectedShift === 'morning') {
+                          setScheduleType(selectedDay, checked ? 'B' : 'A', 'morning');
+                        }
+                      }}
                       className="w-4 h-4 rounded text-villa-magenta focus:ring-villa-magenta accent-villa-magenta cursor-pointer shrink-0"
                     />
                   </label>
+
+                  {/* Opción 3 (Exclusiva Bachillerato): Planes de apoyo XX periodo / Planes de apoyo anuales (Horario D) */}
+                  {selectedShift === 'morning' && (
+                    <label className="flex items-center justify-between gap-3 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap">
+                      <span
+                        className={`text-xs font-semibold ${
+                          isSupportPlanDay ? 'text-amber-700 font-bold' : 'text-slate-700'
+                        }`}
+                      >
+                        {supportPlanModalityLabel}
+                      </span>
+                      <input
+                        type="checkbox"
+                        checked={isSupportPlanDay}
+                        onChange={(e) => {
+                          const checked = e.target.checked;
+                          if (checked) {
+                            setMeetingDay(selectedDay, false, 'morning');
+                            setScheduleType(selectedDay, 'D', 'morning');
+                          } else {
+                            setScheduleType(selectedDay, 'A', 'morning');
+                          }
+                        }}
+                        className="w-4 h-4 rounded text-amber-600 focus:ring-amber-600 accent-amber-600 cursor-pointer shrink-0"
+                      />
+                    </label>
+                  )}
                 </div>
               )}
             </div>
@@ -1917,6 +1966,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             isEventDay={isEventDay}
             isHoliday={Boolean(activeDayHeader?.isHoliday)}
             scheduleType={activeScheduleType}
+            supportPlanLabel={supportPlanModalityLabel}
             dayHeaderLabel={activeDayHeader?.label}
             selectedCellIds={selectedCellIds}
             selectedCells={selectedCells}

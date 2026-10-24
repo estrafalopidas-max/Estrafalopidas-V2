@@ -21,7 +21,7 @@ export interface PdfScheduleExportOptions {
   shiftLabel: string;
   shiftKey: string;
   dayLabel: string;
-  scheduleType: 'A' | 'B';
+  scheduleType: 'A' | 'B' | 'C' | 'D';
   academicPeriod: string;
   academicWeek: number;
   isHoliday: boolean;

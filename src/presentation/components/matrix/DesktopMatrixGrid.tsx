@@ -13,6 +13,7 @@ export interface MatrixPeriodConfig {
   time: string;
   secondaryTime?: string;
   label?: string;
+  isSupportPlan?: boolean;
 }
 
 export const BACHILLERATO_PERIODS: MatrixPeriodConfig[] = [
@@ -61,7 +62,8 @@ export interface MatrixScheduleConfig {
 export function generateMatrixSchedule(
   shift: ShiftType,
   isMeetingDay: boolean = false,
-  isEventDay: boolean = false
+  isEventDay: boolean = false,
+  scheduleType: 'A' | 'B' | 'C' | 'D' = 'A'
 ): MatrixScheduleConfig {
   if (shift === 'transicion-1') {
     // Transición Unificada: T1 (07:00 a 12:00) y T2 (12:30 a 17:30)
@@ -154,6 +156,79 @@ export function generateMatrixSchedule(
   // Morning shift (Bachillerato)
   const periods: MatrixPeriodConfig[] = [];
   let currentMinute = 6 * 60 + 10; // 06:10 = 370 min
+
+  if (scheduleType === 'D' && !isMeetingDay) {
+    // Horario D (Planes de apoyo XX periodo / Planes de apoyo anuales)
+    const supportPlanTimes = [
+      '06:10 - 06:40',
+      '06:40 - 07:10',
+      '07:10 - 07:40',
+      '07:40 - 08:10',
+    ];
+    supportPlanTimes.forEach((timeStr, idx) => {
+      periods.push({
+        period: 101 + idx,
+        ordinal: 'Plan de apoyo (Materia)',
+        time: timeStr,
+        label: 'Plan de apoyo (Materia)',
+        isSupportPlan: true,
+      });
+    });
+
+    const firstHalfClasses = [
+      '08:10 - 08:45',
+      '08:45 - 09:20',
+      '09:20 - 09:55',
+    ];
+    for (let p = 1; p <= 3; p++) {
+      periods.push({
+        period: p,
+        ordinal: `Clase ${p}`,
+        time: firstHalfClasses[p - 1],
+        label: `Clase ${p}`,
+      });
+    }
+
+    const breakTime = '09:55 - 10:25';
+
+    const secondHalfClasses = [
+      '10:25 - 11:00',
+      '11:00 - 11:35',
+      '11:35 - 12:10',
+    ];
+    for (let p = 4; p <= 6; p++) {
+      periods.push({
+        period: p,
+        ordinal: `Clase ${p}`,
+        time: secondHalfClasses[p - 4],
+        label: `Clase ${p}`,
+      });
+    }
+
+    // Media Técnica (Bloques 7 a 11)
+    const mediaTecnicaTimes = [
+      '12:40 - 13:35',
+      '13:35 - 14:30',
+      '14:30 - 15:25',
+      '15:45 - 16:40',
+      '16:40 - 17:35',
+    ];
+    for (let p = 7; p <= 11; p++) {
+      periods.push({
+        period: p,
+        ordinal: `${p}ª Hora`,
+        time: mediaTecnicaTimes[p - 7],
+        label: `${p}ª Hora`,
+      });
+    }
+
+    return {
+      periods,
+      breakTime,
+      breakLabel: `Descanso Pedagógico y Alimentación Escolar (de ${breakTime.replace(' - ', ' a ')})`,
+      preJornada: null,
+    };
+  }
 
   if (!isMeetingDay) {
     // Modo Estándar: Franjas estrictas de 55 minutos
@@ -295,7 +370,8 @@ export interface DesktopMatrixGridProps {
   isMeetingDay?: boolean;
   isEventDay?: boolean;
   isHoliday?: boolean;
-  scheduleType?: 'A' | 'B' | 'C';
+  scheduleType?: 'A' | 'B' | 'C' | 'D';
+  supportPlanLabel?: string;
   dayHeaderLabel?: string;
   selectedCellIds?: Set<string>;
   selectedCells?: string[];
@@ -322,6 +398,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
   isEventDay = false,
   isHoliday = false,
   scheduleType = 'A',
+  supportPlanLabel,
   dayHeaderLabel,
   selectedCellIds,
   selectedCells,
@@ -334,11 +411,16 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
 }) => {
   const isMorning = shift === 'morning';
   const { periods, breakTime, secondaryBreakTime, breakLabel, preJornada } = useMemo(
-    () => generateMatrixSchedule(shift, isMeetingDay, isEventDay),
-    [shift, isMeetingDay, isEventDay]
+    () => generateMatrixSchedule(shift, isMeetingDay, isEventDay, scheduleType),
+    [shift, isMeetingDay, isEventDay, scheduleType]
   );
   const [breakStart, breakEnd] = breakTime.split(' - ');
-  const breakSplitIndex = isMorning && isMeetingDay ? 4 : 3;
+  const breakSplitIndex =
+    isMorning && scheduleType === 'D' && !isMeetingDay
+      ? 7
+      : isMorning && isMeetingDay
+      ? 4
+      : 3;
   const firstHalf = periods.slice(0, breakSplitIndex);
   const secondHalf = periods.slice(breakSplitIndex);
 
@@ -582,8 +664,9 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     isPeriodActive(breakTime) || (secondaryBreakTime ? isPeriodActive(secondaryBreakTime) : false);
 
   const currentHourSlotLabel = useMemo(() => {
+    if (isMorning && scheduleType === 'D' && !isMeetingDay) return 'Horario D';
     return isMeetingDay ? 'Horario B' : 'Horario A';
-  }, [isMeetingDay]);
+  }, [isMorning, isMeetingDay, scheduleType]);
 
   if (grades.length === 0) {
     return (
@@ -610,13 +693,15 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
           : 'bg-slate-200/95 border-gray-300'
       }`}
     >
-      <div className="flex items-center space-x-1">
-        <Clock className={`w-3.5 h-3.5 ${isHoliday ? 'text-white' : 'text-villa-blue-light'}`} />
-        <span className={`font-semibold text-xs ${isHoliday ? 'text-white font-bold' : 'text-gray-900'}`}>
+      <div className="flex items-center space-x-1 max-w-full">
+        <Clock className={`w-3.5 h-3.5 shrink-0 ${isHoliday ? 'text-white' : 'text-villa-blue-light'}`} />
+        <span className={`font-semibold text-xs leading-tight ${isHoliday ? 'text-white font-bold' : 'text-gray-900'}`}>
           {isHoliday
             ? 'Día Festivo'
             : shift === 'morning'
-            ? isMeetingDay
+            ? scheduleType === 'D' && !isMeetingDay
+              ? supportPlanLabel || 'Planes de apoyo'
+              : isMeetingDay
               ? 'Atención Padres'
               : 'Bachillerato'
             : shift === 'transicion-1'
@@ -707,7 +792,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
       grade.fullName.startsWith('11') ||
       grade.gradeLevel === '10°' ||
       grade.gradeLevel === '11°';
-    const isBeyondJornada = shift === 'morning' && p.period > 6 && !isSeniorHigh;
+    const isBeyondJornada = shift === 'morning' && p.period >= 7 && p.period <= 11 && !isSeniorHigh;
     const isBlocked = !hasAssignedSubject && isBeyondJornada;
     const isThisBlockDragging = Boolean(draggedBlock && block && draggedBlock.id === block.id);
 
@@ -964,14 +1049,28 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
                 className={`w-36 min-w-[8.5rem] max-w-[8.5rem] sticky left-0 z-30 border-r border-b shadow-xs flex flex-col justify-center items-center text-center p-2 transition-colors ${
                   isCurrent
                     ? 'bg-yellow-50 border-l-4 border-l-villa-magenta border-r-amber-300 border-b-amber-300 shadow-inner ring-1 ring-amber-300/40'
+                    : p.isSupportPlan
+                    ? 'bg-amber-50/90 border-amber-300'
                     : 'bg-slate-100 border-gray-300'
                 }`}
               >
-                <div className="text-base font-bold text-gray-900 leading-tight">
+                <div
+                  className={`${
+                    p.isSupportPlan
+                      ? 'text-xs font-extrabold text-amber-950'
+                      : 'text-base font-bold text-gray-900'
+                  } leading-tight`}
+                >
                   {p.ordinal}
                 </div>
-                <div className="text-sm font-medium text-gray-600 whitespace-nowrap mt-0.5">
-                  de {startTime} a {endTime}
+                <div
+                  className={`text-sm font-medium ${
+                    p.isSupportPlan ? 'text-amber-900 font-semibold' : 'text-gray-600'
+                  } whitespace-nowrap mt-0.5`}
+                >
+                  {isMorning && scheduleType === 'D' && !isMeetingDay
+                    ? `${startTime.replace(/^0/, '')} - ${endTime.replace(/^0/, '')}`
+                    : `de ${startTime} a ${endTime}`}
                 </div>
                 {isCurrent && (
                   <span className="inline-flex items-center px-1.5 py-0.2 mt-1 rounded-full text-[9px] font-extrabold uppercase bg-villa-magenta text-white shadow-2xs animate-pulse">
@@ -1067,9 +1166,13 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
                   : 'bg-amber-100 border-r border-b border-amber-300'
               }`}
             >
-              <div className="text-base font-bold text-amber-950 leading-tight">Receso</div>
+              <div className="text-base font-bold text-amber-950 leading-tight">
+                {isMorning && scheduleType === 'D' && !isMeetingDay ? 'Descanso' : 'Receso'}
+              </div>
               <div className="text-sm font-medium text-amber-800 whitespace-nowrap mt-0.5">
-                de {breakStart} a {breakEnd}
+                {isMorning && scheduleType === 'D' && !isMeetingDay
+                  ? `${breakStart.replace(/^0/, '')} - ${breakEnd.replace(/^0/, '')}`
+                  : `de ${breakStart} a ${breakEnd}`}
               </div>
               {isBreakActive && (
                 <span className="inline-flex items-center px-1.5 py-0.2 mt-1 rounded-full text-[9px] font-extrabold uppercase bg-villa-magenta text-white shadow-2xs animate-pulse">
@@ -1179,7 +1282,9 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
                   {p.ordinal}
                 </div>
                 <div className="text-sm font-medium text-gray-600 whitespace-nowrap mt-0.5">
-                  de {startTime} a {endTime}
+                  {isMorning && scheduleType === 'D' && !isMeetingDay && p.period <= 6
+                    ? `${startTime.replace(/^0/, '')} - ${endTime.replace(/^0/, '')}`
+                    : `de ${startTime} a ${endTime}`}
                 </div>
                 {isCurrent && (
                   <span className="inline-flex items-center px-1.5 py-0.2 mt-1 rounded-full text-[9px] font-extrabold uppercase bg-villa-magenta text-white shadow-2xs animate-pulse">

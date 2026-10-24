@@ -41,8 +41,8 @@ export interface CoordinatorMatrixContextType {
   setMeetingDay: (day: string, value: boolean, shift?: ShiftType) => void;
   eventDays: Record<string, boolean>;
   setEventDay: (day: string, value: boolean) => void;
-  scheduleTypes: Record<string, 'A' | 'B' | 'C'>;
-  setScheduleType: (day: string, type: 'A' | 'B' | 'C', shift?: ShiftType) => void;
+  scheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'>;
+  setScheduleType: (day: string, type: 'A' | 'B' | 'C' | 'D', shift?: ShiftType) => void;
   triggerReload: () => void;
   setOnReload: (fn: (() => void) | null) => void;
   currentAcademicWeek: number;
@@ -171,7 +171,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       return {};
     }
   });
-  const [scheduleTypes, setScheduleTypes] = useState<Record<string, 'A' | 'B' | 'C'>>(() => {
+  const [scheduleTypes, setScheduleTypes] = useState<Record<string, 'A' | 'B' | 'C' | 'D'>>(() => {
     try {
       const saved = localStorage.getItem('ievf_schedule_types');
       return saved ? JSON.parse(saved) : {};
@@ -292,7 +292,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     });
   }, []);
 
-  const setScheduleType = useCallback((day: string, type: 'A' | 'B' | 'C', shift?: ShiftType) => {
+  const setScheduleType = useCallback((day: string, type: 'A' | 'B' | 'C' | 'D', shift?: ShiftType) => {
     const key = shift ? `${shift}_${day}` : day;
     setScheduleTypes((prev) => {
       const next = shift ? { ...prev, [day]: type, [key]: type } : { ...prev, [day]: type };

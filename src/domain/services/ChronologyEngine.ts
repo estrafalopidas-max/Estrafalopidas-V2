@@ -220,6 +220,47 @@ export const getOrdinalSuffix = (periodNumber: number): string => {
   return 'º'; // Fallback de seguridad
 };
 
+/**
+ * Resuelve dinámicamente el nombre de la tercera modalidad de Bachillerato (Horario D)
+ * de acuerdo con el periodo académico en curso ("Planes de apoyo XX periodo" o "Planes de apoyo anuales").
+ */
+export function getSupportPlanModalityLabel(
+  activeDate: Date | string = new Date(),
+  overridePeriodText?: string
+): string {
+  if (overridePeriodText && overridePeriodText.toLowerCase().includes('anual')) {
+    return 'Planes de apoyo anuales';
+  }
+
+  const d =
+    typeof activeDate === 'string' && activeDate.length === 10
+      ? new Date(`${activeDate}T00:00:00`)
+      : typeof activeDate === 'string'
+      ? new Date(activeDate)
+      : new Date(activeDate.getTime());
+
+  const validDate = isNaN(d.getTime()) ? new Date() : d;
+  const lastPeriod = academicPeriods[academicPeriods.length - 1];
+  const lastPeriodEnd = new Date(`${lastPeriod.end}T23:59:59`).getTime();
+
+  if (validDate.getTime() > lastPeriodEnd) {
+    return 'Planes de apoyo anuales';
+  }
+
+  const weekData = getCurrentWeekText(validDate);
+  if (
+    weekData.periodNumber > 3 ||
+    (weekData.periodNumber === 3 &&
+      weekData.isRecess &&
+      weekData.recessName?.toLowerCase().includes('cierre'))
+  ) {
+    return 'Planes de apoyo anuales';
+  }
+
+  const suffix = getOrdinalSuffix(weekData.periodNumber);
+  return `Planes de apoyo ${weekData.periodNumber}${suffix} periodo`;
+}
+
 export function evaluateChronology(
   targetDate: Date | string = new Date(),
   periods: AcademicPeriod[] = academicPeriods
