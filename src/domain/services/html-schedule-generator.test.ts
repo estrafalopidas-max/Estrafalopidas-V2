@@ -248,7 +248,7 @@ test('generateStandaloneScheduleHtml renders grouped classrooms header for Horar
   });
 
   assert.ok(html.includes('SUPPORT_ROOMS_MAP'), 'Must include SUPPORT_ROOMS_MAP in client script');
-  assert.ok(html.includes('>Salones</th>'), 'Must render Salones header cell in client script');
+  assert.ok(html.includes('>Aulas</th>'), 'Must render Aulas header cell in client script');
 });
 
 

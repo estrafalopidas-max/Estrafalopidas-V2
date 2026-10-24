@@ -296,7 +296,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
           publishScheduleToCloud(snapshot).catch((err) => {
             console.warn('[CoordinatorMatrix] Error sincronizando cambios en la nube:', err);
           });
-        }, 3000);
+        }, 5000);
         return () => clearTimeout(timer);
       }
     }

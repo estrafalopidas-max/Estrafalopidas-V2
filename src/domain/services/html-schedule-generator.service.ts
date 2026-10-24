@@ -1612,7 +1612,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         });
 
         html += '<tr style="border-bottom: 1.5px solid #64748b;">';
-        html += '<th class="time-col-th" style="background-color: #334155; color: #ffffff; font-size: 11px; text-transform: uppercase; font-weight: 800;">Salones</th>';
+        html += '<th class="time-col-th" style="background-color: #334155; color: #ffffff; font-size: 11px; text-transform: uppercase; font-weight: 800;">Aulas</th>';
         groups.forEach(grp => {
           html += '<th colspan="' + grp.count + '" style="background-color: #7f7f7f; color: #ffffff; font-size: 14px; font-weight: 900; text-align: center; border-right: 1px solid #64748b; letter-spacing: 0.03em;">' + grp.room + '</th>';
         });

@@ -95,6 +95,7 @@ function isQuotaExceededError(error: unknown): boolean {
   return (
     code === 'resource-exhausted' ||
     msg.includes('Quota exceeded') ||
+    msg.includes('Quota limit exceeded') ||
     msg.includes('resource-exhausted')
   );
 }
@@ -112,7 +113,8 @@ function isQuotaBackedOff(): boolean {
 
 function markQuotaBackedOff(): void {
   try {
-    const untilStr = String(Date.now() + 15 * 60 * 1000);
+    // La cuota gratuita de Firebase Spark se renueva a diario. Pausamos llamadas remotas 8 horas.
+    const untilStr = String(Date.now() + 8 * 60 * 60 * 1000);
     localStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
     sessionStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
   } catch {
@@ -336,13 +338,37 @@ export async function publishScheduleToCloud(
     color: String(t.color || '#007DC5'),
   }));
 
+  // Huella determinista estricta: NO incluye timestamps volátiles (updatedAtMs, nowMs)
+  // De esta forma, si ningún docente, asignatura, horario o configuración cambia, el hash coincide y se omiten escrituras redundantes.
+  const stableConfigs = {
+    meetingDays: effectiveDayConfigs.meetingDays || {},
+    eventDays: effectiveDayConfigs.eventDays || {},
+    customHolidays: effectiveDayConfigs.customHolidays || [],
+    scheduleTypes: effectiveDayConfigs.scheduleTypes || {},
+    blankMatrixMode: isBlankMatrix,
+  };
+
   const contentFingerprint = computeSimpleHash(
     JSON.stringify({
-      b: sanitizedBlocks,
+      b: sanitizedBlocks
+        .filter((b) => b.id !== DAY_CONFIG_BLOCK_ID)
+        .map((b) => ({
+          i: b.id,
+          d: b.dayOfWeek,
+          p: b.period,
+          s: b.subject,
+          t: b.teacherId,
+          c: b.classroomName,
+          g: b.gradeId,
+          st: b.status,
+          bt: b.block_type,
+          mn: b.motivo_novedad,
+        })),
       t: sanitizedTeachers,
       p: normalizedSnapshot.metadata.academicPeriod,
       w: normalizedSnapshot.metadata.academicWeek,
       s: shortUrl || '',
+      dc: stableConfigs,
       blank: isBlankMatrix,
     })
   );
@@ -351,6 +377,7 @@ export async function publishScheduleToCloud(
     try {
       const lastHash = localStorage.getItem(LAST_PUBLISHED_HASH_KEY);
       if (lastHash === contentFingerprint) {
+        // Redundancia prevenida: contenido idéntico, se evita setDoc en Firestore
         return;
       }
     } catch {
@@ -551,6 +578,18 @@ export function subscribeToPublishedSchedule(
 
   void fetchServerSnapshot().then((foundInServer) => {
     if (isQuotaBackedOff()) return;
+
+    // Optimización de lecturas: Si ya hay datos frescos en memoria/servidor local o en localStorage dentro del TTL de 2 minutos, omitir lectura a Firestore
+    try {
+      const lastFetch = Number(localStorage.getItem(LAST_FETCH_KEY) || '0');
+      const now = Date.now();
+      if (foundInServer || (lastFetch > 0 && now - lastFetch < FETCH_CACHE_TTL_MS)) {
+        return;
+      }
+    } catch {
+      // ignore
+    }
+
     getDoc(doc(db, SCHEDULE_COLLECTION, OFFICIAL_DOC_ID))
       .then((snapshot) => {
         if (!snapshot.exists()) return;
