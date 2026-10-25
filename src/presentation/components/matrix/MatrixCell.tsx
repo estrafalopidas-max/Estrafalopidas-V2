@@ -49,7 +49,7 @@ export interface MatrixCellProps {
   onCellClick?: (e: React.MouseEvent, data: CellCoordData) => void;
   onTrashClick?: (block: TimeBlockEntity, slotId: string) => void;
   onEmptyClick?: (grade: GradeEntity, period: number, block: TimeBlockEntity | null, slotId: string) => void;
-  onToggleSelect?: (cellId: string) => void;
+  onToggleSelect?: (cellId: string, blockId?: string) => void;
 }
 
 export const MatrixCell: React.FC<MatrixCellProps> = ({
@@ -370,9 +370,10 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
             <input
               type="checkbox"
               checked={isSelected}
+              aria-label={`Seleccionar casilla ${grade.fullName} hora ${period}`}
               onChange={(e) => {
                 e.stopPropagation();
-                onToggleSelect?.(block.id);
+                onToggleSelect?.(droppableId, block.id);
               }}
               onClick={(e) => e.stopPropagation()}
               className="w-4 h-4 rounded-full text-red-600 border border-gray-300 focus:ring-red-500 cursor-pointer shadow-sm appearance-none checked:bg-red-600 checked:border-transparent transition-all flex items-center justify-center relative bg-white/90"
@@ -426,9 +427,10 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
             <input
               type="checkbox"
               checked={isSelected}
+              aria-label={`Seleccionar casilla ${grade.fullName} hora ${period}`}
               onChange={(e) => {
                 e.stopPropagation();
-                onToggleSelect?.(droppableId);
+                onToggleSelect?.(droppableId, block?.id);
               }}
               onClick={(e) => e.stopPropagation()}
               className="w-4 h-4 rounded-full text-red-600 border border-gray-300 focus:ring-red-500 cursor-pointer shadow-sm appearance-none checked:bg-red-600 checked:border-transparent transition-all flex items-center justify-center relative bg-white/90"

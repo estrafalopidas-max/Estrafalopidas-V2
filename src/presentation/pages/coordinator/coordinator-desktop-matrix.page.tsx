@@ -36,7 +36,12 @@ import { AbsenceReviewPanel } from '../../components/maker-checker/AbsenceReview
 import { ConflictAlertModal } from '../../components/common/ConflictAlertModal';
 import { NoveltyTransitionModal } from '../../components/matrix/NoveltyTransitionModal';
 import { QuickAssignModal } from '../../components/matrix/QuickAssignModal';
+import { BatchActionQuickMenu } from '../../components/matrix/BatchActionQuickMenu';
 import { CellCoordData } from '../../components/matrix/MatrixCell';
+import {
+  resolveSelectedCellTargets,
+  applyBatchCellAssignment,
+} from '../../../domain/services/batch-cell-assignment.service';
 import { ensureSeedDataLoaded, generateSeedBlocks } from '../../../infrastructure/seed/initial-seed';
 import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 import { ALL_OFFICIAL_MATERIAS, getSubjectShortName, getSubjectOfficialName } from '../../../domain/constants/subjects';
@@ -944,6 +949,16 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     [timeBlocks]
   );
 
+  // Limpiar selección de celdas al cambiar de día o jornada
+  useEffect(() => {
+    setSelectedCellIds(new Set());
+  }, [selectedDay, selectedShift]);
+
+  // Sincronizar contexto global de casillas seleccionadas con el Set local
+  useEffect(() => {
+    setSelectedCells(Array.from(selectedCellIds));
+  }, [selectedCellIds, setSelectedCells]);
+
   // Motor de Selección Múltiple (State & Listeners)
   const handleCellClick = useCallback(
     (e: React.MouseEvent, data: CellCoordData) => {
@@ -951,8 +966,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       if (e.ctrlKey || e.metaKey) {
         setSelectedCellIds((prev) => {
           const next = new Set(prev);
-          if (next.has(data.slotId)) {
+          const blockId = data.block?.id;
+          const hadSlot = next.has(data.slotId) || Boolean(blockId && next.has(blockId));
+          if (hadSlot) {
             next.delete(data.slotId);
+            if (blockId) next.delete(blockId);
           } else {
             next.add(data.slotId);
           }
@@ -998,7 +1016,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         slotId: data.slotId,
       });
       // Si el usuario da clic directo en una celda sin Ctrl/Shift y no era parte del lote seleccionado, resetea la selección
-      if (selectedCellIds.size > 0 && !selectedCellIds.has(data.slotId)) {
+      if (selectedCellIds.size > 0 && !selectedCellIds.has(data.slotId) && !(data.block && selectedCellIds.has(data.block.id))) {
         setSelectedCellIds(new Set());
       }
     },
@@ -1125,19 +1143,186 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
   // Alternar selección de celda (Selector circular o atajos)
   const handleToggleSelectCell = useCallback(
-    (cellId: string) => {
-      toggleSelectedCell(cellId);
+    (cellId: string, blockId?: string) => {
       setSelectedCellIds((prev) => {
         const next = new Set(prev);
-        if (next.has(cellId)) {
+        const isCurrentlySelected =
+          next.has(cellId) || Boolean(blockId && next.has(blockId));
+        if (isCurrentlySelected) {
           next.delete(cellId);
+          if (blockId) next.delete(blockId);
         } else {
           next.add(cellId);
         }
         return next;
       });
     },
-    [toggleSelectedCell]
+    []
+  );
+
+  const handleClearBatchSelection = useCallback(() => {
+    setSelectedCellIds(new Set());
+    clearSelectedCells();
+  }, [clearSelectedCells]);
+
+  // Objetivos deduplicados de selección en lote para el día y jornada activos
+  const batchSelectedTargets = useMemo(() => {
+    const combinedIds = new Set([...selectedCells, ...Array.from(selectedCellIds)]);
+    if (combinedIds.size === 0) return [];
+    const { periods: allPeriods } = generateMatrixSchedule(
+      selectedShift,
+      isMeetingDay,
+      isEventDay,
+      activeScheduleType
+    );
+    return resolveSelectedCellTargets({
+      selectedIds: combinedIds,
+      timeBlocks,
+      grades: filteredGrades.length > 0 ? filteredGrades : grades,
+      dayOfWeek: selectedDay,
+      shift: selectedShift,
+      periods: allPeriods,
+      isMeetingDay,
+    });
+  }, [
+    selectedCells,
+    selectedCellIds,
+    selectedShift,
+    isMeetingDay,
+    isEventDay,
+    activeScheduleType,
+    timeBlocks,
+    filteredGrades,
+    grades,
+    selectedDay,
+  ]);
+
+  const handleBatchAssignTeacher = useCallback(
+    async (
+      teacher: UserEntity,
+      subjectOverride?: string | null,
+      overwriteSubject: boolean = true
+    ) => {
+      if (batchSelectedTargets.length === 0) return;
+
+      pushSnapshot();
+
+      const { nextBlocks, updatedBlocks } = applyBatchCellAssignment({
+        targets: batchSelectedTargets,
+        timeBlocks,
+        dayOfWeek: selectedDay,
+        shift: selectedShift,
+        teacher,
+        subject: subjectOverride || null,
+        preserveExistingSubjectWhenTeacherOnly: !overwriteSubject,
+      });
+
+      if (updatedBlocks.length === 0) return;
+
+      setTimeBlocks(nextBlocks);
+      handleClearBatchSelection();
+
+      try {
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
+        savePublicScheduleSnapshot(
+          nextBlocks,
+          teachers,
+          currentPeriod || '3° Periodo',
+          currentAcademicWeek || 8,
+          {
+            meetingDays,
+            eventDays,
+            customHolidays,
+            scheduleTypes,
+          }
+        );
+        await timeBlockRepo.updateBatch(
+          updatedBlocks.map((b) => ({ id: b.id, data: b }))
+        );
+        window.dispatchEvent(new Event('schedule_matrix_updated'));
+      } catch (err) {
+        console.error('[handleBatchAssignTeacher] Error persistiendo asignación en lote:', err);
+      }
+    },
+    [
+      batchSelectedTargets,
+      timeBlocks,
+      selectedDay,
+      selectedShift,
+      pushSnapshot,
+      handleClearBatchSelection,
+      teachers,
+      currentPeriod,
+      currentAcademicWeek,
+      meetingDays,
+      eventDays,
+      customHolidays,
+      scheduleTypes,
+      timeBlockRepo,
+    ]
+  );
+
+  const handleBatchAssignSubject = useCallback(
+    async (subject: string) => {
+      if (batchSelectedTargets.length === 0 || !subject.trim()) return;
+
+      pushSnapshot();
+
+      const { nextBlocks, updatedBlocks } = applyBatchCellAssignment({
+        targets: batchSelectedTargets,
+        timeBlocks,
+        dayOfWeek: selectedDay,
+        shift: selectedShift,
+        subject,
+      });
+
+      if (updatedBlocks.length === 0) return;
+
+      setTimeBlocks(nextBlocks);
+      handleClearBatchSelection();
+
+      try {
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
+        savePublicScheduleSnapshot(
+          nextBlocks,
+          teachers,
+          currentPeriod || '3° Periodo',
+          currentAcademicWeek || 8,
+          {
+            meetingDays,
+            eventDays,
+            customHolidays,
+            scheduleTypes,
+          }
+        );
+        await timeBlockRepo.updateBatch(
+          updatedBlocks.map((b) => ({ id: b.id, data: b }))
+        );
+        window.dispatchEvent(new Event('schedule_matrix_updated'));
+      } catch (err) {
+        console.error('[handleBatchAssignSubject] Error persistiendo asignatura en lote:', err);
+      }
+    },
+    [
+      batchSelectedTargets,
+      timeBlocks,
+      selectedDay,
+      selectedShift,
+      pushSnapshot,
+      handleClearBatchSelection,
+      teachers,
+      currentPeriod,
+      currentAcademicWeek,
+      meetingDays,
+      eventDays,
+      customHolidays,
+      scheduleTypes,
+      timeBlockRepo,
+    ]
   );
 
   // Mutación de Objeto (State Override & Procesamiento en Lote):
@@ -2001,6 +2186,18 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             onToggleSelect={handleToggleSelectCell}
           />
         </div>
+
+        {/* Menú de Acceso Rápido para Acciones en Lote (Asignar Docente o Materia a Múltiples Casillas) */}
+        <BatchActionQuickMenu
+          selectedCount={batchSelectedTargets.length}
+          teachers={teachers}
+          allBlocks={timeBlocks}
+          getTeacherColor={getTeacherColor}
+          onAssignTeacher={handleBatchAssignTeacher}
+          onAssignSubject={handleBatchAssignSubject}
+          onOpenBatchNovelty={handleBatchDeleteAction}
+          onClearSelection={handleClearBatchSelection}
+        />
 
         {/* Panel Lateral Flotante: Docentes Disponibles para Arrastrar (Right Drawer) */}
         <TeacherPoolSidebar

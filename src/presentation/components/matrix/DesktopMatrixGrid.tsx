@@ -384,7 +384,7 @@ export interface DesktopMatrixGridProps {
   onCellClick?: (e: React.MouseEvent, data: CellCoordData) => void;
   onTrashClick?: (block: TimeBlockEntity, slotId: string) => void;
   onEmptyClick?: (grade: GradeEntity, period: number, block: TimeBlockEntity | null, slotId: string) => void;
-  onToggleSelect?: (cellId: string) => void;
+  onToggleSelect?: (cellId: string, blockId?: string) => void;
 }
 
 export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
