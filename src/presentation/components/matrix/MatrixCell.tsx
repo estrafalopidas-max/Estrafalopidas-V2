@@ -364,7 +364,7 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
 
           {/* Inyección de Selector Circular (UI): Bloque inferior 40% en esquina bottom-1 right-1 */}
           <div
-            className="absolute bottom-1 right-1 z-20 flex items-center justify-center"
+            className="absolute bottom-1 right-1 z-10 flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
           >
             <input
@@ -420,7 +420,7 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
         >
           {/* Selector Circular (UI) para celda vacía */}
           <div
-            className="absolute bottom-1 right-1 z-20 flex items-center justify-center"
+            className="absolute bottom-1 right-1 z-10 flex items-center justify-center"
             onClick={(e) => e.stopPropagation()}
           >
             <input

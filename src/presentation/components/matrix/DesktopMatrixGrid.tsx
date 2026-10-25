@@ -807,16 +807,23 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
       : grade.defaultClassroomId;
 
     if (hasSupportPlanRooms) {
+      const level = getGradeLevelKey(grade);
+      const rawSupportRoom = SUPPORT_PLAN_GRADE_CLASSROOMS[level] || baseClassroom;
+      const cleanSupportRoom = rawSupportRoom.trim();
+      const supportClassroom = /^aula\b/i.test(cleanSupportRoom)
+        ? cleanSupportRoom
+        : `Aula ${cleanSupportRoom}`;
+
       return (
         <div
           key={grade.id}
-          className="py-2.5 px-2 border-r border-b border-slate-300 sticky top-9 z-20 bg-[#b8cce4] backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center"
+          className="py-2.5 px-2 border-r border-b border-slate-300 sticky top-9 z-30 bg-[#b8cce4] backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center"
         >
           <span className="text-lg font-black text-slate-900 tracking-tight leading-tight">
             {grade.fullName}
           </span>
           <span className="text-[11px] text-slate-600 font-semibold mt-0.5 truncate block max-w-full">
-            {baseClassroom}
+            {supportClassroom}
           </span>
         </div>
       );
@@ -825,7 +832,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     return (
       <div
         key={grade.id}
-        className="py-2.5 px-2 border-r border-b border-slate-200 sticky top-0 z-20 bg-slate-100/95 backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center"
+        className="py-2.5 px-2 border-r border-b border-slate-200 sticky top-0 z-30 bg-slate-100/95 backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center"
       >
         <span className="text-lg font-bold text-gray-900 tracking-tight leading-tight">
           {grade.fullName}
