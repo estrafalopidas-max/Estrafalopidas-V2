@@ -740,17 +740,17 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     );
   }
 
-  const renderCornerHeaderCell = (isFirstCol: boolean, keySuffix: string) => (
+  const renderCornerHeaderCell = (isFirstCol: boolean, keySuffix: string, isInlineRegularHeader: boolean = false) => (
     <div
       key={`corner-header-${keySuffix}`}
       className={`w-36 min-w-[8.5rem] max-w-[8.5rem] sticky ${
-        hasSupportPlanRooms ? 'top-9' : 'top-0'
-      } ${
-        isFirstCol ? 'left-0 z-40' : 'z-20'
+        isInlineRegularHeader
+          ? 'left-0 z-30 border-t-2 border-t-slate-300'
+          : `${hasSupportPlanRooms ? 'top-9' : 'top-0'} ${isFirstCol ? 'left-0 z-40' : 'z-20'}`
       } backdrop-blur-xs border-r border-b shadow-xs flex flex-col justify-center items-center text-center p-2 transition-colors ${
         isHoliday
           ? 'bg-red-600 text-white font-bold border-red-700'
-          : hasSupportPlanRooms
+          : hasSupportPlanRooms && !isInlineRegularHeader
           ? 'bg-slate-200/95 border-slate-300'
           : 'bg-slate-200/95 border-gray-300'
       }`}
@@ -796,7 +796,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     </div>
   );
 
-  const renderGradeHeaderCell = (grade: GradeEntity) => {
+  const renderGradeHeaderCell = (grade: GradeEntity, isInlineRegularHeader: boolean = false) => {
     const isT1 = grade.id === 'g-trans-1' || grade.fullName === 'Transición 1';
     const isT2 = grade.id === 'g-trans-2' || grade.fullName === 'Transición 2';
     const baseClassroom = !grade.defaultClassroomId
@@ -806,7 +806,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
       ? 'Aula (ROTACIÓN)'
       : grade.defaultClassroomId;
 
-    if (hasSupportPlanRooms) {
+    if (hasSupportPlanRooms && !isInlineRegularHeader) {
       const level = getGradeLevelKey(grade);
       const rawSupportRoom = SUPPORT_PLAN_GRADE_CLASSROOMS[level] || baseClassroom;
       const cleanSupportRoom = rawSupportRoom.trim();
@@ -831,8 +831,10 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
 
     return (
       <div
-        key={grade.id}
-        className="py-2.5 px-2 border-r border-b border-slate-200 sticky top-0 z-30 bg-slate-100/95 backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center"
+        key={isInlineRegularHeader ? `${grade.id}-inline-regular` : grade.id}
+        className={`py-2.5 px-2 border-r border-b border-slate-200 ${
+          isInlineRegularHeader ? 'border-t-2 border-t-slate-300' : 'sticky top-0 z-30'
+        } bg-slate-100/95 backdrop-blur-xs shadow-2xs flex flex-col items-center justify-center text-center`}
       >
         <span className="text-lg font-bold text-gray-900 tracking-tight leading-tight">
           {grade.fullName}
@@ -1147,6 +1149,14 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
 
           return (
             <React.Fragment key={p.period}>
+              {/* Transición a aulas regulares (distribución de Horario A conservando descripción de Horario D) después de 7:40 - 8:10 */}
+              {hasSupportPlanRooms && p.period === 1 && (
+                <>
+                  {renderCornerHeaderCell(true, 'inline-regular', true)}
+                  {grades.map((grade) => renderGradeHeaderCell(grade, true))}
+                </>
+              )}
+
               {/* Sticky First Column: Period & Hour (z-30) */}
               <div
                 className={`w-36 min-w-[8.5rem] max-w-[8.5rem] sticky left-0 z-30 border-r border-b shadow-xs flex flex-col justify-center items-center text-center p-2 transition-colors ${
