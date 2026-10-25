@@ -5,6 +5,7 @@ import {
   applyBatchCellAssignment,
   resolveTeacherDefaultSubject,
   upsertSingleTimeBlock,
+  buildSlotEditUpdatePayload,
 } from './batch-cell-assignment.service';
 import { createSlotDroppableId } from './dnd-slot.helper';
 import { GradeEntity } from '../entities/grade.entity';
@@ -276,4 +277,45 @@ test('upsertSingleTimeBlock updates only the targeted block in place or appends 
   assert.strictEqual(appended[1], eventOnB);
   assert.strictEqual(appended[2], eventOnNewSlot);
 });
+
+test('buildSlotEditUpdatePayload converts an active institutional novelty cell into a regular class with the assigned subject and teacher', () => {
+  const noveltyBlock: TimeBlockEntity = {
+    id: 'tb-g-601-lunes-p2',
+    block_type: 'novelty',
+    dayOfWeek: 'lunes',
+    period: 2,
+    startTime: '07:05',
+    endTime: '08:00',
+    shift: 'morning',
+    gradeId: 'g-601',
+    gradeName: '6°1',
+    subject: 'Acto cívico',
+    teacherId: 'evento-institucional',
+    teacherName: 'Acto cívico',
+    classroomId: 'Aula 303',
+    classroomName: 'Aula 303',
+    status: 'regular',
+    motivo_novedad: 'Acto cívico',
+    notes: 'Evento institucional programado: Acto cívico',
+    updatedAt: '2026-10-25T10:00:00.000Z',
+  };
+
+  const edited = buildSlotEditUpdatePayload({
+    block: noveltyBlock,
+    subject: 'Biología',
+    teacherId: SAMPLE_TEACHER.id,
+    classroomName: 'Aula 303',
+    teachers: [SAMPLE_TEACHER],
+    nowIso: '2026-10-25T12:00:00.000Z',
+  });
+
+  assert.equal(edited.block_type, 'class');
+  assert.equal(edited.subject, 'Biología');
+  assert.equal(edited.teacherId, SAMPLE_TEACHER.id);
+  assert.equal(edited.teacherName, SAMPLE_TEACHER.displayName);
+  assert.equal(edited.motivo_novedad, null);
+  assert.equal(edited.notes, null);
+  assert.equal(edited.status, 'regular');
+});
+
 

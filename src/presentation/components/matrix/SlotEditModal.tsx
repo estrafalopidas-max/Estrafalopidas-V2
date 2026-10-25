@@ -1,9 +1,14 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { X, Save, BookOpen, User, MapPin } from 'lucide-react';
 import { TimeBlockEntity } from '../../../domain/entities/time-block.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { ClassroomEntity } from '../../../domain/entities/classroom.entity';
-import { ALL_OFFICIAL_MATERIAS } from '../../../domain/constants/subjects';
+import { ALL_OFFICIAL_MATERIAS, findOfficialSubject } from '../../../domain/constants/subjects';
+import {
+  buildSlotEditUpdatePayload,
+  resolveTeacherDefaultSubject,
+} from '../../../domain/services/batch-cell-assignment.service';
+import { isLowPriorityListingTeacher } from '../../../domain/services/teacher-visual-identity.service';
 
 export interface SlotEditModalProps {
   isOpen: boolean;
@@ -28,31 +33,101 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
   const [classroomName, setClassroomName] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const sortedTeachers = useMemo(() => {
+    return [...teachers]
+      .filter((t) => t.role === 'teacher' && t.isActive !== false)
+      .sort((a, b) => {
+        const lowA = isLowPriorityListingTeacher(a) ? 1 : 0;
+        const lowB = isLowPriorityListingTeacher(b) ? 1 : 0;
+        if (lowA !== lowB) return lowA - lowB;
+        const nameA = a.displayName || (a as any).fullName || '';
+        const nameB = b.displayName || (b as any).fullName || '';
+        return nameA.localeCompare(nameB);
+      });
+  }, [teachers]);
+
   useEffect(() => {
     if (block) {
-      setSubject(block.subject || '');
-      setTeacherId(block.teacherId || '');
+      const isNoveltyBlock = Boolean(
+        block.block_type === 'novelty' ||
+          block.motivo_novedad ||
+          block.teacherId === 'evento-institucional' ||
+          (block.notes && block.notes.toLowerCase().includes('novedad')) ||
+          (block.subject && block.subject.toUpperCase().startsWith('NOVEDAD'))
+      );
+
+      const isInstitutionalEventSubject =
+        isNoveltyBlock &&
+        (block.teacherId === 'evento-institucional' ||
+          (block.motivo_novedad &&
+            block.subject &&
+            block.subject.trim().toLowerCase() === block.motivo_novedad.trim().toLowerCase()));
+
+      const matchedSubject = !isInstitutionalEventSubject
+        ? findOfficialSubject(block.subject)
+        : undefined;
+
+      setSubject(matchedSubject ? matchedSubject.shortName : '');
+
+      const hasValidTeacher =
+        Boolean(block.teacherId) &&
+        block.teacherId !== 'unassigned' &&
+        block.teacherId !== 'evento-institucional' &&
+        teachers.some((t) => t.id === block.teacherId);
+
+      setTeacherId(hasValidTeacher ? block.teacherId : '');
       setClassroomName(block.classroomName || '');
     }
-  }, [block, isOpen]);
+  }, [block, isOpen, teachers]);
 
   if (!isOpen || !block) return null;
+
+  const handleTeacherChange = (nextTeacherId: string) => {
+    setTeacherId(nextTeacherId);
+    if (!subject && nextTeacherId) {
+      const foundTeacher = teachers.find((t) => t.id === nextTeacherId);
+      if (foundTeacher) {
+        const defaultOfficial = resolveTeacherDefaultSubject(foundTeacher);
+        const matched = findOfficialSubject(defaultOfficial);
+        if (matched) {
+          setSubject(matched.shortName);
+        }
+      }
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
-      const selectedTeacher = teachers.find((t) => t.id === teacherId);
-      await onSave({
-        blockId: block.id,
+      const updatedBlock = buildSlotEditUpdatePayload({
+        block,
         subject,
-        teacherId: selectedTeacher?.id || teacherId,
-        teacherName: selectedTeacher?.displayName || block.teacherName,
-        classroomId: block.classroomId,
-        classroomName: classroomName || block.classroomName,
-        dayOfWeek: block.dayOfWeek,
-        period: block.period,
-        gradeId: block.gradeId,
+        teacherId,
+        classroomName,
+        teachers,
+      });
+
+      await onSave({
+        blockId: updatedBlock.id,
+        block_type: updatedBlock.block_type,
+        subject: updatedBlock.subject,
+        teacherId: updatedBlock.teacherId,
+        teacherName: updatedBlock.teacherName,
+        classroomId: updatedBlock.classroomId,
+        classroomName: updatedBlock.classroomName,
+        dayOfWeek: updatedBlock.dayOfWeek,
+        period: updatedBlock.period,
+        shift: updatedBlock.shift,
+        startTime: updatedBlock.startTime,
+        endTime: updatedBlock.endTime,
+        gradeId: updatedBlock.gradeId,
+        gradeName: updatedBlock.gradeName,
+        status: updatedBlock.status,
+        replacementTeacherId: null,
+        replacementTeacherName: null,
+        motivo_novedad: null,
+        notes: null,
       });
       onClose();
     } finally {
@@ -112,11 +187,11 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
             </label>
             <select
               value={teacherId}
-              onChange={(e) => setTeacherId(e.target.value)}
+              onChange={(e) => handleTeacherChange(e.target.value)}
               className="w-full px-3 py-2 border border-slate-300 rounded-xl"
             >
               <option value="">Seleccionar docente...</option>
-              {teachers.map((t) => (
+              {sortedTeachers.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.displayName}
                 </option>
@@ -166,3 +241,4 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
     </div>
   );
 };
+

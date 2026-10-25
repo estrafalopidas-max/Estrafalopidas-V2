@@ -550,7 +550,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const handleSaveSlot = async (updates: any) => {
     pushSnapshot();
     try {
-      await updateSlotUseCase.execute(updates);
+      const updatedBlock = await updateSlotUseCase.execute(updates);
+      setTimeBlocks((prev) => upsertSingleTimeBlock(prev, updatedBlock));
     } catch (err: any) {
       if (err instanceof ConstraintCollisionError) {
         setActiveConflict(err.validation);

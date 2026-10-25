@@ -40,35 +40,36 @@ export class ConstraintSolverService {
     },
     excludeBlockId?: string
   ): CollisionValidationResult {
-    // Filtrar bloques del mismo día, periodo y jornada (excluyendo el bloque en edición)
+    // Filtrar bloques del mismo día, periodo y jornada (excluyendo el bloque en edición y celdas sin clase activa)
     const concurrentBlocks = existingBlocks.filter(
       (b) =>
         b.id !== excludeBlockId &&
         b.id !== candidate.id &&
+        !(
+          candidate.gradeId &&
+          b.gradeId === candidate.gradeId &&
+          b.dayOfWeek === candidate.dayOfWeek &&
+          b.period === candidate.period
+        ) &&
         b.dayOfWeek === candidate.dayOfWeek &&
         b.period === candidate.period &&
         b.shift === candidate.shift &&
-        b.status !== 'cancelled'
+        b.status !== 'cancelled' &&
+        b.block_type !== 'exit' &&
+        b.block_type !== 'break' &&
+        b.block_type !== 'novelty' &&
+        !b.motivo_novedad &&
+        b.teacherId !== 'evento-institucional' &&
+        b.subject !== 'Sin asignación académica'
     );
 
-    // 1. REGLA CRÍTICA 1: Colisión de Aula
-    if (candidate.classroomId) {
-      const classroomCollision = concurrentBlocks.find(
-        (b) => b.classroomId === candidate.classroomId
-      );
-
-      if (classroomCollision) {
-        return {
-          isValid: false,
-          conflictType: 'classroom',
-          conflictingBlock: classroomCollision,
-          message: `¡Colisión de Aula detectada! El aula "${candidate.classroomName || candidate.classroomId}" ya está asignada al grupo "${classroomCollision.gradeName}" para la materia "${classroomCollision.subject}" en el Periodo ${candidate.period} (${candidate.dayOfWeek}).`,
-        };
-      }
-    }
-
-    // 2. REGLA CRÍTICA 2: Colisión de Docente (Double-booking y Horario de Entrada)
-    if (candidate.teacherId) {
+    // 1. REGLA CRÍTICA 1: Colisión de Docente (Double-booking y Horario de Entrada)
+    if (
+      candidate.teacherId &&
+      candidate.teacherId !== 'unassigned' &&
+      candidate.teacherId !== 'evento-institucional' &&
+      candidate.teacherName !== 'Sin Asignar'
+    ) {
       const presence = isTeacherPresentAtSlot(
         candidate.teacherId,
         candidate.teacherName,

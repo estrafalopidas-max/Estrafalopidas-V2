@@ -316,3 +316,92 @@ export function upsertSingleTimeBlock(
   return next;
 }
 
+export interface SlotEditInput {
+  block: TimeBlockEntity;
+  subject: string;
+  teacherId: string;
+  classroomName?: string;
+  teachers: UserEntity[];
+  nowIso?: string;
+}
+
+export function buildSlotEditUpdatePayload(input: SlotEditInput): TimeBlockEntity {
+  const {
+    block,
+    subject,
+    teacherId,
+    classroomName,
+    teachers,
+    nowIso = new Date().toISOString(),
+  } = input;
+
+  const isExistingNovelty = Boolean(
+    block.block_type === 'novelty' ||
+      block.motivo_novedad ||
+      block.teacherId === 'evento-institucional' ||
+      (block.notes && block.notes.toLowerCase().includes('novedad')) ||
+      (block.subject && block.subject.toUpperCase().startsWith('NOVEDAD'))
+  );
+
+  const selectedTeacher = teachers.find((t) => t.id === teacherId) || null;
+  const cleanSubject = (subject || '').trim();
+  const matchedSubject = cleanSubject ? findOfficialSubject(cleanSubject) : undefined;
+
+  let resolvedSubject = matchedSubject
+    ? matchedSubject.officialName
+    : cleanSubject;
+
+  if (!resolvedSubject) {
+    if (selectedTeacher) {
+      resolvedSubject = resolveTeacherDefaultSubject(selectedTeacher);
+    } else if (!isExistingNovelty && isRealAssignedSubject(block.subject)) {
+      resolvedSubject = block.subject;
+    } else {
+      resolvedSubject = ALL_OFFICIAL_MATERIAS[0]?.officialName || 'Matemáticas';
+    }
+  }
+
+  let resolvedTeacherId = 'unassigned';
+  let resolvedTeacherName = 'Sin Asignar';
+
+  if (selectedTeacher) {
+    resolvedTeacherId = selectedTeacher.id;
+    resolvedTeacherName =
+      selectedTeacher.displayName || (selectedTeacher as any).fullName || selectedTeacher.id;
+  } else if (
+    teacherId &&
+    teacherId !== 'unassigned' &&
+    teacherId !== 'evento-institucional' &&
+    !isExistingNovelty
+  ) {
+    resolvedTeacherId = teacherId;
+    resolvedTeacherName = block.teacherName || 'Sin Asignar';
+  }
+
+  const effectiveClassroom = resolveEffectiveClassroomForBlock({
+    gradeId: block.gradeId,
+    gradeName: block.gradeName,
+    period: block.period,
+    subject: resolvedSubject,
+    classroomName: (classroomName || '').trim() || block.classroomName || 'Aula Base',
+  });
+
+  return {
+    ...block,
+    id: block.id,
+    block_type: 'class',
+    subject: resolvedSubject,
+    teacherId: resolvedTeacherId,
+    teacherName: resolvedTeacherName,
+    classroomId: effectiveClassroom,
+    classroomName: effectiveClassroom,
+    status: 'regular',
+    replacementTeacherId: null,
+    replacementTeacherName: null,
+    motivo_novedad: null,
+    notes: null,
+    updatedAt: nowIso,
+  };
+}
+
+
