@@ -3,6 +3,7 @@ import { calculateLuminanceContrast } from './teacher-color.service';
 import { toTitleCase, getShortTeacherName } from './teacher-visual-identity.service';
 import { getTeacherExcelIdentity, resolveOfficialTeacherEntry } from './teacher-normalization.service';
 import { getFirstAndLastNameInitials } from './html-schedule-generator.service';
+import { resolveEffectiveClassroomForBlock } from './grade-normalization.service';
 
 export interface PdfSlotConfig {
   period: number;
@@ -683,11 +684,7 @@ export async function downloadScheduleAsPdf(options: PdfScheduleExportOptions): 
 
       ctx.fillStyle = '#6b7280';
       ctx.font = '500 9.5px ui-monospace, SFMono-Regular, Menlo, monospace';
-      const rawRoom = (b.classroomName || 'Aula Base').trim();
-      const displayRoom =
-        rawRoom.toUpperCase() === 'AULA ROTA' || rawRoom.toUpperCase() === 'ROTA'
-          ? 'Aula (ROTACIÓN)'
-          : rawRoom;
+      const displayRoom = resolveEffectiveClassroomForBlock(b, scheduleType);
       ctx.fillText(displayRoom, cardX + cardW / 2, cardY + topH - 9);
 
       // Bottom 42%

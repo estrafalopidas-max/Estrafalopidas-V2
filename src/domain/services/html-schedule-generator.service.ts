@@ -4,7 +4,12 @@ import { toTitleCase, getShortTeacherName, getFullTeacherName } from './teacher-
 import { getTeacherExcelIdentity, resolveOfficialTeacherEntry } from './teacher-normalization.service';
 import { DEFAULT_LOGO_BASE64 } from './default-logo-base64';
 import { generateWeekHeaders } from './ChronologyEngine';
-import { resolveCanonicalGradeName, resolveCanonicalShift, normalizeTimeBlocksGrades } from './grade-normalization.service';
+import {
+  resolveCanonicalGradeName,
+  resolveCanonicalShift,
+  normalizeTimeBlocksGrades,
+  resolveEffectiveClassroomForBlock,
+} from './grade-normalization.service';
 
 export { DEFAULT_LOGO_BASE64 };
 
@@ -285,13 +290,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       teacherColor: colorHex,
       teacherInitials: initials,
       teacherTextColor: contrast,
-      classroom:
-        !b.classroomName
-          ? 'Aula Base'
-          : b.classroomName.trim().toUpperCase() === 'AULA ROTA' ||
-            b.classroomName.trim().toUpperCase() === 'ROTA'
-          ? 'Aula (ROTACIÓN)'
-          : b.classroomName,
+      classroom: resolveEffectiveClassroomForBlock(b),
       type: effectiveType,
       isNovelty,
       noveltyReason: noveltyReason || null,
@@ -1791,9 +1790,14 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
               html += '<div class="' + cardClass + '">';
               
               // 60% Top Block
+              const mRoom = grade.match(/^(\d+°?)/);
+              const lvlRoom = mRoom ? mRoom[1].replace('°','') + '°' : grade;
+              const effectiveCardClassroom = (slot.period >= 101 && slot.period <= 104)
+                ? (SUPPORT_ROOMS_MAP[lvlRoom] || b.classroom || 'Aula Base')
+                : (b.classroom || REGULAR_ROOMS_MAP[grade] || 'Aula Base');
               html += '<div class="admin-card-top">';
               html += '<span class="admin-card-subject" title="' + (b.subject || '') + '">' + (b.subject || 'Sin Asignatura') + '</span>';
-              html += '<span class="admin-card-classroom">' + (b.classroom || 'Aula Base') + '</span>';
+              html += '<span class="admin-card-classroom">' + effectiveCardClassroom + '</span>';
               if (isAbsent) {
                 html += '<span class="admin-badge-absent">Ausente</span>';
               } else if (isCovered) {

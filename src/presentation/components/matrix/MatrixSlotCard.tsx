@@ -25,6 +25,7 @@ import {
   EXCEL_TEACHERS_DICTIONARY,
 } from '../../../domain/services/teacher-visual-identity.service';
 import { reconcileSubjectWithCatalog } from '../../../domain/services/subject-normalization.service';
+import { resolveEffectiveClassroomForBlock } from '../../../domain/services/grade-normalization.service';
 import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 import { calculateLuminanceContrast } from '../../../domain/services/teacher-color.service';
 
@@ -375,12 +376,7 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
 
         {/* Aula en el centro (debajo de la materia) */}
         <span className="text-[10px] font-medium text-gray-500 font-mono mt-0.5 truncate block w-full leading-none">
-          {!timeBlock.classroomName
-            ? 'Aula Base'
-            : timeBlock.classroomName.trim().toUpperCase() === 'AULA ROTA' ||
-              timeBlock.classroomName.trim().toUpperCase() === 'ROTA'
-            ? 'Aula (ROTACIÓN)'
-            : timeBlock.classroomName}
+          {resolveEffectiveClassroomForBlock(timeBlock)}
         </span>
 
         {/* Badges de estado si aplica */}

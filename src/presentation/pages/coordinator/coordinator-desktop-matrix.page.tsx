@@ -19,6 +19,7 @@ import { ReviewAbsenceRequestUseCase } from '../../../application/use-cases/abse
 import { CollisionValidationResult } from '../../../domain/services/constraint-solver.service';
 import { getTeacherVisualIdentity } from '../../../domain/services/teacher-visual-identity.service';
 import { savePublicScheduleSnapshot } from '../../../domain/services/html-schedule-generator.service';
+import { resolveEffectiveClassroomForBlock } from '../../../domain/services/grade-normalization.service';
 import { publishScheduleToCloud } from '../../../infrastructure/firebase/firebase-client';
 
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
@@ -726,8 +727,14 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       (isTargetT2 && periodInfo?.secondaryTime ? periodInfo.secondaryTime : periodInfo?.time) ||
       (selectedShift === 'morning' ? '06:10 - 07:05' : isTargetT2 ? '12:30 - 13:20' : '07:00 - 07:50');
     const [startTime, endTime] = rawTimeRange.split(' - ');
-    const targetClassroomId = targetGrade.defaultClassroomId || draggedBlock?.classroomId || 'aula-base';
-    const targetClassroomName = targetGrade.defaultClassroomId || draggedBlock?.classroomName || 'Aula Base';
+    const resolvedTargetClassroom = resolveEffectiveClassroomForBlock({
+      gradeId: targetGrade.id,
+      gradeName: targetGrade.fullName,
+      period: targetSlot.period,
+      classroomName: targetGrade.defaultClassroomId || draggedBlock?.classroomName || 'Aula Base',
+    });
+    const targetClassroomId = resolvedTargetClassroom;
+    const targetClassroomName = resolvedTargetClassroom;
 
     // 5. SOLO TRAS VALIDAR: Snapshotting de historial Undo + Actualización Optimista + updateDoc en Firestore
     pushSnapshot();
@@ -1029,6 +1036,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
               '06:10 - 07:05'
             ).split(' - ');
             if (grade) {
+              const resolvedClassroom = resolveEffectiveClassroomForBlock({
+                gradeId: grade.id,
+                gradeName: grade.fullName,
+                period: parsed.period,
+                classroomName: grade.defaultClassroomId || 'Aula Base',
+              });
               batchBlocks.push({
                 id: `tb-${grade.id}-${selectedDay}-p${parsed.period}`,
                 block_type: 'class',
@@ -1042,8 +1055,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                 subject: 'Clase',
                 teacherId: 'unassigned',
                 teacherName: 'Sin Asignar',
-                classroomId: grade.defaultClassroomId || 'aula-base',
-                classroomName: grade.defaultClassroomId || 'Aula Base',
+                classroomId: resolvedClassroom,
+                classroomName: resolvedClassroom,
                 status: 'regular',
                 updatedAt: new Date().toISOString(),
               });
@@ -1315,6 +1328,13 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     const teacherName =
       data.teacher.displayName || (data.teacher as any).fullName || data.teacher.id;
 
+    const resolvedQuickClassroom = resolveEffectiveClassroomForBlock({
+      gradeId: data.grade.id,
+      gradeName: data.grade.fullName,
+      period: data.period,
+      classroomName: data.grade.defaultClassroomId || 'Aula Base',
+    });
+
     const newBlock: TimeBlockEntity = {
       id: blockId,
       block_type: 'class',
@@ -1328,8 +1348,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       subject: data.subject,
       teacherId: data.teacher.id,
       teacherName: teacherName,
-      classroomId: data.grade.defaultClassroomId || 'aula-base',
-      classroomName: data.grade.defaultClassroomId || 'Aula Base',
+      classroomId: resolvedQuickClassroom,
+      classroomName: resolvedQuickClassroom,
       status: 'regular',
       motivo_novedad: null,
       notes: null,
@@ -1383,6 +1403,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     startTime: string;
     endTime: string;
   }) => {
+    if (isSupportPlanDay) return;
     // Snapshotting previo para Undo
     pushSnapshot();
 
@@ -2047,6 +2068,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         allBlocks={timeBlocks}
         teachers={teachers}
         officialSubjects={officialSubjects}
+        disableInstitutionalEvents={isSupportPlanDay}
         onAssign={handleQuickAssignConfirm}
         onAssignInstitutionalEvent={handleAssignInstitutionalEvent}
       />

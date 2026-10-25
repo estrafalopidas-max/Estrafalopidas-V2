@@ -133,6 +133,85 @@ export function resolveCanonicalShift(
   return 'morning';
 }
 
+export const SUPPORT_PLAN_GRADE_CLASSROOMS: Record<string, string> = {
+  '6°': 'Aula 303',
+  '7°': 'Aula 201',
+  '8°': 'Aula 103',
+  '9°': 'Aula 301',
+  '10°': 'Aula 202',
+  '11°': 'Aula 102',
+};
+
+export const REGULAR_GRADE_CLASSROOMS: Record<string, string> = {
+  '6°1': 'Aula 303',
+  '6°2': 'Aula 402',
+  '7°1': 'Aula 202',
+  '7°2': 'Aula 304',
+  '8°1': 'Aula 401',
+  '8°2': 'Aula 302',
+  '9°1': 'Aula (ROTACIÓN)',
+  '9°2': 'Aula 301',
+  '10°1': 'Aula 201',
+  '10°2': 'Aula 102',
+  '11°1': 'Aula 103',
+  '11°2': 'Aula 305',
+  '1.1': 'Aula 102',
+  '1.2': 'Aula 103',
+  '2.1': 'Aula 402',
+  '2.2': 'Aula 401',
+  '3.1': 'Aula 301',
+  '3.2': 'Aula 302',
+  '3.3': 'Aula 303',
+  '4.1': 'Aula 305',
+  '4.2': 'Aula 304',
+  '5.1': 'Aula 201',
+  '5.2': 'Aula 202',
+  'Transición 1': 'Aula P-102',
+  'Transición 2': 'Aula P-101',
+};
+
+/**
+ * Resolves the classroom label for a given grade and period.
+ * During Support Plan periods (101-104), returns the support plan classroom from the top header row
+ * (e.g. 6°1 and 6°2 -> Aula 303, 7°1 and 7°2 -> Aula 201, etc.).
+ * During regular periods (1-11), returns the regular classroom for that grade.
+ */
+export function resolveEffectiveClassroomForBlock(
+  block: Partial<TimeBlockEntity> | null | undefined,
+  scheduleType?: 'A' | 'B' | 'C' | 'D'
+): string {
+  if (!block) return 'Aula Base';
+
+  const canonicalGrade = resolveCanonicalGradeName(block);
+  const period = Number(block.period || 0);
+  const isSupportPlanPeriod = period >= 101 && period <= 104;
+
+  if (isSupportPlanPeriod || (scheduleType === 'D' && isSupportPlanPeriod)) {
+    const match = canonicalGrade.match(/^(\d+°?)/);
+    if (match) {
+      const level = `${match[1].replace('°', '')}°`;
+      if (SUPPORT_PLAN_GRADE_CLASSROOMS[level]) {
+        return SUPPORT_PLAN_GRADE_CLASSROOMS[level];
+      }
+    }
+  }
+
+  if (period >= 1 && period <= 11 && canonicalGrade && REGULAR_GRADE_CLASSROOMS[canonicalGrade]) {
+    if (!block.classroomName) {
+      return REGULAR_GRADE_CLASSROOMS[canonicalGrade];
+    }
+  }
+
+  const rawClassroom = (block.classroomName || '').trim();
+  if (!rawClassroom) {
+    return (canonicalGrade && REGULAR_GRADE_CLASSROOMS[canonicalGrade]) || 'Aula Base';
+  }
+  if (rawClassroom.toUpperCase() === 'AULA ROTA' || rawClassroom.toUpperCase() === 'ROTA') {
+    return 'Aula (ROTACIÓN)';
+  }
+  return rawClassroom;
+}
+
 /**
  * Normalizes an array of time blocks ensuring each block has its verified canonical gradeName and shift.
  */
@@ -141,11 +220,18 @@ export function normalizeTimeBlocksGrades(blocks: TimeBlockEntity[]): TimeBlockE
   return blocks.map((b) => {
     const canonical = resolveCanonicalGradeName(b);
     const canonicalShift = resolveCanonicalShift(b);
-    if ((canonical && b.gradeName !== canonical) || b.shift !== canonicalShift) {
+    const effectiveClassroom = resolveEffectiveClassroomForBlock(b);
+    if (
+      (canonical && b.gradeName !== canonical) ||
+      b.shift !== canonicalShift ||
+      (b.period >= 101 && b.period <= 104 && b.classroomName !== effectiveClassroom)
+    ) {
       return {
         ...b,
         gradeName: canonical || b.gradeName,
         shift: canonicalShift,
+        classroomId: b.period >= 101 && b.period <= 104 ? effectiveClassroom : b.classroomId,
+        classroomName: b.period >= 101 && b.period <= 104 ? effectiveClassroom : b.classroomName,
       };
     }
     return b;

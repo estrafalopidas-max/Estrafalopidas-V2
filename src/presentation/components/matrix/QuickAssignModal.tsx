@@ -107,6 +107,7 @@ export interface QuickAssignModalProps {
     startTime: string;
     endTime: string;
   }) => void;
+  disableInstitutionalEvents?: boolean;
 }
 
 export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
@@ -123,6 +124,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
   officialSubjects,
   onAssign,
   onAssignInstitutionalEvent,
+  disableInstitutionalEvents = false,
 }) => {
   const { getTeacherColor, officialSubjects: ctxSubjects } = useCoordinatorMatrix();
   const effectiveOfficialSubjects = officialSubjects || ctxSubjects || [];
@@ -169,6 +171,12 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
       }, 50);
     }
   }, [isOpen, grade, period]);
+
+  useEffect(() => {
+    if (disableInstitutionalEvents && activeTab === 'institutional') {
+      setActiveTab('academic');
+    }
+  }, [disableInstitutionalEvents, activeTab]);
 
   // Enfocar input personalizado al seleccionar 'Personalizada'
   useEffect(() => {
@@ -383,7 +391,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
 
   // Mutación Directa de Evento Institucional
   const handleConfirmInstitutionalEvent = (overrideEvent?: string) => {
-    if (!grade || period === null) return;
+    if (disableInstitutionalEvents || !grade || period === null) return;
     const finalEvent =
       overrideEvent ||
       (selectedEventType === 'Personalizada' ? customEventName.trim() : selectedEventType);
@@ -482,7 +490,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
             <button
               type="button"
               onClick={() => setActiveTab('academic')}
-              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold rounded-lg transition-all ${
+              className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold rounded-lg transition-all cursor-pointer ${
                 activeTab === 'academic'
                   ? 'bg-white text-blue-700 shadow-xs ring-1 ring-slate-900/5'
                   : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
@@ -493,11 +501,23 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
             </button>
             <button
               type="button"
-              onClick={() => setActiveTab('institutional')}
+              disabled={disableInstitutionalEvents}
+              onClick={() => {
+                if (!disableInstitutionalEvents) {
+                  setActiveTab('institutional');
+                }
+              }}
+              title={
+                disableInstitutionalEvents
+                  ? 'Opción deshabilitada en la modalidad Planes de apoyo'
+                  : 'Programar evento institucional'
+              }
               className={`flex-1 flex items-center justify-center gap-2 py-2 px-3 text-xs font-bold rounded-lg transition-all ${
-                activeTab === 'institutional'
-                  ? 'bg-white text-amber-700 shadow-xs ring-1 ring-slate-900/5'
-                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50'
+                disableInstitutionalEvents
+                  ? 'text-slate-400 bg-slate-200/50 opacity-50 cursor-not-allowed select-none'
+                  : activeTab === 'institutional'
+                  ? 'bg-white text-amber-700 shadow-xs ring-1 ring-slate-900/5 cursor-pointer'
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-white/50 cursor-pointer'
               }`}
             >
               <CalendarDays className="w-3.5 h-3.5" />
