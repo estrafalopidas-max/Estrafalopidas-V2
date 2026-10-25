@@ -1,7 +1,11 @@
 import { TimeBlockEntity, DayOfWeek } from '../entities/time-block.entity';
 import { GradeEntity, ShiftType } from '../entities/grade.entity';
 import { UserEntity } from '../entities/user.entity';
-import { getShortTeacherName, isTeacherPresentAtSlot } from './teacher-normalization.service';
+import {
+  getShortTeacherName,
+  isTeacherPresentAtSlot,
+  isLowPriorityListingTeacher,
+} from './teacher-normalization.service';
 import { resolveCanonicalShift, resolveCanonicalGradeName } from './grade-normalization.service';
 
 const DAYS_OF_WEEK: DayOfWeek[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
@@ -316,6 +320,10 @@ export function generateAutomaticScheduleDistribution(
               if (dirGradeA === grade.id && dirGradeB !== grade.id) return -1;
               if (dirGradeB === grade.id && dirGradeA !== grade.id) return 1;
             }
+
+            const lowA = isLowPriorityListingTeacher(a) ? 1 : 0;
+            const lowB = isLowPriorityListingTeacher(b) ? 1 : 0;
+            if (lowA !== lowB) return lowA - lowB;
 
             return a.id.localeCompare(b.id);
           });

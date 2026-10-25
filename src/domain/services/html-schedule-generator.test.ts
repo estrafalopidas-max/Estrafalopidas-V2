@@ -181,6 +181,23 @@ test('Official 34 teachers roster resolves shortName for cells, fullName for dir
   assert.equal(isTeacherPresentAtSlot('t-omar', 'Omar Mosquera', 'lunes', 1, 'morning').isPresent, false);
   assert.equal(isTeacherPresentAtSlot('t-omar', 'Omar Mosquera', 'miercoles', 3, 'morning').isPresent, false);
   assert.equal(isTeacherPresentAtSlot('t-omar', 'Omar Mosquera', 'lunes', 4, 'morning').isPresent, true);
+
+  // Alexander Uribe Montalvo must always appear in the last position of listings
+  const { sortTeachersWithLowPriorityLast } = await import('./teacher-normalization.service.ts');
+  assert.equal(
+    OFFICIAL_TEACHERS_ROSTER[OFFICIAL_TEACHERS_ROSTER.length - 1].id,
+    't-alexander',
+    'Alexander Uribe Montalvo must be the last entry in OFFICIAL_TEACHERS_ROSTER'
+  );
+  const sampleSorted = sortTeachersWithLowPriorityLast(
+    [
+      { id: 't-alexander', displayName: 'Alexander Uribe Montalvo' },
+      { id: 't-alejandro', displayName: 'Alejandro Ramírez Cañas' },
+      { id: 't-trans-1', displayName: 'Yessica Bolívar Bolívar' },
+    ],
+    (a, b) => (a.displayName || '').localeCompare(b.displayName || '')
+  );
+  assert.equal(sampleSorted[sampleSorted.length - 1].id, 't-alexander');
 });
 
 test('generateStandaloneScheduleHtml and savePublicScheduleSnapshot explicitly render Parrilla en blanco state when timeBlocks is empty', async () => {

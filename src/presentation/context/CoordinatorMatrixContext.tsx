@@ -2,7 +2,10 @@ import React, { createContext, useContext, useState, useCallback, useMemo, useRe
 import { ShiftType } from '../../domain/entities/grade.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { getTeacherVisualIdentity } from '../../domain/services/teacher-visual-identity.service';
-import { resolveOfficialTeacherEntry } from '../../domain/services/teacher-normalization.service';
+import {
+  resolveOfficialTeacherEntry,
+  sortTeachersWithLowPriorityLast,
+} from '../../domain/services/teacher-normalization.service';
 import { FirestoreUserRepository } from '../../infrastructure/repositories/firestore-user.repository';
 import { ensureSeedDataLoaded, SEED_TEACHERS } from '../../infrastructure/seed/initial-seed';
 import { ALL_OFFICIAL_MATERIAS } from '../../domain/constants/subjects';
@@ -193,12 +196,12 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       if (raw) {
         const parsed = JSON.parse(raw) as UserEntity[];
         const list = parsed.filter((u) => !u.role || u.role === 'teacher');
-        if (list.length > 0) return list;
+        if (list.length > 0) return sortTeachersWithLowPriorityLast(list);
       }
     } catch {
       // ignore
     }
-    return SEED_TEACHERS;
+    return sortTeachersWithLowPriorityLast(SEED_TEACHERS);
   });
   const [isTeacherModalOpen, setIsTeacherModalOpen] = useState(false);
   const [selectedTeacherForEdit, setSelectedTeacherForEdit] = useState<UserEntity | null>(null);

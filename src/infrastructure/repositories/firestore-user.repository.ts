@@ -1,6 +1,9 @@
 import { IUserRepository } from '../../domain/repositories/iuser.repository';
 import { UserEntity, UserRole } from '../../domain/entities/user.entity';
-import { getTeacherExcelIdentity } from '../../domain/services/teacher-normalization.service';
+import {
+  getTeacherExcelIdentity,
+  sortTeachersWithLowPriorityLast,
+} from '../../domain/services/teacher-normalization.service';
 
 const LS_BACKUP_KEY = 'ievf_users_v1';
 
@@ -32,9 +35,9 @@ export class FirestoreUserRepository implements IUserRepository {
     const raw = localStorage.getItem(LS_BACKUP_KEY);
     if (!raw) return [];
     const parsed: UserEntity[] = JSON.parse(raw);
-    return parsed
-      .filter((u) => !isRemovedTeacher(u))
-      .map(normalizeUserRecord);
+    return sortTeachersWithLowPriorityLast(
+      parsed.filter((u) => !isRemovedTeacher(u)).map(normalizeUserRecord)
+    );
   }
 
   async getTeachers(): Promise<UserEntity[]> {
@@ -107,8 +110,8 @@ export class FirestoreUserRepository implements IUserRepository {
     const raw = localStorage.getItem(LS_BACKUP_KEY);
     if (!raw) return [];
     const parsed: UserEntity[] = JSON.parse(raw);
-    return parsed
-      .filter((u) => !isRemovedTeacher(u))
-      .map(normalizeUserRecord);
+    return sortTeachersWithLowPriorityLast(
+      parsed.filter((u) => !isRemovedTeacher(u)).map(normalizeUserRecord)
+    );
   }
 }

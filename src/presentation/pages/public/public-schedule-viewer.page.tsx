@@ -28,7 +28,10 @@ import { UserEntity } from '../../../domain/entities/user.entity';
 import { getTodayDayOfWeek } from '../../../domain/services/ChronologyEngine';
 import { normalizeTimeBlocksGrades, resolveCanonicalShift } from '../../../domain/services/grade-normalization.service';
 import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed';
-import { getTeacherExcelIdentity } from '../../../domain/services/teacher-normalization.service';
+import {
+  getTeacherExcelIdentity,
+  sortTeachersWithLowPriorityLast,
+} from '../../../domain/services/teacher-normalization.service';
 import { getFullTeacherName } from '../../../domain/services/teacher-visual-identity.service';
 
 const DAYS: { key: DayOfWeek; label: string }[] = [
@@ -378,7 +381,7 @@ export const PublicScheduleViewerPage: React.FC = () => {
   );
   const teachers = useMemo(() => {
     const rawList = snapshot?.teachers || [];
-    return rawList.map((t) => {
+    const mapped = rawList.map((t) => {
       const identity = getTeacherExcelIdentity(t.id, t.displayName);
       return {
         ...t,
@@ -386,6 +389,7 @@ export const PublicScheduleViewerPage: React.FC = () => {
         color: identity.color_hex || t.color || '#007DC5',
       };
     });
+    return sortTeachersWithLowPriorityLast(mapped);
   }, [snapshot?.teachers]);
   const dayConfigs = useMemo(
     () => resolveEffectiveDayConfigs(snapshot?.dayConfigs),

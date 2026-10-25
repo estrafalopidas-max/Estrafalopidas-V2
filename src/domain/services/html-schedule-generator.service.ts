@@ -1,7 +1,11 @@
 import { TimeBlockEntity, DayOfWeek, classifyBlockType } from '../entities/time-block.entity';
 import { calculateLuminanceContrast } from './teacher-color.service';
 import { toTitleCase, getShortTeacherName, getFullTeacherName } from './teacher-visual-identity.service';
-import { getTeacherExcelIdentity, resolveOfficialTeacherEntry } from './teacher-normalization.service';
+import {
+  getTeacherExcelIdentity,
+  resolveOfficialTeacherEntry,
+  sortTeachersWithLowPriorityLast,
+} from './teacher-normalization.service';
 import { DEFAULT_LOGO_BASE64 } from './default-logo-base64';
 import { generateWeekHeaders } from './ChronologyEngine';
 import {
@@ -305,11 +309,13 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     };
   });
 
-  const activeTeachers = teachers.filter(
-    (t) =>
-      t.id !== 't-adriana-mier' &&
-      !String(t.displayName || '').toLowerCase().includes('adriana mier') &&
-      !String(t.displayName || '').toLowerCase().includes('adriana luc')
+  const activeTeachers = sortTeachersWithLowPriorityLast(
+    teachers.filter(
+      (t) =>
+        t.id !== 't-adriana-mier' &&
+        !String(t.displayName || '').toLowerCase().includes('adriana mier') &&
+        !String(t.displayName || '').toLowerCase().includes('adriana luc')
+    )
   );
 
   const jsonSerialized = JSON.stringify(scheduleData).replace(/</g, '\\u003c');
@@ -2139,11 +2145,13 @@ export function savePublicScheduleSnapshot(
   const normalizedPeriod = !academicPeriod || academicPeriod === '3° Periodo' ? '3er Periodo' : academicPeriod;
   const normalizedWeek = !academicWeek || academicWeek === 8 ? 9 : academicWeek;
 
-  const activeTeachers = teachers.filter(
-    (t) =>
-      t.id !== 't-adriana-mier' &&
-      !String(t.displayName || '').toLowerCase().includes('adriana mier') &&
-      !String(t.displayName || '').toLowerCase().includes('adriana luc')
+  const activeTeachers = sortTeachersWithLowPriorityLast(
+    teachers.filter(
+      (t) =>
+        t.id !== 't-adriana-mier' &&
+        !String(t.displayName || '').toLowerCase().includes('adriana mier') &&
+        !String(t.displayName || '').toLowerCase().includes('adriana luc')
+    )
   );
 
   const snapshot: PublicScheduleSnapshot = {
@@ -2207,14 +2215,16 @@ export function getPublicScheduleSnapshot(): PublicScheduleSnapshot | null {
       const parsed = JSON.parse(raw) as PublicScheduleSnapshot;
       parsed.dayConfigs = resolveEffectiveDayConfigs(parsed.dayConfigs);
       if (Array.isArray(parsed.teachers)) {
-        parsed.teachers = parsed.teachers.map((t) => {
-          const identity = getTeacherExcelIdentity(t.id, t.displayName);
-          return {
-            ...t,
-            displayName: getFullTeacherName(t.id, t.displayName || ''),
-            color: identity.color_hex || t.color || '#007DC5',
-          };
-        });
+        parsed.teachers = sortTeachersWithLowPriorityLast(
+          parsed.teachers.map((t) => {
+            const identity = getTeacherExcelIdentity(t.id, t.displayName);
+            return {
+              ...t,
+              displayName: getFullTeacherName(t.id, t.displayName || ''),
+              color: identity.color_hex || t.color || '#007DC5',
+            };
+          })
+        );
       }
       return parsed;
     }

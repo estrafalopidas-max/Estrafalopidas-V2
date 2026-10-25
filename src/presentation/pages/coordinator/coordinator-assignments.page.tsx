@@ -4,7 +4,11 @@ import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 import { useTeacherLoad } from '../../hooks/useTeacherLoad';
 import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed';
 import { getFirstAndLastNameInitials, getContrastTextColor } from '../../components/matrix/MatrixSlotCard';
-import { getFullTeacherName, getShortTeacherName } from '../../../domain/services/teacher-visual-identity.service';
+import {
+  getFullTeacherName,
+  getShortTeacherName,
+  sortTeachersWithLowPriorityLast,
+} from '../../../domain/services/teacher-visual-identity.service';
 
 const normalizeText = (text: string): string =>
   (text || '')
@@ -51,22 +55,25 @@ export const CoordinatorAssignmentsPage: React.FC = () => {
 
   const filteredTeachers = useMemo(() => {
     const tokens = normalizeText(searchQuery).split(/\s+/).filter(Boolean);
-    if (tokens.length === 0) return teachers;
-    return teachers.filter((teacher) => {
-      const haystack = [
-        teacher.displayName || '',
-        teacher.shortName || '',
-        teacher.groupDirection || '',
-        teacher.documentId || '',
-        ...(teacher.subjects || []),
-        ...(teacher.specialty || []),
-        teacher.assignedSubject || '',
-        teacher.subject || '',
-      ]
-        .map(normalizeText)
-        .join(' ');
-      return tokens.every((tok) => haystack.includes(tok));
-    });
+    const baseList =
+      tokens.length === 0
+        ? teachers
+        : teachers.filter((teacher) => {
+            const haystack = [
+              teacher.displayName || '',
+              teacher.shortName || '',
+              teacher.groupDirection || '',
+              teacher.documentId || '',
+              ...(teacher.subjects || []),
+              ...(teacher.specialty || []),
+              teacher.assignedSubject || '',
+              teacher.subject || '',
+            ]
+              .map(normalizeText)
+              .join(' ');
+            return tokens.every((tok) => haystack.includes(tok));
+          });
+    return sortTeachersWithLowPriorityLast(baseList);
   }, [teachers, searchQuery]);
 
   return (

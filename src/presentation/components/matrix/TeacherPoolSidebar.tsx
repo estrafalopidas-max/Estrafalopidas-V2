@@ -5,7 +5,11 @@ import { TimeBlockEntity } from '../../../domain/entities/time-block.entity';
 import { useTeacherLoad } from '../../hooks/useTeacherLoad';
 import { getFirstAndLastNameInitials, getContrastTextColor } from './MatrixSlotCard';
 import { setGlobalActiveDraggedBlock } from './MatrixCell';
-import { getFullTeacherName, getShortTeacherName } from '../../../domain/services/teacher-visual-identity.service';
+import {
+  getFullTeacherName,
+  getShortTeacherName,
+  isLowPriorityListingTeacher,
+} from '../../../domain/services/teacher-visual-identity.service';
 import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 
 export interface TeacherPoolSidebarProps {
@@ -75,6 +79,9 @@ export const TeacherPoolSidebar: React.FC<TeacherPoolSidebarProps> = ({
       const isFullA = loadA.currentAssignedHours >= loadA.maxWeeklyHours ? 1 : 0;
       const isFullB = loadB.currentAssignedHours >= loadB.maxWeeklyHours ? 1 : 0;
       if (isFullA !== isFullB) return isFullA - isFullB;
+      const lowA = isLowPriorityListingTeacher(a) ? 1 : 0;
+      const lowB = isLowPriorityListingTeacher(b) ? 1 : 0;
+      if (lowA !== lowB) return lowA - lowB;
       return (a.displayName || '').localeCompare(b.displayName || '');
     });
   }, [teachers, search, getTeacherLoad]);

@@ -8,7 +8,11 @@ import {
   getFirstAndLastNameInitials,
   getContrastTextColor,
 } from './MatrixSlotCard';
-import { toTitleCase, isTeacherPresentAtSlot } from '../../../domain/services/teacher-visual-identity.service';
+import {
+  toTitleCase,
+  isTeacherPresentAtSlot,
+  isLowPriorityListingTeacher,
+} from '../../../domain/services/teacher-visual-identity.service';
 import { asignaturasOficiales, ALL_OFFICIAL_MATERIAS, findOfficialSubject } from '../../../domain/constants/subjects';
 import {
   X,
@@ -265,6 +269,9 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
         const aAvail = teacherAvailabilityMap.get(a.id)?.isAvailable ? 0 : 1;
         const bAvail = teacherAvailabilityMap.get(b.id)?.isAvailable ? 0 : 1;
         if (aAvail !== bAvail) return aAvail - bAvail;
+        const lowA = isLowPriorityListingTeacher(a) ? 1 : 0;
+        const lowB = isLowPriorityListingTeacher(b) ? 1 : 0;
+        if (lowA !== lowB) return lowA - lowB;
         const nameA = a.displayName || (a as any).fullName || '';
         const nameB = b.displayName || (b as any).fullName || '';
         return nameA.localeCompare(nameB);
@@ -290,6 +297,9 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
         const aAvail = teacherAvailabilityMap.get(a.id)?.isAvailable ? 0 : 1;
         const bAvail = teacherAvailabilityMap.get(b.id)?.isAvailable ? 0 : 1;
         if (aAvail !== bAvail) return aAvail - bAvail;
+        const lowA = isLowPriorityListingTeacher(a) ? 1 : 0;
+        const lowB = isLowPriorityListingTeacher(b) ? 1 : 0;
+        if (lowA !== lowB) return lowA - lowB;
         const nameA = a.displayName || (a as any).fullName || '';
         const nameB = b.displayName || (b as any).fullName || '';
         return nameA.localeCompare(nameB);

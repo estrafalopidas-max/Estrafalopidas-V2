@@ -375,20 +375,6 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     aliases: ['CAMILO', 'CAMILO TORRES'],
   },
   {
-    id: 't-alexander',
-    fullName: 'Alexander Uribe Montalvo',
-    shortName: 'Alexander Uribe',
-    pdfName: 'Uribe Montalvo Alexander',
-    groupDirection: 'Sin asignación',
-    colorHex: '#E879F9',
-    entrySchedule: {
-      defaultEntryTime: '09:25',
-      exceptions: { lunes: '06:10' },
-      label: 'Ingreso 9:25 a.m. (Lunes 6:10 a.m.)',
-    },
-    aliases: ['ALEXANDER', 'ALEX', 'ALEXANDER URIBE', 'ALEX URIBE', 't-alex', 'JAVIER', 't-javier'],
-  },
-  {
     id: 't-sara',
     fullName: 'Sara Casafus',
     shortName: 'Sara Casafus',
@@ -405,6 +391,20 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     groupDirection: 'Sin asignación',
     colorHex: '#A3E635',
     aliases: ['PAOLA', 't-paola'],
+  },
+  {
+    id: 't-alexander',
+    fullName: 'Alexander Uribe Montalvo',
+    shortName: 'Alexander Uribe',
+    pdfName: 'Uribe Montalvo Alexander',
+    groupDirection: 'Sin asignación',
+    colorHex: '#E879F9',
+    entrySchedule: {
+      defaultEntryTime: '09:25',
+      exceptions: { lunes: '06:10' },
+      label: 'Ingreso 9:25 a.m. (Lunes 6:10 a.m.)',
+    },
+    aliases: ['ALEXANDER', 'ALEX', 'ALEXANDER URIBE', 'ALEX URIBE', 't-alex', 'JAVIER', 't-javier'],
   },
 ];
 
@@ -511,6 +511,66 @@ export function isTeacherPresentAtSlot(
     };
   }
   return { isPresent: true, entryTime: dayEntryTime, label: schedule.label };
+}
+
+/**
+ * Checks whether a teacher should always be positioned at the end of teacher listings
+ * (specifically Alexander Uribe Montalvo).
+ */
+export function isLowPriorityListingTeacher(
+  teacherOrIdOrName:
+    | {
+        id?: string | null;
+        displayName?: string | null;
+        fullName?: string | null;
+        shortName?: string | null;
+        name?: string | null;
+      }
+    | string
+    | null
+    | undefined
+): boolean {
+  if (!teacherOrIdOrName) return false;
+  if (typeof teacherOrIdOrName === 'string') {
+    const entry = resolveOfficialTeacherEntry(teacherOrIdOrName, teacherOrIdOrName);
+    if (entry?.id === 't-alexander') return true;
+    const norm = normalizeKey(teacherOrIdOrName);
+    return norm.includes('ALEXANDER URIBE') || norm.includes('URIBE MONTALVO');
+  }
+  const idVal = (teacherOrIdOrName.id || '').trim();
+  const nameVal = (
+    teacherOrIdOrName.displayName ||
+    teacherOrIdOrName.fullName ||
+    teacherOrIdOrName.shortName ||
+    teacherOrIdOrName.name ||
+    ''
+  ).trim();
+  const entry = resolveOfficialTeacherEntry(idVal, nameVal);
+  if (entry?.id === 't-alexander') return true;
+  const norm = normalizeKey(`${idVal} ${nameVal}`);
+  return norm.includes('ALEXANDER URIBE') || norm.includes('URIBE MONTALVO') || idVal === 't-alexander';
+}
+
+/**
+ * Sorts a list of teachers ensuring that low-priority listing teachers (Alexander Uribe Montalvo)
+ * always appear at the very end of the list.
+ */
+export function sortTeachersWithLowPriorityLast<
+  T extends {
+    id?: string | null;
+    displayName?: string | null;
+    fullName?: string | null;
+    shortName?: string | null;
+    name?: string | null;
+  }
+>(teachers: T[], comparator?: (a: T, b: T) => number): T[] {
+  if (!Array.isArray(teachers)) return [];
+  return [...teachers].sort((a, b) => {
+    const lowA = isLowPriorityListingTeacher(a) ? 1 : 0;
+    const lowB = isLowPriorityListingTeacher(b) ? 1 : 0;
+    if (lowA !== lowB) return lowA - lowB;
+    return comparator ? comparator(a, b) : 0;
+  });
 }
 
 /**
