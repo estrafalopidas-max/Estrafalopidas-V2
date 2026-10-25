@@ -537,6 +537,40 @@ export const PublicScheduleViewerPage: React.FC = () => {
     '11°': 'Aula 102',
   };
 
+  const REGULAR_GRADE_CLASSROOMS: Record<string, string> = {
+    '6°1': 'Aula 303',
+    '6°2': 'Aula 402',
+    '7°1': 'Aula 202',
+    '7°2': 'Aula 304',
+    '8°1': 'Aula 401',
+    '8°2': 'Aula 302',
+    '9°1': 'Aula (ROTACIÓN)',
+    '9°2': 'Aula 301',
+    '10°1': 'Aula 201',
+    '10°2': 'Aula 102',
+    '11°1': 'Aula 103',
+    '11°2': 'Aula 305',
+    '1.1': 'Aula 102',
+    '1.2': 'Aula 103',
+    '2.1': 'Aula 402',
+    '2.2': 'Aula 401',
+    '3.1': 'Aula 301',
+    '3.2': 'Aula 302',
+    '3.3': 'Aula 303',
+    '4.1': 'Aula 305',
+    '4.2': 'Aula 304',
+    '5.1': 'Aula 201',
+    '5.2': 'Aula 202',
+    'Transición 1': 'Aula P-102',
+    'Transición 2': 'Aula P-101',
+  };
+
+  const getSupportRoomForGrade = (g: string): string => {
+    const match = g.match(/^(\d+°?)/);
+    const level = match ? `${match[1].replace('°', '')}°` : g;
+    return SUPPORT_PLAN_GRADE_CLASSROOMS[level] || REGULAR_GRADE_CLASSROOMS[g] || 'Aula Base';
+  };
+
   const isSupportPlanD = selectedShift === 'morning' && activeScheduleType === 'D' && !isMeetingDay;
 
   const supportPlanGroups = useMemo(() => {
@@ -1027,7 +1061,10 @@ export const PublicScheduleViewerPage: React.FC = () => {
                           key={g}
                           className="p-1.5 font-black text-slate-900 text-center border-r border-slate-300 last:border-r-0 bg-[#b8cce4] text-xs sm:text-sm"
                         >
-                          {g}
+                          <div>{g}</div>
+                          <div className="text-[10px] font-semibold text-slate-700 mt-0.5 truncate">
+                            {getSupportRoomForGrade(g)}
+                          </div>
                         </th>
                       ))}
                     </tr>
@@ -1063,6 +1100,11 @@ export const PublicScheduleViewerPage: React.FC = () => {
                             <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
                               {g}
                             </span>
+                            {REGULAR_GRADE_CLASSROOMS[g] && (
+                              <div className="text-[10px] font-medium text-slate-500 mt-0.5 truncate">
+                                {REGULAR_GRADE_CLASSROOMS[g]}
+                              </div>
+                            )}
                           </th>
                         ))}
                       </>
@@ -1258,71 +1300,95 @@ export const PublicScheduleViewerPage: React.FC = () => {
                   }
 
                   return (
-                    <tr key={`slot-${slot.period}`} className="hover:bg-slate-50/50 transition">
-                      {/* Columna Horaria Fija */}
-                      <td className="p-2 bg-slate-50/80 border-r border-slate-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                        <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
-                        <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                          <Clock className="w-3 h-3 text-slate-500 shrink-0" />
-                          <span className="whitespace-nowrap">{slot.time}</span>
-                        </div>
-                      </td>
+                    <React.Fragment key={`slot-group-${slot.period}`}>
+                      {isSupportPlanD && slot.period === 1 && (
+                        <tr className="bg-slate-50 border-y-2 border-slate-300">
+                          <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
+                            Horario {activeScheduleType}
+                          </th>
+                          {activeGrades.map((g) => (
+                            <th
+                              key={`inline-regular-${g}`}
+                              className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 bg-slate-50 truncate"
+                            >
+                              <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
+                                {g}
+                              </span>
+                              {REGULAR_GRADE_CLASSROOMS[g] && (
+                                <div className="text-[10px] font-medium text-slate-500 mt-0.5 truncate">
+                                  {REGULAR_GRADE_CLASSROOMS[g]}
+                                </div>
+                              )}
+                            </th>
+                          ))}
+                        </tr>
+                      )}
+                      <tr className="hover:bg-slate-50/50 transition">
+                        {/* Columna Horaria Fija */}
+                        <td className="p-2 bg-slate-50/80 border-r border-slate-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
+                          <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
+                          <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                            <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                            <span className="whitespace-nowrap">{slot.time}</span>
+                          </div>
+                        </td>
 
-                      {/* Celdas por Grado */}
-                      {activeGrades.map((grade) => {
-                        if (isHoliday) {
+                        {/* Celdas por Grado */}
+                        {activeGrades.map((grade) => {
+                          if (isHoliday) {
+                            return (
+                              <td
+                                key={`${slot.period}-${grade}`}
+                                className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden"
+                              >
+                                <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-center p-1.5 select-none space-y-0.5">
+                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                    Festivo
+                                  </span>
+                                  <span className="text-[9px] text-gray-400 font-medium leading-tight">
+                                    Sin actividad académica
+                                  </span>
+                                </div>
+                              </td>
+                            );
+                          }
+
+                          const cellBlocks = filteredBlocks.filter(
+                            (b) => b.period === slot.period && b.gradeName === grade
+                          );
+                          const isSeniorHigh = grade.startsWith('10') || grade.startsWith('11');
+                          const isBeyondRegularMorning =
+                            selectedShift === 'morning' && slot.period >= 7 && slot.period <= 11 && !isSeniorHigh;
+                          const primaryBlock =
+                            cellBlocks.length > 0
+                              ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]
+                              : null;
+
                           return (
                             <td
                               key={`${slot.period}-${grade}`}
                               className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden"
                             >
-                              <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-center p-1.5 select-none space-y-0.5">
-                                <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                  Festivo
-                                </span>
-                                <span className="text-[9px] text-gray-400 font-medium leading-tight">
-                                  Sin actividad académica
-                                </span>
-                              </div>
+                              {!primaryBlock ? (
+                                isBeyondRegularMorning ? (
+                                  <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-center p-1.5">
+                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                                      Fin de jornada
+                                    </span>
+                                  </div>
+                                ) : (
+                                  <MatrixSlotCard timeBlock={null} />
+                                )
+                              ) : (
+                                <div className="h-full max-h-[102px]">
+                                  <MatrixSlotCard key={primaryBlock.id} timeBlock={primaryBlock} />
+                                </div>
+                              )}
                             </td>
                           );
-                        }
-
-                        const cellBlocks = filteredBlocks.filter(
-                          (b) => b.period === slot.period && b.gradeName === grade
-                        );
-                        const isSeniorHigh = grade.startsWith('10') || grade.startsWith('11');
-                        const isBeyondRegularMorning =
-                          selectedShift === 'morning' && slot.period >= 7 && slot.period <= 11 && !isSeniorHigh;
-                        const primaryBlock =
-                          cellBlocks.length > 0
-                            ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]
-                            : null;
-
-                        return (
-                          <td
-                            key={`${slot.period}-${grade}`}
-                            className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden"
-                          >
-                            {!primaryBlock ? (
-                              isBeyondRegularMorning ? (
-                                <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-center p-1.5">
-                                  <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                                    Fin de jornada
-                                  </span>
-                                </div>
-                              ) : (
-                                <MatrixSlotCard timeBlock={null} />
-                              )
-                            ) : (
-                              <div className="h-full max-h-[102px]">
-                                <MatrixSlotCard key={primaryBlock.id} timeBlock={primaryBlock} />
-                              </div>
-                            )}
-                          </td>
-                        );
-                      })}
-                    </tr>
+                        })}
+                      </tr>
+                    </React.Fragment>
                   );
                 })}
               </tbody>

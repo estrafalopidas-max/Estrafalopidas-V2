@@ -1586,6 +1586,20 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         '10°': 'Aula 202',
         '11°': 'Aula 102',
       };
+      const REGULAR_ROOMS_MAP: Record<string, string> = {
+        '6°1': 'Aula 303',
+        '6°2': 'Aula 402',
+        '7°1': 'Aula 202',
+        '7°2': 'Aula 304',
+        '8°1': 'Aula 401',
+        '8°2': 'Aula 302',
+        '9°1': 'Aula (ROTACIÓN)',
+        '9°2': 'Aula 301',
+        '10°1': 'Aula 201',
+        '10°2': 'Aula 102',
+        '11°1': 'Aula 103',
+        '11°2': 'Aula 305',
+      };
 
       html += '<table class="schedule-table"><thead>';
       if (isTransicionShift) {
@@ -1621,14 +1635,18 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         html += '<tr>';
         html += '<th class="time-col-th">Horario ' + scheduleType + '</th>';
         gradesInFilter.forEach(g => {
-          html += '<th style="background-color: #b8cce4; color: #0f172a; font-weight: 900; font-size: 13px;">' + g + '</th>';
+          const m = g.match(/^(\d+°?)/);
+          const lvl = m ? m[1].replace('°','') + '°' : g;
+          const supportRoom = SUPPORT_ROOMS_MAP[lvl] || REGULAR_ROOMS_MAP[g] || 'Aula Base';
+          html += '<th style="background-color: #b8cce4; color: #0f172a; font-weight: 900; font-size: 13px;"><div>' + g + '</div><div style="font-size: 10px; font-weight: 700; color: #334155; margin-top: 2px;">' + supportRoom + '</div></th>';
         });
         html += '</tr>';
       } else {
         html += '<tr>';
         html += '<th class="time-col-th">Horario ' + scheduleType + '</th>';
         gradesInFilter.forEach(g => {
-          html += '<th>' + g + '</th>';
+          const regRoom = REGULAR_ROOMS_MAP[g] || '';
+          html += '<th><div>' + g + '</div>' + (regRoom ? '<div style="font-size: 10px; font-weight: 600; color: #cbd5e1; margin-top: 2px;">' + regRoom + '</div>' : '') + '</th>';
         });
         html += '</tr>';
       }
@@ -1689,6 +1707,22 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           html += '<div class="meeting-row-sub">' + slot.meetingDesc + '</div>';
           html += '</td></tr>';
           return;
+        }
+
+        if (isSupportPlanD && slot.period === 1) {
+          html += '<tr style="border-top: 2px solid #475569; border-bottom: 2px solid #475569;">';
+          html += '<th class="time-col-th" style="background-color: #1e293b; color: #ffffff; text-align: center; vertical-align: middle; padding: 8px 6px;">';
+          html += '<div style="font-size: 12px; font-weight: 800; text-transform: uppercase; letter-spacing: 0.05em;">Horario ' + scheduleType + '</div>';
+          html += '<div style="font-size: 10px; font-weight: 500; color: #cbd5e1; margin-top: 2px;">Planes de Apoyo</div>';
+          html += '</th>';
+          gradesInFilter.forEach(g => {
+            const regRoom = REGULAR_ROOMS_MAP[g] || 'Aula Base';
+            html += '<th style="background-color: #b8cce4; color: #0f172a; text-align: center; vertical-align: middle; padding: 6px 4px; border-right: 1px solid #94a3b8;">';
+            html += '<div style="font-size: 13px; font-weight: 900; line-height: 1.15;">' + g + '</div>';
+            html += '<div style="font-size: 10px; font-weight: 700; color: #1e293b; margin-top: 2px;">' + regRoom + '</div>';
+            html += '</th>';
+          });
+          html += '</tr>';
         }
 
         html += '<tr>';

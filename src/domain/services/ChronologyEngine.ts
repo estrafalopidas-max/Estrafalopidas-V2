@@ -229,7 +229,7 @@ export function getSupportPlanModalityLabel(
   overridePeriodText?: string
 ): string {
   if (overridePeriodText && overridePeriodText.toLowerCase().includes('anual')) {
-    return 'Planes de apoyo anuales';
+    return 'Planes de apoyo';
   }
 
   const d =
@@ -244,12 +244,12 @@ export function getSupportPlanModalityLabel(
   const lastPeriodEnd = new Date(`${lastPeriod.end}T23:59:59`).getTime();
 
   if (validDate.getTime() > lastPeriodEnd) {
-    return 'Planes de apoyo anuales';
+    return 'Planes de apoyo';
   }
 
   const weekData = getCurrentWeekText(validDate);
   if (weekData.periodNumber >= 3) {
-    return 'Planes de apoyo anuales';
+    return 'Planes de apoyo';
   }
 
   const suffix = getOrdinalSuffix(weekData.periodNumber);

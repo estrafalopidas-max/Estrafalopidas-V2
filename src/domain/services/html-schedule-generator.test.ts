@@ -217,22 +217,22 @@ test('getSupportPlanModalityLabel dynamically resolves period-specific and annua
   );
   assert.equal(
     getSupportPlanModalityLabel('2026-10-20'),
-    'Planes de apoyo anuales',
-    'Period 3 must resolve to Planes de apoyo anuales'
+    'Planes de apoyo',
+    'Period 3 must resolve to Planes de apoyo'
   );
   assert.equal(
     getSupportPlanModalityLabel('2026-12-03'),
-    'Planes de apoyo anuales',
-    'Year-end closure must resolve to Planes de apoyo anuales'
+    'Planes de apoyo',
+    'Year-end closure must resolve to Planes de apoyo'
   );
   assert.equal(
     getSupportPlanModalityLabel('2026-10-20', 'Anual'),
-    'Planes de apoyo anuales',
-    'Explicit annual override must resolve to Planes de apoyo anuales'
+    'Planes de apoyo',
+    'Explicit annual override must resolve to Planes de apoyo'
   );
 });
 
-test('generateStandaloneScheduleHtml renders grouped classrooms header for Horario D in Bachillerato', async () => {
+test('generateStandaloneScheduleHtml renders grouped classrooms header and intermediate regular rooms header for Horario D in Bachillerato', async () => {
   const { generateStandaloneScheduleHtml } = await import('./html-schedule-generator.service.ts');
   const html = generateStandaloneScheduleHtml({
     timeBlocks: [],
@@ -248,7 +248,8 @@ test('generateStandaloneScheduleHtml renders grouped classrooms header for Horar
   });
 
   assert.ok(html.includes('SUPPORT_ROOMS_MAP'), 'Must include SUPPORT_ROOMS_MAP in client script');
+  assert.ok(html.includes('REGULAR_ROOMS_MAP'), 'Must include REGULAR_ROOMS_MAP in client script');
   assert.ok(html.includes('>Aulas</th>'), 'Must render Aulas header cell in client script');
+  assert.ok(html.includes('if (isSupportPlanD && slot.period === 1)'), 'Must render intermediate regular rooms header before 1st period in Horario D');
 });
-
 
