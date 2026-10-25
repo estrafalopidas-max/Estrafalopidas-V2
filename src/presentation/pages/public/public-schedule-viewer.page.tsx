@@ -1040,7 +1040,7 @@ export const PublicScheduleViewerPage: React.FC = () => {
                   <>
                     <tr className="border-b border-slate-400">
                       <th className="p-2 font-extrabold text-white uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-500 bg-slate-700 text-center">
-                        Aulas
+                        Horario
                       </th>
                       {supportPlanGroups.map((grp, i) => (
                         <th

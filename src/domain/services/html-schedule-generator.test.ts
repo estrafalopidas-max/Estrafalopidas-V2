@@ -249,7 +249,7 @@ test('generateStandaloneScheduleHtml renders grouped classrooms header and inter
 
   assert.ok(html.includes('SUPPORT_ROOMS_MAP'), 'Must include SUPPORT_ROOMS_MAP in client script');
   assert.ok(html.includes('REGULAR_ROOMS_MAP'), 'Must include REGULAR_ROOMS_MAP in client script');
-  assert.ok(html.includes('>Aulas</th>'), 'Must render Aulas header cell in client script');
+  assert.ok(html.includes('>Horario</th>'), 'Must render Horario header cell in client script');
   assert.ok(html.includes('if (isSupportPlanD && slot.period === 1)'), 'Must render intermediate regular rooms header before 1st period in Horario D');
 });
 

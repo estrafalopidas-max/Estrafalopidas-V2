@@ -965,7 +965,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
         {hasSupportPlanRooms && (
           <React.Fragment key="salones-header-row">
             <div className="w-36 min-w-[8.5rem] max-w-[8.5rem] sticky top-0 left-0 z-40 h-9 bg-slate-700 text-white border-r border-b border-slate-500 font-extrabold text-xs flex items-center justify-center uppercase tracking-wider shadow-xs select-none">
-              Aulas
+              Horario
             </div>
             {supportPlanRoomGroups.map((grp, idx) => (
               <div
