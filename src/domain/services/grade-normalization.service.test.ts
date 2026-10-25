@@ -60,3 +60,46 @@ test('resolveEffectiveClassroomForBlock matches top header row in Planes de apoy
     'Aula 402'
   );
 });
+
+test('resolveEffectiveClassroomForBlock assigns dedicated classrooms for Media Técnica', () => {
+  assert.equal(
+    resolveEffectiveClassroomForBlock({
+      gradeId: 'g-1001',
+      gradeName: '10°1',
+      period: 8,
+      subject: 'MT-Bases de Datos',
+      classroomName: 'Aula 201',
+    }),
+    'Medellín Digital/Auditorio'
+  );
+  assert.equal(
+    resolveEffectiveClassroomForBlock({
+      gradeId: 'g-1101',
+      gradeName: '11°1',
+      period: 9,
+      subject: 'Media Técnica Bases de Datos',
+      classroomName: 'Aula 304',
+    }),
+    'Medellín Digital/Auditorio'
+  );
+  assert.equal(
+    resolveEffectiveClassroomForBlock({
+      gradeId: 'g-1002',
+      gradeName: '10°2',
+      period: 8,
+      subject: 'MT-Audiovisuales',
+      classroomName: 'Aula 202',
+    }),
+    'Nube/Auditorio'
+  );
+  assert.equal(
+    resolveEffectiveClassroomForBlock({
+      gradeId: 'g-1102',
+      gradeName: '11°2',
+      period: 10,
+      subject: 'Media Técnica Audiovisuales',
+      classroomName: 'Aula 305',
+    }),
+    'Nube/Auditorio'
+  );
+});

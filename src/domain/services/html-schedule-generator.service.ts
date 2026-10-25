@@ -1792,9 +1792,15 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
               // 60% Top Block
               const mRoom = grade.match(/^(\d+°?)/);
               const lvlRoom = mRoom ? mRoom[1].replace('°','') + '°' : grade;
-              const effectiveCardClassroom = (slot.period >= 101 && slot.period <= 104)
-                ? (SUPPORT_ROOMS_MAP[lvlRoom] || b.classroom || 'Aula Base')
-                : (b.classroom || REGULAR_ROOMS_MAP[grade] || 'Aula Base');
+              const subjNorm = String(b.subject || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+              const mtClassroom = subjNorm.indexOf('bases de datos') !== -1
+                ? 'Medellín Digital/Auditorio'
+                : (subjNorm.indexOf('audiovisuales') !== -1 ? 'Nube/Auditorio' : '');
+              const effectiveCardClassroom = mtClassroom
+                ? mtClassroom
+                : ((slot.period >= 101 && slot.period <= 104)
+                  ? (SUPPORT_ROOMS_MAP[lvlRoom] || b.classroom || 'Aula Base')
+                  : (b.classroom || REGULAR_ROOMS_MAP[grade] || 'Aula Base'));
               html += '<div class="admin-card-top">';
               html += '<span class="admin-card-subject" title="' + (b.subject || '') + '">' + (b.subject || 'Sin Asignatura') + '</span>';
               html += '<span class="admin-card-classroom">' + effectiveCardClassroom + '</span>';

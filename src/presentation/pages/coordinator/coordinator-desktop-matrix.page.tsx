@@ -731,6 +731,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       gradeId: targetGrade.id,
       gradeName: targetGrade.fullName,
       period: targetSlot.period,
+      subject: draggedBlock?.subject,
       classroomName: targetGrade.defaultClassroomId || draggedBlock?.classroomName || 'Aula Base',
     });
     const targetClassroomId = resolvedTargetClassroom;
@@ -1332,6 +1333,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       gradeId: data.grade.id,
       gradeName: data.grade.fullName,
       period: data.period,
+      subject: data.subject,
       classroomName: data.grade.defaultClassroomId || 'Aula Base',
     });
 

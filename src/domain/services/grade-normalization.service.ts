@@ -183,6 +183,27 @@ export function resolveEffectiveClassroomForBlock(
   if (!block) return 'Aula Base';
 
   const canonicalGrade = resolveCanonicalGradeName(block);
+  const rawSubject = (block.subject || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .trim();
+
+  if (rawSubject.includes('bases de datos')) {
+    return 'Medellín Digital/Auditorio';
+  }
+  if (rawSubject.includes('audiovisuales')) {
+    return 'Nube/Auditorio';
+  }
+  if (rawSubject === 'media tecnica' || rawSubject.startsWith('mt-')) {
+    if (canonicalGrade === '10°1' || canonicalGrade === '11°1') {
+      return 'Medellín Digital/Auditorio';
+    }
+    if (canonicalGrade === '10°2' || canonicalGrade === '11°2') {
+      return 'Nube/Auditorio';
+    }
+  }
+
   const period = Number(block.period || 0);
   const isSupportPlanPeriod = period >= 101 && period <= 104;
 
@@ -221,17 +242,22 @@ export function normalizeTimeBlocksGrades(blocks: TimeBlockEntity[]): TimeBlockE
     const canonical = resolveCanonicalGradeName(b);
     const canonicalShift = resolveCanonicalShift(b);
     const effectiveClassroom = resolveEffectiveClassroomForBlock(b);
+    const isMediaTecnicaRoom =
+      effectiveClassroom === 'Medellín Digital/Auditorio' || effectiveClassroom === 'Nube/Auditorio';
+    const shouldSyncClassroom =
+      ((b.period >= 101 && b.period <= 104) || isMediaTecnicaRoom) &&
+      b.classroomName !== effectiveClassroom;
     if (
       (canonical && b.gradeName !== canonical) ||
       b.shift !== canonicalShift ||
-      (b.period >= 101 && b.period <= 104 && b.classroomName !== effectiveClassroom)
+      shouldSyncClassroom
     ) {
       return {
         ...b,
         gradeName: canonical || b.gradeName,
         shift: canonicalShift,
-        classroomId: b.period >= 101 && b.period <= 104 ? effectiveClassroom : b.classroomId,
-        classroomName: b.period >= 101 && b.period <= 104 ? effectiveClassroom : b.classroomName,
+        classroomId: shouldSyncClassroom ? effectiveClassroom : b.classroomId,
+        classroomName: shouldSyncClassroom ? effectiveClassroom : b.classroomName,
       };
     }
     return b;
