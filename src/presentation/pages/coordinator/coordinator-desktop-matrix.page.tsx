@@ -41,6 +41,7 @@ import { CellCoordData } from '../../components/matrix/MatrixCell';
 import {
   resolveSelectedCellTargets,
   applyBatchCellAssignment,
+  upsertSingleTimeBlock,
 } from '../../../domain/services/batch-cell-assignment.service';
 import { ensureSeedDataLoaded, generateSeedBlocks } from '../../../infrastructure/seed/initial-seed';
 import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
@@ -1582,7 +1583,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     }
   };
 
-  // Asignación Directa de Eventos Institucionales en Celda Vacía (Mutación a Tarjeta de Advertencia de Alto Contraste)
   const handleAssignInstitutionalEvent = async (data: {
     eventName: string;
     grade: GradeEntity;
@@ -1591,11 +1591,17 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     endTime: string;
   }) => {
     if (isSupportPlanDay) return;
-    // Snapshotting previo para Undo
     pushSnapshot();
 
     const blockId =
       quickAssignTarget?.block?.id || `tb-${data.grade.id}-${selectedDay}-p${data.period}`;
+    const resolvedClassroom = resolveEffectiveClassroomForBlock({
+      gradeId: data.grade.id,
+      gradeName: data.grade.fullName,
+      period: data.period,
+      subject: data.eventName,
+      classroomName: data.grade.defaultClassroomId || 'Aula Base',
+    });
 
     const newBlock: TimeBlockEntity = {
       id: blockId,
@@ -1604,39 +1610,24 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       period: data.period,
       startTime: data.startTime,
       endTime: data.endTime,
-      shift: selectedShift,
+      shift: data.grade.shift || selectedShift,
       gradeId: data.grade.id,
       gradeName: data.grade.fullName,
       subject: data.eventName,
       teacherId: 'evento-institucional',
       teacherName: data.eventName,
-      classroomId: data.grade.defaultClassroomId || 'aula-base',
-      classroomName: data.grade.defaultClassroomId || 'Aula Base',
+      classroomId: resolvedClassroom,
+      classroomName: resolvedClassroom,
       status: 'regular',
       motivo_novedad: data.eventName,
       notes: `Evento institucional programado: ${data.eventName}`,
       updatedAt: new Date().toISOString(),
     };
 
-    let nextList: TimeBlockEntity[] = [];
-    setTimeBlocks((prev) => {
-      const exists = prev.some((b) => b.id === blockId);
-      nextList = exists ? prev.map((b) => (b.id === blockId ? newBlock : b)) : [...prev, newBlock];
-      return nextList;
-    });
-
+    setTimeBlocks((prev) => upsertSingleTimeBlock(prev, newBlock));
     setQuickAssignTarget(null);
 
     try {
-      localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextList));
-      localStorage.setItem('villaFloraMatrix', JSON.stringify(nextList));
-      window.dispatchEvent(new Event('schedule_matrix_updated'));
-      savePublicScheduleSnapshot(
-        nextList,
-        teachers,
-        currentPeriod,
-        currentAcademicWeek
-      );
       await timeBlockRepo.update(blockId, newBlock);
     } catch (err) {
       console.error('[handleAssignInstitutionalEvent] Error guardando evento institucional:', err);

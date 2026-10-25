@@ -296,3 +296,23 @@ export function applyBatchCellAssignment(input: BatchAssignmentInput): BatchAssi
     updatedBlocks,
   };
 }
+
+export function upsertSingleTimeBlock(
+  blocks: TimeBlockEntity[],
+  newBlock: TimeBlockEntity
+): TimeBlockEntity[] {
+  const idx = blocks.findIndex(
+    (b) =>
+      b.id === newBlock.id ||
+      (b.dayOfWeek === newBlock.dayOfWeek &&
+        b.gradeId === newBlock.gradeId &&
+        b.period === newBlock.period)
+  );
+  if (idx === -1) {
+    return [...blocks, newBlock];
+  }
+  const next = blocks.slice();
+  next[idx] = newBlock;
+  return next;
+}
+

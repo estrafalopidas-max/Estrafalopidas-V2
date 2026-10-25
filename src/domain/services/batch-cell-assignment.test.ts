@@ -4,6 +4,7 @@ import {
   resolveSelectedCellTargets,
   applyBatchCellAssignment,
   resolveTeacherDefaultSubject,
+  upsertSingleTimeBlock,
 } from './batch-cell-assignment.service';
 import { createSlotDroppableId } from './dnd-slot.helper';
 import { GradeEntity } from '../entities/grade.entity';
@@ -207,3 +208,72 @@ test('applyBatchCellAssignment assigns the same teacher across multiple cells an
   assert.equal(updatedBlocks[1].teacherId, 't-carlos');
   assert.equal(updatedBlocks[1].subject, resolveTeacherDefaultSubject(SAMPLE_TEACHER));
 });
+
+test('upsertSingleTimeBlock updates only the targeted block in place or appends without erasing other blocks', () => {
+  const blockA: TimeBlockEntity = {
+    id: 'tb-g-601-monday-p1',
+    block_type: 'class',
+    dayOfWeek: 'monday',
+    period: 1,
+    startTime: '06:10',
+    endTime: '07:05',
+    shift: 'morning',
+    gradeId: 'g-601',
+    gradeName: '6°1',
+    subject: 'Matemáticas',
+    teacherId: 't-1',
+    teacherName: 'Docente 1',
+    classroomId: 'Aula 303',
+    classroomName: 'Aula 303',
+    status: 'regular',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  const blockB: TimeBlockEntity = {
+    id: 'tb-g-602-monday-p1',
+    block_type: 'exit',
+    dayOfWeek: 'monday',
+    period: 1,
+    startTime: '06:10',
+    endTime: '07:05',
+    shift: 'morning',
+    gradeId: 'g-602',
+    gradeName: '6°2',
+    subject: 'Sin asignación académica',
+    teacherId: 'unassigned',
+    teacherName: 'Sin Asignar',
+    classroomId: 'Aula 402',
+    classroomName: 'Aula 402',
+    status: 'regular',
+    updatedAt: '2026-01-01T00:00:00.000Z',
+  };
+
+  const eventOnB: TimeBlockEntity = {
+    ...blockB,
+    block_type: 'novelty',
+    subject: 'Acto cívico',
+    teacherId: 'evento-institucional',
+    teacherName: 'Acto cívico',
+    motivo_novedad: 'Acto cívico',
+  };
+
+  const updated = upsertSingleTimeBlock([blockA, blockB], eventOnB);
+  assert.equal(updated.length, 2);
+  assert.strictEqual(updated[0], blockA);
+  assert.strictEqual(updated[1], eventOnB);
+
+  const eventOnNewSlot: TimeBlockEntity = {
+    ...eventOnB,
+    id: 'tb-g-1001-monday-p2',
+    gradeId: 'g-1001',
+    gradeName: '10°1',
+    period: 2,
+  };
+
+  const appended = upsertSingleTimeBlock(updated, eventOnNewSlot);
+  assert.equal(appended.length, 3);
+  assert.strictEqual(appended[0], blockA);
+  assert.strictEqual(appended[1], eventOnB);
+  assert.strictEqual(appended[2], eventOnNewSlot);
+});
+
