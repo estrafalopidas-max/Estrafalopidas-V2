@@ -169,7 +169,7 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
   const handleOpenPublicViewer = async () => {
     await handlePublishNow();
     onClose();
-    navigate('/h');
+    window.dispatchEvent(new Event('open_public_schedule_preview'));
   };
 
   const handleCopyIframeSnippet = async () => {

@@ -38,6 +38,7 @@ import { publishScheduleToCloud } from '../../infrastructure/firebase/firebase-c
 import { ResetConfirmationModal, SchoolYearResetMode } from '../components/common/ResetConfirmationModal';
 import { generateAutomaticScheduleDistribution } from '../../domain/services/auto-schedule-distributor.service';
 import { PublishScheduleModal } from '../components/export/PublishScheduleModal';
+import { PublicSchedulePreviewModal } from '../components/export/PublicSchedulePreviewModal';
 import { SidebarScheduleAgent } from '../components/agent/SidebarScheduleAgent';
 
 export const MainLayout: React.FC = () => {
@@ -188,6 +189,7 @@ export const MainLayout: React.FC = () => {
 
   // Estado y disparador directo de Publicación en Consulta Pública / HTML Autónomo
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
+  const [isPublicPreviewModalOpen, setIsPublicPreviewModalOpen] = useState(false);
 
   const getCurrentTimeBlocks = useCallback((): TimeBlockEntity[] => {
     try {
@@ -212,9 +214,19 @@ export const MainLayout: React.FC = () => {
   }, []);
 
   const modalTimeBlocks = useMemo(() => {
-    if (!isPublishModalOpen) return [];
+    if (!isPublishModalOpen && !isPublicPreviewModalOpen) return [];
     return getCurrentTimeBlocks();
-  }, [isPublishModalOpen, getCurrentTimeBlocks]);
+  }, [isPublishModalOpen, isPublicPreviewModalOpen, getCurrentTimeBlocks]);
+
+  useEffect(() => {
+    const handleOpenPublicPreview = () => {
+      setIsPublicPreviewModalOpen(true);
+    };
+    window.addEventListener('open_public_schedule_preview', handleOpenPublicPreview);
+    return () => {
+      window.removeEventListener('open_public_schedule_preview', handleOpenPublicPreview);
+    };
+  }, []);
 
   const handlePublishSchedule = () => {
     setIsPublishModalOpen(true);
@@ -652,30 +664,39 @@ export const MainLayout: React.FC = () => {
               )}
             </NavLink>
 
-            {/* 6. Consulta pública */}
-            <NavLink
-              to="/public/schedule"
-              className={({ isActive }) =>
-                `flex items-center rounded-xl transition-all ${
-                  isSidebarCollapsed ? 'justify-center p-2.5' : 'px-2.5 py-2 space-x-2'
-                } ${
-                  isActive
-                    ? 'bg-villa-blue-light text-white font-bold shadow-xs'
-                    : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
-                }`
-              }
-              title="Consulta pública (Vista de lectura para estudiantes, acudientes y docentes)"
+            {/* 6. Consulta pública (Modal de Previsualización HTML sobre la parrilla) */}
+            <button
+              type="button"
+              onClick={() => setIsPublicPreviewModalOpen(true)}
+              className={`w-full flex items-center rounded-xl transition-all cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center p-2.5' : 'px-2.5 py-2 space-x-2'
+              } ${
+                isPublicPreviewModalOpen
+                  ? 'bg-villa-blue-light text-white font-bold shadow-xs'
+                  : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
+              }`}
+              title="Consulta pública (Previsualización del HTML público sobre la parrilla)"
             >
-              <Globe className="shrink-0 w-4 h-4 text-emerald-600" />
+              <Globe
+                className={`shrink-0 w-4 h-4 ${
+                  isPublicPreviewModalOpen ? 'text-white' : 'text-emerald-600'
+                }`}
+              />
               {!isSidebarCollapsed && (
                 <>
                   <span className="text-xs tracking-tight truncate">Consulta pública</span>
-                  <span className="ml-auto text-[9px] font-semibold bg-emerald-100 text-emerald-800 px-1.5 py-0.5 rounded">
+                  <span
+                    className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                      isPublicPreviewModalOpen
+                        ? 'bg-white/20 text-white'
+                        : 'bg-emerald-100 text-emerald-800'
+                    }`}
+                  >
                     HTML
                   </span>
                 </>
               )}
-            </NavLink>
+            </button>
           </nav>
 
           {/* Agente Experto en Asignación Horaria incrustado en la parte inferior del menú */}
@@ -788,6 +809,16 @@ export const MainLayout: React.FC = () => {
       <PublishScheduleModal
         isOpen={isPublishModalOpen}
         onClose={() => setIsPublishModalOpen(false)}
+        timeBlocks={modalTimeBlocks}
+        teachers={teachers}
+        academicPeriod={contextAcademicPeriod}
+        academicWeek={currentAcademicWeek}
+      />
+
+      {/* Modal de Previsualización de Consulta Pública HTML sobre la parrilla */}
+      <PublicSchedulePreviewModal
+        isOpen={isPublicPreviewModalOpen}
+        onClose={() => setIsPublicPreviewModalOpen(false)}
         timeBlocks={modalTimeBlocks}
         teachers={teachers}
         academicPeriod={contextAcademicPeriod}
