@@ -57,6 +57,8 @@ import {
   X,
   AlertTriangle,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Check,
 } from 'lucide-react';
@@ -1881,71 +1883,106 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
           {/* Selector Desplegable de Día y Menú de Modalidades (Unificados con el mismo diseño) */}
           <div className="flex items-center gap-2">
-            <div ref={dayMenuRef} className="relative w-auto">
+            <div ref={dayMenuRef} className="relative w-auto flex items-center gap-1">
               {(() => {
                 const isCurrentDayToday = selectedDay === getTodayDayOfWeek();
+                const dayOrder: DayOfWeek[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+                const currentDayIndex = Math.max(0, dayOrder.indexOf(selectedDay));
+                const prevDayKey = dayOrder[(currentDayIndex - 1 + dayOrder.length) % dayOrder.length];
+                const nextDayKey = dayOrder[(currentDayIndex + 1) % dayOrder.length];
+                const prevDayLabel = weekHeaders.find((w) => w.id === prevDayKey)?.label || prevDayKey;
+                const nextDayLabel = weekHeaders.find((w) => w.id === nextDayKey)?.label || nextDayKey;
+
                 return (
-                  <button
-                    type="button"
-                    onClick={() => setIsDayMenuOpen((prev) => !prev)}
-                    className={`h-8 w-auto flex items-center justify-between gap-2.5 px-3.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs whitespace-nowrap ${
-                      activeDayHeader?.isHoliday
-                        ? 'bg-red-50 border-red-300 text-red-900 ring-1 ring-red-300/60'
-                        : isCurrentDayToday
-                        ? 'bg-brand-50 border-villa-blue-light/60 text-villa-blue-dark ring-1 ring-villa-blue-light/40'
-                        : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
-                    }`}
-                    title={
-                      activeDayHeader?.isHoliday
-                        ? `${activeDayHeader.label} (${activeDayHeader.holidayName || 'Día Festivo / Bloqueado'})`
-                        : isCurrentDayToday
-                        ? `${activeDayHeader?.label || selectedDay} • Día actual en curso`
-                        : 'Seleccionar día de la semana para visualizar o editar la grilla'
-                    }
-                  >
-                    <span className="flex items-center gap-2 whitespace-nowrap">
-                      <Calendar
-                        className={`w-3.5 h-3.5 shrink-0 ${
-                          activeDayHeader?.isHoliday
-                            ? 'text-red-600'
-                            : isCurrentDayToday
-                            ? 'text-villa-blue'
-                            : 'text-villa-blue-light'
-                        }`}
-                      />
-                      <span className="font-bold whitespace-nowrap">
-                        {activeDayHeader?.label || selectedDay}
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDay(prevDayKey);
+                        setIsDayMenuOpen(false);
+                      }}
+                      className="h-8 w-8 flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-600 hover:text-villa-blue-dark transition-all cursor-pointer select-none shadow-2xs shrink-0"
+                      title={`Día anterior: ${prevDayLabel}`}
+                      aria-label={`Día anterior: ${prevDayLabel}`}
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsDayMenuOpen((prev) => !prev)}
+                      className={`h-8 w-auto flex items-center justify-between gap-2.5 px-3.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs whitespace-nowrap ${
+                        activeDayHeader?.isHoliday
+                          ? 'bg-red-50 border-red-300 text-red-900 ring-1 ring-red-300/60'
+                          : isCurrentDayToday
+                          ? 'bg-brand-50 border-villa-blue-light/60 text-villa-blue-dark ring-1 ring-villa-blue-light/40'
+                          : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
+                      }`}
+                      title={
+                        activeDayHeader?.isHoliday
+                          ? `${activeDayHeader.label} (${activeDayHeader.holidayName || 'Día Festivo / Bloqueado'})`
+                          : isCurrentDayToday
+                          ? `${activeDayHeader?.label || selectedDay} • Día actual en curso`
+                          : 'Seleccionar día de la semana para visualizar o editar la grilla'
+                      }
+                    >
+                      <span className="flex items-center gap-2 whitespace-nowrap">
+                        <Calendar
+                          className={`w-3.5 h-3.5 shrink-0 ${
+                            activeDayHeader?.isHoliday
+                              ? 'text-red-600'
+                              : isCurrentDayToday
+                              ? 'text-villa-blue'
+                              : 'text-villa-blue-light'
+                          }`}
+                        />
+                        <span className="font-bold whitespace-nowrap">
+                          {activeDayHeader?.label || selectedDay}
+                        </span>
                       </span>
-                    </span>
-                    <span className="flex items-center gap-1.5 shrink-0">
-                      {isCurrentDayToday && !activeDayHeader?.isHoliday && (
-                        <span
-                          className="px-1.5 py-0.5 rounded-md bg-villa-blue text-white text-[10px] font-extrabold uppercase tracking-wider leading-none shadow-2xs"
-                          title="Día actual en curso"
-                        >
-                          Hoy
-                        </span>
-                      )}
-                      {activeDayHeader?.isHoliday && (
-                        <span
-                          className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-extrabold uppercase tracking-wider leading-none"
-                          title="Día festivo"
-                        >
-                          Festivo
-                        </span>
-                      )}
-                      <ChevronDown
-                        className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-150 ${
-                          isDayMenuOpen ? 'rotate-180' : ''
-                        }`}
-                      />
-                    </span>
-                  </button>
+                      <span className="flex items-center gap-1.5 shrink-0">
+                        {isCurrentDayToday && !activeDayHeader?.isHoliday && (
+                          <span
+                            className="px-1.5 py-0.5 rounded-md bg-villa-blue text-white text-[10px] font-extrabold uppercase tracking-wider leading-none shadow-2xs"
+                            title="Día actual en curso"
+                          >
+                            Hoy
+                          </span>
+                        )}
+                        {activeDayHeader?.isHoliday && (
+                          <span
+                            className="px-1.5 py-0.5 rounded-md bg-red-600 text-white text-[10px] font-extrabold uppercase tracking-wider leading-none"
+                            title="Día festivo"
+                          >
+                            Festivo
+                          </span>
+                        )}
+                        <ChevronDown
+                          className={`w-3.5 h-3.5 text-slate-500 transition-transform duration-150 ${
+                            isDayMenuOpen ? 'rotate-180' : ''
+                          }`}
+                        />
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSelectedDay(nextDayKey);
+                        setIsDayMenuOpen(false);
+                      }}
+                      className="h-8 w-8 flex items-center justify-center rounded-xl border border-slate-200 bg-white hover:bg-slate-50 active:bg-slate-100 text-slate-600 hover:text-villa-blue-dark transition-all cursor-pointer select-none shadow-2xs shrink-0"
+                      title={`Día siguiente: ${nextDayLabel}`}
+                      aria-label={`Día siguiente: ${nextDayLabel}`}
+                    >
+                      <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </>
                 );
               })()}
 
               {isDayMenuOpen && (
-                <div className="absolute left-0 mt-1.5 min-w-full w-max bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
+                <div className="absolute left-9 top-full mt-1.5 min-w-[200px] w-max bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
                   {weekHeaders.map((day) => {
                     const isToday = day.id === getTodayDayOfWeek();
                     const isHoliday = Boolean(day.isHoliday);
