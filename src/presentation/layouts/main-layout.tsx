@@ -190,6 +190,7 @@ export const MainLayout: React.FC = () => {
   // Estado y disparador directo de Publicación en Consulta Pública / HTML Autónomo
   const [isPublishModalOpen, setIsPublishModalOpen] = useState(false);
   const [isPublicPreviewModalOpen, setIsPublicPreviewModalOpen] = useState(false);
+  const [matrixRevision, setMatrixRevision] = useState(0);
 
   const getCurrentTimeBlocks = useCallback((): TimeBlockEntity[] => {
     try {
@@ -216,15 +217,23 @@ export const MainLayout: React.FC = () => {
   const modalTimeBlocks = useMemo(() => {
     if (!isPublishModalOpen && !isPublicPreviewModalOpen) return [];
     return getCurrentTimeBlocks();
-  }, [isPublishModalOpen, isPublicPreviewModalOpen, getCurrentTimeBlocks]);
+  }, [isPublishModalOpen, isPublicPreviewModalOpen, getCurrentTimeBlocks, matrixRevision]);
 
   useEffect(() => {
     const handleOpenPublicPreview = () => {
+      setMatrixRevision((r) => r + 1);
       setIsPublicPreviewModalOpen(true);
     };
+    const handleMatrixSync = () => {
+      setMatrixRevision((r) => r + 1);
+    };
     window.addEventListener('open_public_schedule_preview', handleOpenPublicPreview);
+    window.addEventListener('schedule_matrix_updated', handleMatrixSync);
+    window.addEventListener('storage', handleMatrixSync);
     return () => {
       window.removeEventListener('open_public_schedule_preview', handleOpenPublicPreview);
+      window.removeEventListener('schedule_matrix_updated', handleMatrixSync);
+      window.removeEventListener('storage', handleMatrixSync);
     };
   }, []);
 

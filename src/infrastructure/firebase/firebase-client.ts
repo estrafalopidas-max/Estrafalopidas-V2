@@ -2,8 +2,8 @@ import { initializeApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import {
   initializeFirestore,
-  persistentLocalCache,
-  persistentMultipleTabManager,
+  memoryLocalCache,
+  disableNetwork,
   doc,
   setDoc,
   getDoc,
@@ -24,9 +24,7 @@ const app = initializeApp(firebaseConfig);
 export const db = initializeFirestore(
   app,
   {
-    localCache: persistentLocalCache({
-      tabManager: persistentMultipleTabManager(),
-    }),
+    localCache: memoryLocalCache(),
   },
   firebaseConfig.firestoreDatabaseId
 );
@@ -117,9 +115,14 @@ function markQuotaBackedOff(): void {
     const untilStr = String(Date.now() + 8 * 60 * 60 * 1000);
     localStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
     sessionStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
+    disableNetwork(db).catch(() => {});
   } catch {
     // ignore
   }
+}
+
+if (typeof window !== 'undefined' && isQuotaBackedOff()) {
+  disableNetwork(db).catch(() => {});
 }
 
 function computeSimpleHash(input: string): string {
@@ -175,50 +178,17 @@ export function getPublicBaseUrl(): string {
   return '';
 }
 
-export function buildInternalShortUrl(code: string = 'vf'): string {
+export function buildInternalShortUrl(_code: string = 'vf'): string {
   const base = getPublicBaseUrl();
-  return `${base}/h`;
+  return base || 'https://ais-dev-wwkbgo7t3yhqgrvh74ipk7-881148575307.us-east1.run.app';
 }
 
-function isGenuineExternalShortUrl(candidate: string | null | undefined, longUrl: string): candidate is string {
-  if (!candidate || typeof candidate !== 'string') return false;
-  if (!candidate.startsWith('http')) return false;
-  if (candidate === longUrl) return false;
-  if (candidate.includes('.run.app') || candidate.includes('localhost')) return false;
-  return true;
-}
-
-export async function shortenUrlExternal(longUrl?: string): Promise<{ shortUrl: string; directUrl: string }> {
-  const directUrl = longUrl || buildInternalShortUrl('vf');
-  const fallbackShortRoute = `${getPublicBaseUrl()}/h`;
-  const cachedKey = `ievf_short_url_${directUrl}`;
-  const cached = typeof window !== 'undefined' ? localStorage.getItem(cachedKey) : null;
-  if (isGenuineExternalShortUrl(cached, directUrl)) {
-    localStorage.setItem('ievf_active_short_url', cached);
-    return { shortUrl: cached, directUrl };
-  } else if (cached && typeof window !== 'undefined') {
-    localStorage.removeItem(cachedKey);
+export async function shortenUrlExternal(_longUrl?: string): Promise<{ shortUrl: string; directUrl: string }> {
+  const officialUrl = buildInternalShortUrl('vf');
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('ievf_active_short_url', officialUrl);
   }
-
-  try {
-    const response = await fetch(
-      `/api/shorten-url?url=${encodeURIComponent(directUrl)}`
-    );
-    if (response.ok) {
-      const data = await response.json();
-      if (isGenuineExternalShortUrl(data?.shorturl, directUrl)) {
-        if (typeof window !== 'undefined') {
-          localStorage.setItem(cachedKey, data.shorturl);
-          localStorage.setItem('ievf_active_short_url', data.shorturl);
-        }
-        return { shortUrl: data.shorturl, directUrl };
-      }
-    }
-  } catch {
-    // Fallback silencioso a la ruta corta institucional /h
-  }
-
-  return { shortUrl: fallbackShortRoute, directUrl };
+  return { shortUrl: officialUrl, directUrl: officialUrl };
 }
 
 export async function publishScheduleToCloud(
@@ -373,16 +343,17 @@ export async function publishScheduleToCloud(
     })
   );
 
-  if (!forceWrite) {
-    try {
-      const lastHash = localStorage.getItem(LAST_PUBLISHED_HASH_KEY);
-      if (lastHash === contentFingerprint) {
-        // Redundancia prevenida: contenido idéntico, se evita setDoc en Firestore
-        return;
-      }
-    } catch {
-      // ignore
+  try {
+    const lastHash = localStorage.getItem(LAST_PUBLISHED_HASH_KEY);
+    if (lastHash === contentFingerprint && !forceWrite) {
+      // Redundancia prevenida: contenido idéntico, se evita setDoc en Firestore
+      return;
     }
+    if (lastHash === contentFingerprint) {
+      return;
+    }
+  } catch {
+    // ignore
   }
 
   const payload: Record<string, unknown> = {
@@ -418,13 +389,26 @@ export function subscribeToPublishedSchedule(
   onUpdate: (data: CloudPublishedScheduleData) => void,
   _forceRefresh = false
 ): () => void {
-  let lastAppliedUpdatedAtMs = 0;
+  let lastAppliedUpdatedAtMs = (() => {
+    try {
+      return Number(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || '0');
+    } catch {
+      return 0;
+    }
+  })();
 
   const applyPublishedData = (parsed: CloudPublishedScheduleData, updatedAtMs?: number) => {
+    let localTs = 0;
+    try {
+      localTs = Number(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || '0');
+    } catch {
+      localTs = 0;
+    }
+    const effectiveBaselineTs = Math.max(lastAppliedUpdatedAtMs, localTs);
     const incomingTs = Number(
       updatedAtMs || parsed.metadata?.updatedAtMs || parsed.dayConfigs?.updatedAtMs || 0
     );
-    if (incomingTs > 0 && lastAppliedUpdatedAtMs > 0 && incomingTs < lastAppliedUpdatedAtMs) {
+    if (effectiveBaselineTs > 0 && (incomingTs === 0 || incomingTs < effectiveBaselineTs)) {
       return;
     }
     if (incomingTs > 0) {
@@ -467,6 +451,9 @@ export function subscribeToPublishedSchedule(
       }
       localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(finalData));
       localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
+      if (incomingTs > 0) {
+        localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(incomingTs));
+      }
       if (finalData.dayConfigs) {
         if (finalData.dayConfigs.meetingDays) {
           localStorage.setItem('ievf_meeting_days', JSON.stringify(finalData.dayConfigs.meetingDays));
@@ -481,8 +468,9 @@ export function subscribeToPublishedSchedule(
       if (finalData.metadata?.lastUpdated) {
         localStorage.setItem('ievf_last_published_at', finalData.metadata.lastUpdated);
       }
-      if (finalData.shortUrl) {
-        localStorage.setItem('ievf_active_short_url', finalData.shortUrl);
+      const officialOrigin = getPublicBaseUrl();
+      if (officialOrigin) {
+        localStorage.setItem('ievf_active_short_url', officialOrigin);
       }
     } catch {
       // ignore storage errors

@@ -1,5 +1,5 @@
-import React, { useEffect, useMemo } from 'react';
-import { Globe, X, Download, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useState } from 'react';
+import { Globe, X, Download, Sparkles, Copy, Check } from 'lucide-react';
 import { TimeBlockEntity } from '../../../domain/entities/time-block.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import {
@@ -7,6 +7,12 @@ import {
   savePublicScheduleSnapshot,
   DEFAULT_LOGO_BASE64,
 } from '../../../domain/services/html-schedule-generator.service';
+import {
+  publishScheduleToCloud,
+  buildInternalShortUrl,
+} from '../../../infrastructure/firebase/firebase-client';
+import { PublicScheduleViewerPage } from '../../pages/public/public-schedule-viewer.page';
+import { copyToClipboard } from '../../utils/clipboard';
 
 interface PublicSchedulePreviewModalProps {
   isOpen: boolean;
@@ -25,6 +31,9 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
   academicPeriod = '3er Periodo',
   academicWeek = 9,
 }) => {
+  const [copiedOfficialUrl, setCopiedOfficialUrl] = useState(false);
+  const officialUrl = useMemo(() => buildInternalShortUrl('vf'), []);
+
   useEffect(() => {
     if (!isOpen) return;
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -36,8 +45,30 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  const generatedHtml = useMemo(() => {
-    if (!isOpen) return '';
+  useEffect(() => {
+    if (!isOpen) return;
+    const snapshot = savePublicScheduleSnapshot(
+      timeBlocks,
+      teachers,
+      academicPeriod,
+      academicWeek
+    );
+    publishScheduleToCloud(snapshot, officialUrl, 'vf', false).catch(() => {});
+    // Solo sincronizar al abrir el modal para evitar bucles de renderizado
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isOpen]);
+
+  if (!isOpen) return null;
+
+  const handleCopyOfficialLink = async () => {
+    const ok = await copyToClipboard(officialUrl);
+    if (ok) {
+      setCopiedOfficialUrl(true);
+      setTimeout(() => setCopiedOfficialUrl(false), 2500);
+    }
+  };
+
+  const handleDownloadHtml = () => {
     const logo = localStorage.getItem('ievf_logo_data_url') || DEFAULT_LOGO_BASE64;
     const snapshot = savePublicScheduleSnapshot(
       timeBlocks,
@@ -45,7 +76,7 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
       academicPeriod,
       academicWeek
     );
-    return generateStandaloneScheduleHtml({
+    const generatedHtml = generateStandaloneScheduleHtml({
       timeBlocks,
       teachers,
       academicPeriod,
@@ -53,11 +84,6 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
       logoDataUrl: logo,
       dayConfigs: snapshot.dayConfigs,
     });
-  }, [isOpen, timeBlocks, teachers, academicPeriod, academicWeek]);
-
-  if (!isOpen) return null;
-
-  const handleDownloadHtml = () => {
     if (!generatedHtml) return;
     const blob = new Blob([generatedHtml], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -87,19 +113,38 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
             <div className="min-w-0">
               <div className="flex items-center gap-2">
                 <h2 className="text-sm sm:text-base font-bold text-white truncate">
-                  Consulta Pública — Previsualización HTML
+                  Consulta Pública Oficial
                 </h2>
                 <span className="hidden sm:inline-flex items-center gap-1 text-[10px] font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-400/30 px-2 py-0.5 rounded-full whitespace-nowrap">
-                  <Sparkles className="w-3 h-3" /> Vista en vivo sobre la parrilla
+                  <Sparkles className="w-3 h-3" /> Homologada con el enlace oficial
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 truncate">
-                Documento HTML público interactivo con filtros por jornada, grado, docente y día
+              <p className="text-[11px] text-slate-400 truncate font-mono">
+                {officialUrl}
               </p>
             </div>
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleCopyOfficialLink}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs transition cursor-pointer shadow-xs"
+              title="Copiar enlace único oficial"
+            >
+              {copiedOfficialUrl ? (
+                <>
+                  <Check className="w-3.5 h-3.5 text-emerald-300" />
+                  <span className="hidden sm:inline">¡Link copiado!</span>
+                </>
+              ) : (
+                <>
+                  <Copy className="w-3.5 h-3.5" />
+                  <span className="hidden sm:inline">Copiar link oficial</span>
+                </>
+              )}
+            </button>
+
             <button
               type="button"
               onClick={handleDownloadHtml}
@@ -122,11 +167,13 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
           </div>
         </div>
 
-        <div className="flex-1 w-full bg-slate-100 overflow-hidden relative">
-          <iframe
-            srcDoc={generatedHtml}
-            title="Previsualización de Consulta Pública HTML"
-            className="w-full h-full border-none bg-slate-50"
+        <div className="flex-1 w-full bg-slate-50 overflow-y-auto relative">
+          <PublicScheduleViewerPage
+            isEmbeddedModal
+            liveTimeBlocks={timeBlocks}
+            liveTeachers={teachers}
+            liveAcademicPeriod={academicPeriod}
+            liveAcademicWeek={academicWeek}
           />
         </div>
       </div>

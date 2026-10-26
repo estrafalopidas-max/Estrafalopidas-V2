@@ -267,9 +267,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     });
   }, [timeBlocks]);
 
-  // Sincronización Continua (Write-Through Cache + Cloud Sync con Debounce de 3s y Deduplicación por Hash):
-  // Guarda instantáneamente en localStorage y agrupa cambios antes de sincronizar con Firestore
-  const isFirstSyncRenderRef = useRef(true);
+  // Sincronización Continua (Write-Through Cache + Cloud Sync con Debounce y Deduplicación por Hash):
+  // Guarda instantáneamente en localStorage y mantiene sincronizada la Consulta Pública oficial
   useEffect(() => {
     const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
     if (Array.isArray(timeBlocks) && (timeBlocks.length > 0 || isBlankMode)) {
@@ -293,17 +292,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
           }
         );
 
-        // No disparar escritura en la nube solo por cargar o recargar la página
-        if (isFirstSyncRenderRef.current) {
-          isFirstSyncRenderRef.current = false;
-          return;
-        }
-
         const timer = setTimeout(() => {
           publishScheduleToCloud(snapshot).catch((err) => {
             console.warn('[CoordinatorMatrix] Error sincronizando cambios en la nube:', err);
           });
-        }, 5000);
+        }, 1000);
         return () => clearTimeout(timer);
       }
     }

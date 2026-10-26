@@ -236,7 +236,21 @@ function resolveBlockShift(b: TimeBlockEntity): ShiftType {
   return resolveCanonicalShift(b);
 }
 
-export const PublicScheduleViewerPage: React.FC = () => {
+export interface PublicScheduleViewerPageProps {
+  isEmbeddedModal?: boolean;
+  liveTimeBlocks?: TimeBlockEntity[];
+  liveTeachers?: UserEntity[];
+  liveAcademicPeriod?: string;
+  liveAcademicWeek?: number;
+}
+
+export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> = ({
+  isEmbeddedModal = false,
+  liveTimeBlocks,
+  liveTeachers,
+  liveAcademicPeriod,
+  liveAcademicWeek,
+}) => {
   const [isExportingPdf, setIsExportingPdf] = useState(false);
 
   // Initial local snapshot or fallback
@@ -317,16 +331,18 @@ export const PublicScheduleViewerPage: React.FC = () => {
   const [snapshot, setSnapshot] = useState<PublicScheduleSnapshot | null>(initialSnapshot);
 
   useEffect(() => {
-    document.title = 'Sistema de Agendamiento Escolar Horarios, actividades y jornadas académicas';
+    if (!isEmbeddedModal) {
+      document.title = 'Sistema de Agendamiento Escolar Horarios, actividades y jornadas académicas';
 
-    // Ocultar la ruta interna (/public/schedule o /h) en la barra de direcciones del navegador
-    try {
-      sessionStorage.setItem('ievf_public_view_active', '1');
-      if (window.location.pathname !== '/') {
-        window.history.replaceState(null, '', '/');
+      // Ocultar la ruta interna (/public/schedule o /h) en la barra de direcciones del navegador
+      try {
+        sessionStorage.setItem('ievf_public_view_active', '1');
+        if (window.location.pathname !== '/') {
+          window.history.replaceState(null, '', '/');
+        }
+      } catch {
+        // Ignore history security errors in restricted contexts
       }
-    } catch {
-      // Ignore history security errors in restricted contexts
     }
 
     // Suscripción en tiempo real a Firestore y eventos locales
@@ -339,7 +355,7 @@ export const PublicScheduleViewerPage: React.FC = () => {
     return () => {
       unsubscribe();
     };
-  }, []);
+  }, [isEmbeddedModal]);
 
   const todayDayKey = useMemo(() => getTodayDayOfWeek(), []);
   const [selectedShift, setSelectedShift] = useState<ShiftType>('morning');
@@ -368,29 +384,40 @@ export const PublicScheduleViewerPage: React.FC = () => {
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isGradeMenuOpen, isTeacherMenuOpen]);
 
-  const rawTimeBlocks = snapshot?.timeBlocks || [];
-  const isBlankSchedule = useMemo(
-    () =>
+  const rawTimeBlocks = useMemo(() => {
+    if (Array.isArray(liveTimeBlocks)) {
+      return liveTimeBlocks;
+    }
+    return snapshot?.timeBlocks || [];
+  }, [liveTimeBlocks, snapshot?.timeBlocks]);
+
+  const isBlankSchedule = useMemo(() => {
+    if (Array.isArray(liveTimeBlocks)) {
+      return localStorage.getItem('ievf_blank_matrix_mode') === '1' || liveTimeBlocks.length === 0;
+    }
+    return (
       Boolean(snapshot?.metadata?.blankMatrixMode ?? snapshot?.dayConfigs?.blankMatrixMode) ||
-      rawTimeBlocks.length === 0,
-    [snapshot?.metadata?.blankMatrixMode, snapshot?.dayConfigs?.blankMatrixMode, rawTimeBlocks.length]
-  );
+      rawTimeBlocks.length === 0
+    );
+  }, [liveTimeBlocks, snapshot?.metadata?.blankMatrixMode, snapshot?.dayConfigs?.blankMatrixMode, rawTimeBlocks.length]);
+
   const timeBlocks = useMemo(
     () => (isBlankSchedule ? [] : normalizeTimeBlocksGrades(rawTimeBlocks)),
     [rawTimeBlocks, isBlankSchedule]
   );
+
   const teachers = useMemo(() => {
-    const rawList = snapshot?.teachers || [];
-    const mapped = rawList.map((t) => {
+    const rawList = Array.isArray(liveTeachers) && liveTeachers.length > 0 ? liveTeachers : snapshot?.teachers || [];
+    const mapped = rawList.map((t: any) => {
       const identity = getTeacherExcelIdentity(t.id, t.displayName);
       return {
         ...t,
         displayName: getFullTeacherName(t.id, t.displayName || 'Docente'),
-        color: identity.color_hex || t.color || '#007DC5',
+        color: identity.color_hex || t.color_hex || t.color || '#007DC5',
       };
     });
     return sortTeachersWithLowPriorityLast(mapped);
-  }, [snapshot?.teachers]);
+  }, [liveTeachers, snapshot?.teachers]);
   const dayConfigs = useMemo(
     () => resolveEffectiveDayConfigs(snapshot?.dayConfigs),
     [snapshot?.dayConfigs]
@@ -415,19 +442,19 @@ export const PublicScheduleViewerPage: React.FC = () => {
       : 'A';
 
   const displayAcademicPeriod = useMemo(() => {
-    const raw = snapshot?.metadata.academicPeriod;
+    const raw = liveAcademicPeriod || snapshot?.metadata.academicPeriod;
     const base = !raw || raw === '3° Periodo' ? '3er Periodo' : raw;
     if (base.toLowerCase().includes('académico') || base.toLowerCase().includes('academico')) {
       return base;
     }
     return `${base} académico`;
-  }, [snapshot?.metadata.academicPeriod]);
+  }, [liveAcademicPeriod, snapshot?.metadata.academicPeriod]);
 
   const displayAcademicWeek = useMemo(() => {
-    const raw = snapshot?.metadata.academicWeek;
+    const raw = liveAcademicWeek ?? snapshot?.metadata.academicWeek;
     if (!raw || raw === 8) return 9;
     return raw;
-  }, [snapshot?.metadata.academicWeek]);
+  }, [liveAcademicWeek, snapshot?.metadata.academicWeek]);
 
   // Extract unique grades for the active shift
   const shiftGrades = useMemo(() => {
