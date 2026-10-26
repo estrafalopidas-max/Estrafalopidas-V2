@@ -24,8 +24,12 @@ import {
   Globe,
   PanelLeftClose,
   PanelLeftOpen,
+  ShieldCheck,
+  LogOut,
 } from 'lucide-react';
 import { useCoordinatorMatrix } from '../context/CoordinatorMatrixContext';
+import { useAuth } from '../context/AuthContext';
+import { AccessManagementModal } from '../components/auth/AccessManagementModal';
 import { TeacherFormModal } from '../components/teacher/TeacherFormModal';
 import { TrashDropzone } from '../components/matrix/TrashDropzone';
 import { UserEntity } from '../../domain/entities/user.entity';
@@ -42,6 +46,8 @@ import { PublicSchedulePreviewModal } from '../components/export/PublicScheduleP
 import { SidebarScheduleAgent } from '../components/agent/SidebarScheduleAgent';
 
 export const MainLayout: React.FC = () => {
+  const { user: authUser, editors, logout } = useAuth();
+  const [isAccessModalOpen, setIsAccessModalOpen] = useState(false);
   const {
     selectedShift,
     setSelectedShift,
@@ -706,6 +712,44 @@ export const MainLayout: React.FC = () => {
                 </>
               )}
             </button>
+
+            {/* 7. Delegar acceso y Gestión de Permisos */}
+            <button
+              type="button"
+              onClick={() => setIsAccessModalOpen(true)}
+              className={`w-full flex items-center rounded-xl transition-all cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center p-2.5' : 'px-2.5 py-2 space-x-2'
+              } ${
+                isAccessModalOpen
+                  ? 'bg-villa-blue-light text-white font-bold shadow-xs'
+                  : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
+              }`}
+              title="Delegar acceso y gestionar permisos de edición"
+            >
+              <ShieldCheck
+                className={`shrink-0 w-4 h-4 ${
+                  isAccessModalOpen ? 'text-white' : 'text-blue-600'
+                }`}
+              />
+              {!isSidebarCollapsed && (
+                <>
+                  <span className="text-xs tracking-tight truncate">Delegar acceso</span>
+                  <span
+                    className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded ${
+                      isAccessModalOpen
+                        ? 'bg-white/20 text-white'
+                        : 'bg-blue-100 text-blue-800'
+                    }`}
+                  >
+                    {editors.filter((e) => e.active).length > 0
+                      ? `${editors.filter((e) => e.active).length} activo${
+                          editors.filter((e) => e.active).length > 1 ? 's' : ''
+                        }`
+                      : 'Auth'}
+                  </span>
+                </>
+              )}
+            </button>
           </nav>
 
           {/* Agente Experto en Asignación Horaria incrustado en la parte inferior del menú */}
@@ -727,8 +771,8 @@ export const MainLayout: React.FC = () => {
               getTimeBlocks={getCurrentTimeBlocks}
             />
 
-            {/* Zona de Configuración Protegida: Inicio de Año Escolar / Restablecimiento */}
-            <div className={`border-t border-slate-100 w-full shrink-0 space-y-2 ${isSidebarCollapsed ? 'p-1.5' : 'px-3 py-2'}`}>
+            {/* Zona de Configuración Protegida: Inicio de Año Escolar y Sesión */}
+            <div className={`border-t border-slate-100 w-full shrink-0 space-y-1.5 ${isSidebarCollapsed ? 'p-1.5' : 'px-3 py-2'}`}>
               <button
                 type="button"
                 onClick={() => setIsResetModalOpen(true)}
@@ -741,6 +785,34 @@ export const MainLayout: React.FC = () => {
                 <RotateCcw className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" />
                 {!isSidebarCollapsed && <span className="truncate">Inicio de año escolar</span>}
               </button>
+
+              {authUser && (
+                <div
+                  className={`flex items-center justify-between rounded-lg bg-slate-50 border border-slate-200 ${
+                    isSidebarCollapsed ? 'p-1.5 justify-center' : 'px-2.5 py-1.5'
+                  }`}
+                >
+                  {!isSidebarCollapsed && (
+                    <div className="min-w-0 pr-1">
+                      <p className="text-[10px] font-bold text-slate-800 truncate">
+                        {authUser.role === 'admin' ? 'Coordinación' : 'Editor Delegado'}
+                      </p>
+                      <p className="text-[9px] text-slate-500 font-mono truncate" title={authUser.email}>
+                        {authUser.email}
+                      </p>
+                    </div>
+                  )}
+                  <button
+                    type="button"
+                    onClick={() => void logout()}
+                    className="p-1.5 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer shrink-0"
+                    title={`Cerrar sesión (${authUser.email})`}
+                    aria-label="Cerrar sesión"
+                  >
+                    <LogOut className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
             </div>
           </div>
 
@@ -832,6 +904,12 @@ export const MainLayout: React.FC = () => {
         teachers={teachers}
         academicPeriod={contextAcademicPeriod}
         academicWeek={currentAcademicWeek}
+      />
+
+      {/* Modal de Delegación de Edición y Accesos */}
+      <AccessManagementModal
+        isOpen={isAccessModalOpen}
+        onClose={() => setIsAccessModalOpen(false)}
       />
     </div>
   );

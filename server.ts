@@ -300,6 +300,86 @@ async function startServer() {
     res.status(200).json({ ok: true, blankMatrixMode: isBlank, updatedAtMs: normalized.updatedAtMs });
   });
 
+  // Endpoints de Control de Acceso y Delegación de Edición
+  const ACCESS_CONTROL_FILE = '/tmp/ievf_access_control.json';
+  const PRIMARY_ADMIN_EMAIL = 'estrafalopidas@gmail.com';
+
+  interface ServerAuthorizedEditor {
+    email: string;
+    name: string;
+    role: 'admin' | 'editor';
+    addedAt: string;
+    active: boolean;
+  }
+
+  interface ServerAccessControlConfig {
+    requireAuth: boolean;
+    primaryAdminEmail: string;
+    editors: ServerAuthorizedEditor[];
+    updatedAtMs: number;
+  }
+
+  let accessControlState: ServerAccessControlConfig = (() => {
+    try {
+      if (fs.existsSync(ACCESS_CONTROL_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(ACCESS_CONTROL_FILE, 'utf-8'));
+        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.editors)) {
+          return {
+            requireAuth: typeof parsed.requireAuth === 'boolean' ? parsed.requireAuth : true,
+            primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+            editors: parsed.editors,
+            updatedAtMs: Number(parsed.updatedAtMs || Date.now()),
+          };
+        }
+      }
+    } catch {
+      // ignore
+    }
+    return {
+      requireAuth: true,
+      primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+      editors: [],
+      updatedAtMs: Date.now(),
+    };
+  })();
+
+  app.get('/api/access-control', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.status(200).json(accessControlState);
+  });
+
+  app.post('/api/access-control', (req, res) => {
+    const body = req.body || {};
+    const nextRequireAuth =
+      typeof body.requireAuth === 'boolean' ? body.requireAuth : accessControlState.requireAuth;
+    const nextEditors: ServerAuthorizedEditor[] = Array.isArray(body.editors)
+      ? body.editors
+          .filter((e: any) => e && typeof e.email === 'string' && e.email.trim())
+          .map((e: any) => ({
+            email: e.email.trim().toLowerCase(),
+            name: typeof e.name === 'string' && e.name.trim() ? e.name.trim() : e.email.trim(),
+            role: e.role === 'admin' ? 'admin' : 'editor',
+            addedAt: typeof e.addedAt === 'string' ? e.addedAt : new Date().toISOString(),
+            active: typeof e.active === 'boolean' ? e.active : true,
+          }))
+      : accessControlState.editors;
+
+    accessControlState = {
+      requireAuth: nextRequireAuth,
+      primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+      editors: nextEditors,
+      updatedAtMs: Date.now(),
+    };
+
+    try {
+      fs.writeFileSync(ACCESS_CONTROL_FILE, JSON.stringify(accessControlState), 'utf-8');
+    } catch {
+      // ignore
+    }
+
+    res.status(200).json(accessControlState);
+  });
+
   // Endpoint del Agente Experto en Asignación Horaria
   app.post('/api/schedule-agent/chat', async (req, res) => {
     const body = (req.body || {}) as AgentChatRequest;
