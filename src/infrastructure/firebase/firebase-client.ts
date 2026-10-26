@@ -179,16 +179,49 @@ export function getPublicBaseUrl(): string {
 }
 
 export function buildInternalShortUrl(_code: string = 'vf'): string {
-  const base = getPublicBaseUrl();
-  return base || 'https://ais-dev-wwkbgo7t3yhqgrvh74ipk7-881148575307.us-east1.run.app';
+  const base = getPublicBaseUrl() || 'https://ais-dev-wwkbgo7t3yhqgrvh74ipk7-881148575307.us-east1.run.app';
+  return `${base.replace(/\/+$/, '')}/h`;
 }
 
-export async function shortenUrlExternal(_longUrl?: string): Promise<{ shortUrl: string; directUrl: string }> {
-  const officialUrl = buildInternalShortUrl('vf');
+export async function shortenUrlExternal(longUrl?: string): Promise<{ shortUrl: string; directUrl: string }> {
+  const targetUrl = (longUrl && longUrl.trim()) || buildInternalShortUrl('vf');
+
   if (typeof window !== 'undefined') {
-    localStorage.setItem('ievf_active_short_url', officialUrl);
+    const cachedShort = localStorage.getItem('ievf_active_short_url');
+    const cachedTarget = localStorage.getItem('ievf_active_short_target');
+    if (
+      cachedShort &&
+      cachedTarget === targetUrl &&
+      cachedShort !== targetUrl &&
+      (cachedShort.includes('is.gd') || cachedShort.includes('tinyurl.com') || cachedShort.includes('v.gd'))
+    ) {
+      return { shortUrl: cachedShort, directUrl: targetUrl };
+    }
   }
-  return { shortUrl: officialUrl, directUrl: officialUrl };
+
+  try {
+    const response = await fetch(`/api/shorten-url?url=${encodeURIComponent(targetUrl)}`);
+    if (response.ok) {
+      const data = (await response.json()) as { shorturl?: string; directUrl?: string };
+      if (data?.shorturl && typeof data.shorturl === 'string' && data.shorturl.startsWith('http')) {
+        if (typeof window !== 'undefined') {
+          localStorage.setItem('ievf_active_short_url', data.shorturl);
+          localStorage.setItem('ievf_active_short_target', targetUrl);
+        }
+        return {
+          shortUrl: data.shorturl,
+          directUrl: data.directUrl || targetUrl,
+        };
+      }
+    }
+  } catch {
+    // Fallback si el endpoint no responde
+  }
+
+  if (typeof window !== 'undefined') {
+    localStorage.setItem('ievf_active_short_url', targetUrl);
+  }
+  return { shortUrl: targetUrl, directUrl: targetUrl };
 }
 
 export async function publishScheduleToCloud(

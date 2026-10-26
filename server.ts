@@ -69,15 +69,19 @@ async function startServer() {
     try {
       const host = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
       const proto = req.get('x-forwarded-proto') || 'https';
-      const targetQuery = typeof req.query?.url === 'string' ? req.query.url : '';
+      const targetQuery = typeof req.query?.url === 'string' ? req.query.url.trim() : '';
       const directPublicUrl = targetQuery || `${proto}://${host}/h`;
 
+      // 1. Intentar con is.gd
       try {
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 3500);
         const isgdRes = await fetch(
           `https://is.gd/create.php?format=json&url=${encodeURIComponent(directPublicUrl)}`,
-          { signal: controller.signal }
+          {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VillaFloraScheduler/1.0)' },
+          }
         );
         clearTimeout(timeout);
         if (isgdRes.ok) {
@@ -88,7 +92,53 @@ async function startServer() {
           }
         }
       } catch {
-        // Fallback al enlace directo de la vista pública
+        // Continuar al siguiente proveedor
+      }
+
+      // 2. Intentar con TinyURL API
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+        const tinyRes = await fetch(
+          `https://tinyurl.com/api-create.php?url=${encodeURIComponent(directPublicUrl)}`,
+          {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VillaFloraScheduler/1.0)' },
+          }
+        );
+        clearTimeout(timeout);
+        if (tinyRes.ok) {
+          const shortText = (await tinyRes.text()).trim();
+          if (shortText.startsWith('http')) {
+            res.status(200).json({ shorturl: shortText, directUrl: directPublicUrl });
+            return;
+          }
+        }
+      } catch {
+        // Continuar al siguiente proveedor
+      }
+
+      // 3. Intentar con v.gd
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 3500);
+        const vgdRes = await fetch(
+          `https://v.gd/create.php?format=json&url=${encodeURIComponent(directPublicUrl)}`,
+          {
+            signal: controller.signal,
+            headers: { 'User-Agent': 'Mozilla/5.0 (compatible; VillaFloraScheduler/1.0)' },
+          }
+        );
+        clearTimeout(timeout);
+        if (vgdRes.ok) {
+          const data = (await vgdRes.json()) as { shorturl?: string };
+          if (data && typeof data.shorturl === 'string' && data.shorturl.startsWith('http')) {
+            res.status(200).json({ shorturl: data.shorturl, directUrl: directPublicUrl });
+            return;
+          }
+        }
+      } catch {
+        // Fallback al enlace corto interno
       }
 
       res.status(200).json({ shorturl: directPublicUrl, directUrl: directPublicUrl });

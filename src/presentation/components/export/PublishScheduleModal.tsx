@@ -53,8 +53,12 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
     return localStorage.getItem('ievf_last_published_at') || null;
   });
 
-  const cleanShortRouteUrl = window.location.origin || 'https://ais-dev-wwkbgo7t3yhqgrvh74ipk7-881148575307.us-east1.run.app';
-  const [shortenedUrl, setShortenedUrl] = useState<string>(cleanShortRouteUrl);
+  const baseOrigin = (window.location.origin || 'https://ais-dev-wwkbgo7t3yhqgrvh74ipk7-881148575307.us-east1.run.app').replace(/\/+$/, '');
+  const cleanShortRouteUrl = `${baseOrigin}/h`;
+  const [shortenedUrl, setShortenedUrl] = useState<string>(() => {
+    const saved = localStorage.getItem('ievf_active_short_url');
+    return saved && saved.startsWith('http') ? saved : cleanShortRouteUrl;
+  });
   const [isShortening, setIsShortening] = useState<boolean>(false);
 
   const [copiedIframe, setCopiedIframe] = useState<boolean>(false);

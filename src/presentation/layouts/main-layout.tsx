@@ -673,7 +673,7 @@ export const MainLayout: React.FC = () => {
               )}
             </NavLink>
 
-            {/* 6. Consulta pública (Modal de Previsualización HTML sobre la parrilla) */}
+            {/* 6. Previsualizar (Modal de Previsualización sobre la parrilla) */}
             <button
               type="button"
               onClick={() => setIsPublicPreviewModalOpen(true)}
@@ -684,7 +684,7 @@ export const MainLayout: React.FC = () => {
                   ? 'bg-villa-blue-light text-white font-bold shadow-xs'
                   : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
               }`}
-              title="Consulta pública (Previsualización del HTML público sobre la parrilla)"
+              title="Previsualizar"
             >
               <Globe
                 className={`shrink-0 w-4 h-4 ${
@@ -693,7 +693,7 @@ export const MainLayout: React.FC = () => {
               />
               {!isSidebarCollapsed && (
                 <>
-                  <span className="text-xs tracking-tight truncate">Consulta pública</span>
+                  <span className="text-xs tracking-tight truncate">Previsualizar</span>
                   <span
                     className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded ${
                       isPublicPreviewModalOpen
