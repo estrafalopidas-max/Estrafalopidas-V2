@@ -249,7 +249,26 @@ async function startServer() {
   // JSON parser para las demás rutas API
   app.use('/api', express.json({ limit: '5mb' }));
 
-  const PUBLISHED_SCHEDULE_FILE = '/tmp/ievf_published_schedule.json';
+  // Directorio persistente para TrueNAS / Docker (volumen montado en /app/data)
+  const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), 'data');
+  try {
+    if (!fs.existsSync(DATA_DIR)) {
+      fs.mkdirSync(DATA_DIR, { recursive: true });
+    }
+  } catch {
+    // Fallback silencioso
+  }
+
+  const resolvePersistentFile = (filename: string): string => {
+    try {
+      fs.accessSync(DATA_DIR, fs.constants.W_OK);
+      return path.join(DATA_DIR, filename);
+    } catch {
+      return path.join('/tmp', filename);
+    }
+  };
+
+  const PUBLISHED_SCHEDULE_FILE = resolvePersistentFile('ievf_published_schedule.json');
   let latestPublishedSchedule: Record<string, unknown> | null = (() => {
     try {
       if (fs.existsSync(PUBLISHED_SCHEDULE_FILE)) {
@@ -301,8 +320,8 @@ async function startServer() {
   });
 
   // Endpoints de Control de Acceso y Delegación de Edición
-  const ACCESS_CONTROL_FILE = '/tmp/ievf_access_control.json';
-  const PRIMARY_ADMIN_EMAIL = 'estrafalopidas@gmail.com';
+  const ACCESS_CONTROL_FILE = resolvePersistentFile('ievf_access_control.json');
+  const PRIMARY_ADMIN_EMAIL = process.env.PRIMARY_ADMIN_EMAIL || 'estrafalopidas@gmail.com';
 
   interface ServerAuthorizedEditor {
     email: string;
@@ -476,7 +495,7 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), 'dist');
     app.use(express.static(distPath));
-    app.get('*all', (_req, res) => {
+    app.get('*', (_req, res) => {
       res.sendFile(path.join(distPath, 'index.html'));
     });
   }

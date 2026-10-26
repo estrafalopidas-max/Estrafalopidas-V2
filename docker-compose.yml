@@ -1,0 +1,16 @@
+services:
+  horarios-villa-flora:
+    build: .
+    container_name: horarios-villa-flora
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - PORT=3000
+      - DATA_DIR=/app/data
+      - PRIMARY_ADMIN_EMAIL=estrafalopidas@gmail.com
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+    volumes:
+      # Reemplaza /mnt/tank/apps/horarios-villa-flora/data por la ruta de tu Dataset en TrueNAS
+      - /mnt/tank/apps/horarios-villa-flora/data:/app/data
