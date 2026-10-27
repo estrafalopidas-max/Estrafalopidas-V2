@@ -111,6 +111,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     currentSection,
     currentPeriod,
     currentAcademicWeek,
+    activeWeekSlot,
+    setActiveWeekSlot,
+    isAutoNextWeekCutoff,
+    activeAnchorDate,
+    activeMondayIso,
+    cloneCurrentWeekToNextWeek,
   } = useCoordinatorMatrix();
 
   const searchInputRef = useRef<HTMLInputElement>(null);
@@ -165,9 +171,35 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [grades, setGrades] = useState<GradeEntity[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Filter States: Inicialización Automática en el Día Actual de la Semana
-  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek());
+  // Filter States: Inicialización Automática en el Día Actual de la Semana (o Lunes si es Próxima Semana / post-viernes 12:10 PM)
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek(new Date(), activeWeekSlot));
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
+
+  useEffect(() => {
+    const handleWeekSlotChanged = (ev: Event) => {
+      const customEv = ev as CustomEvent<{ slot: 'current' | 'next'; mondayIso: string }>;
+      const nextSlot = customEv.detail?.slot || activeWeekSlot;
+      if (nextSlot === 'next') {
+        setSelectedDay('lunes');
+      } else {
+        setSelectedDay(getTodayDayOfWeek(new Date(), 'current'));
+      }
+      try {
+        const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setTimeBlocks(parsed);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    };
+    window.addEventListener('week_slot_changed', handleWeekSlotChanged);
+    return () => window.removeEventListener('week_slot_changed', handleWeekSlotChanged);
+  }, [activeWeekSlot]);
+
   const isMeetingDay = Boolean(meetingDays[`${selectedShift}_${selectedDay}`] ?? meetingDays[selectedDay]);
   const isEventDay = false;
   const rawScheduleType =
@@ -179,8 +211,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     ? 'B'
     : 'A';
   const supportPlanModalityLabel = useMemo(
-    () => getSupportPlanModalityLabel(new Date(), currentPeriod),
-    [currentPeriod]
+    () => getSupportPlanModalityLabel(activeAnchorDate, currentPeriod),
+    [activeAnchorDate, currentPeriod]
   );
   const activeDayHeader = useMemo(() => weekHeaders.find((w) => w.id === selectedDay), [weekHeaders, selectedDay]);
   const [isGradeMenuOpen, setIsGradeMenuOpen] = useState(false);
@@ -291,6 +323,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             eventDays,
             customHolidays,
             scheduleTypes,
+            activeWeekSlot,
+            anchorMondayIso: activeMondayIso,
           }
         );
 
@@ -302,7 +336,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         return () => clearTimeout(timer);
       }
     }
-  }, [timeBlocks, teachers, currentPeriod, currentAcademicWeek, meetingDays, eventDays, customHolidays, scheduleTypes]);
+  }, [timeBlocks, teachers, currentPeriod, currentAcademicWeek, meetingDays, eventDays, customHolidays, scheduleTypes, activeWeekSlot, activeMondayIso]);
 
   // Initialize and load catalogs and time blocks
   useEffect(() => {
@@ -1955,11 +1989,71 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             )}
           </div>
 
-          {/* Selector Desplegable de Día y Menú de Modalidades (Unificados con el mismo diseño) */}
-          <div className="flex items-center gap-2">
+          {/* Selector Rápido de 2 Semanas + Selector Desplegable de Día y Menú de Modalidades */}
+          <div className="flex items-center gap-2 flex-wrap">
+            {/* Selector Rápido de 2 Semanas (Semana Actual vs. Próxima Semana con Corte Viernes 12:10 PM) */}
+            <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shadow-2xs h-8 shrink-0">
+              <button
+                type="button"
+                onClick={() => setActiveWeekSlot('current')}
+                className={`h-full px-2.5 rounded-lg text-[11px] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
+                  activeWeekSlot === 'current'
+                    ? 'bg-villa-blue text-white font-bold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 font-semibold'
+                }`}
+                title="Ver y editar la Semana Actual en curso"
+              >
+                <span>Semana Actual</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveWeekSlot('next')}
+                className={`h-full px-2.5 rounded-lg text-[11px] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
+                  activeWeekSlot === 'next'
+                    ? 'bg-indigo-600 text-white font-bold shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900 font-semibold'
+                }`}
+                title={
+                  isAutoNextWeekCutoff
+                    ? 'Próxima Semana (Activada automáticamente por corte de viernes 12:10 PM)'
+                    : 'Adelantar o editar el horario de la Próxima Semana'
+                }
+              >
+                <span>Próxima Semana</span>
+                {isAutoNextWeekCutoff && (
+                  <span
+                    className={`px-1 py-0.2 rounded text-[9px] font-extrabold uppercase leading-none ${
+                      activeWeekSlot === 'next'
+                        ? 'bg-amber-300 text-slate-950'
+                        : 'bg-amber-100 text-amber-800 border border-amber-300'
+                    }`}
+                  >
+                    12:10+
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {activeWeekSlot === 'next' && (
+              <button
+                type="button"
+                onClick={() => {
+                  cloneCurrentWeekToNextWeek();
+                  showToast('Horario base copiado desde la Semana Actual a la Próxima Semana');
+                }}
+                className="h-8 px-2.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shadow-2xs"
+                title="Copiar las asignaciones de la Semana Actual como punto de partida para la Próxima Semana"
+              >
+                Copiar de Actual
+              </button>
+            )}
+
             <div ref={dayMenuRef} className="relative w-auto flex items-center gap-1">
               {(() => {
-                const isCurrentDayToday = selectedDay === getTodayDayOfWeek();
+                const isCurrentDayToday =
+                  activeWeekSlot === 'current' &&
+                  !isAutoNextWeekCutoff &&
+                  selectedDay === getTodayDayOfWeek(new Date(), 'current');
                 const dayOrder: DayOfWeek[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
                 const currentDayIndex = Math.max(0, dayOrder.indexOf(selectedDay));
                 const prevDayKey = dayOrder[(currentDayIndex - 1 + dayOrder.length) % dayOrder.length];
@@ -1988,6 +2082,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                       className={`h-8 w-auto flex items-center justify-between gap-2.5 px-3.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs whitespace-nowrap ${
                         activeDayHeader?.isHoliday
                           ? 'bg-red-50 border-red-300 text-red-900 ring-1 ring-red-300/60'
+                          : activeWeekSlot === 'next'
+                          ? 'bg-indigo-50/80 border-indigo-300 text-indigo-950 ring-1 ring-indigo-300/50'
                           : isCurrentDayToday
                           ? 'bg-brand-50 border-villa-blue-light/60 text-villa-blue-dark ring-1 ring-villa-blue-light/40'
                           : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
@@ -1995,6 +2091,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                       title={
                         activeDayHeader?.isHoliday
                           ? `${activeDayHeader.label} (${activeDayHeader.holidayName || 'Día Festivo / Bloqueado'})`
+                          : activeWeekSlot === 'next'
+                          ? `${activeDayHeader?.label || selectedDay} • Próxima Semana`
                           : isCurrentDayToday
                           ? `${activeDayHeader?.label || selectedDay} • Día actual en curso`
                           : 'Seleccionar día de la semana para visualizar o editar la grilla'
@@ -2005,6 +2103,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                           className={`w-3.5 h-3.5 shrink-0 ${
                             activeDayHeader?.isHoliday
                               ? 'text-red-600'
+                              : activeWeekSlot === 'next'
+                              ? 'text-indigo-600'
                               : isCurrentDayToday
                               ? 'text-villa-blue'
                               : 'text-villa-blue-light'
@@ -2021,6 +2121,14 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                             title="Día actual en curso"
                           >
                             Hoy
+                          </span>
+                        )}
+                        {activeWeekSlot === 'next' && !activeDayHeader?.isHoliday && (
+                          <span
+                            className="px-1.5 py-0.5 rounded-md bg-indigo-600 text-white text-[10px] font-extrabold uppercase tracking-wider leading-none shadow-2xs"
+                            title="Editando Próxima Semana"
+                          >
+                            Próxima
                           </span>
                         )}
                         {activeDayHeader?.isHoliday && (
@@ -2058,7 +2166,10 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
               {isDayMenuOpen && (
                 <div className="absolute left-9 top-full mt-1.5 min-w-[200px] w-max bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
                   {weekHeaders.map((day) => {
-                    const isToday = day.id === getTodayDayOfWeek();
+                    const isToday =
+                      activeWeekSlot === 'current' &&
+                      !isAutoNextWeekCutoff &&
+                      day.id === getTodayDayOfWeek(new Date(), 'current');
                     const isHoliday = Boolean(day.isHoliday);
                     const isSelected = selectedDay === day.id;
                     return (

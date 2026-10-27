@@ -424,8 +424,8 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
   );
 
   const weekHeaders = useMemo(
-    () => generateWeekHeaders(new Date(), dayConfigs.customHolidays),
-    [dayConfigs.customHolidays]
+    () => generateWeekHeaders(dayConfigs.anchorMondayIso || new Date(), dayConfigs.customHolidays),
+    [dayConfigs.anchorMondayIso, dayConfigs.customHolidays]
   );
 
   const isHoliday = Boolean(dayConfigs.holidayDays?.[selectedDay]);

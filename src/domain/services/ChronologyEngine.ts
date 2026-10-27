@@ -15,7 +15,46 @@ export interface AcademicRecess {
   weeks?: number;
 }
 
-export function getTodayDayOfWeek(date: Date = new Date()): DayOfWeek {
+export type WeekSlotMode = 'current' | 'next';
+
+export const FRIDAY_CUTOFF_HOUR = 12;
+export const FRIDAY_CUTOFF_MINUTE = 10;
+
+/**
+ * Evalúa si la fecha/hora actual ya superó el corte de los viernes a las 12:10 PM
+ * (viernes >= 12:10, sábado o domingo), momento en el que se activa por defecto la próxima semana.
+ */
+export function isPastFridayCutoff(date: Date = new Date()): boolean {
+  const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
+  const day = d.getDay(); // 0: Dom, 1: Lun, ..., 5: Vie, 6: Sáb
+  const hours = d.getHours();
+  const minutes = d.getMinutes();
+
+  if (
+    day === 5 &&
+    (hours > FRIDAY_CUTOFF_HOUR || (hours === FRIDAY_CUTOFF_HOUR && minutes >= FRIDAY_CUTOFF_MINUTE))
+  ) {
+    return true;
+  }
+  if (day === 6 || day === 0) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * Devuelve el contenedor semanal activo por defecto ('current' o 'next')
+ * aplicando la regla de corte automático del viernes a las 12:10 PM.
+ */
+export function getDefaultWeekSlotMode(date: Date = new Date()): WeekSlotMode {
+  return isPastFridayCutoff(date) ? 'next' : 'current';
+}
+
+export function getTodayDayOfWeek(date: Date = new Date(), mode?: WeekSlotMode): DayOfWeek {
+  const effectiveMode = mode ?? getDefaultWeekSlotMode(date);
+  if (effectiveMode === 'next' || isPastFridayCutoff(date)) {
+    return 'lunes';
+  }
   const day = date.getDay(); // 0: Dom, 1: Lun, 2: Mar, 3: Mié, 4: Jue, 5: Vie, 6: Sáb
   if (day === 1) return 'lunes';
   if (day === 2) return 'martes';
@@ -373,6 +412,31 @@ export function getStartOfWeek(currentDate: Date | string = new Date()): Date {
   d.setDate(d.getDate() + diff);
   d.setHours(0, 0, 0, 0);
   return d;
+}
+
+/**
+ * Calcula la fecha ancla (Lunes 00:00:00) para el contenedor semanal seleccionado ('current' o 'next').
+ */
+export function getAnchorDateForWeekSlot(
+  mode: WeekSlotMode = getDefaultWeekSlotMode(),
+  baseDate: Date | string = new Date()
+): Date {
+  const monday = getStartOfWeek(baseDate);
+  if (mode === 'next') {
+    monday.setDate(monday.getDate() + 7);
+  }
+  return monday;
+}
+
+/**
+ * Devuelve el identificador ISO (YYYY-MM-DD) del lunes de una fecha dada.
+ */
+export function getWeekMondayIso(date: Date | string = new Date()): string {
+  const monday = getStartOfWeek(date);
+  const y = monday.getFullYear();
+  const m = String(monday.getMonth() + 1).padStart(2, '0');
+  const d = String(monday.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 /**

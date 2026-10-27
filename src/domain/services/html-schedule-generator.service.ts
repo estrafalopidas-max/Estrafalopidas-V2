@@ -7,7 +7,13 @@ import {
   sortTeachersWithLowPriorityLast,
 } from './teacher-normalization.service';
 import { DEFAULT_LOGO_BASE64 } from './default-logo-base64';
-import { generateWeekHeaders } from './ChronologyEngine';
+import {
+  generateWeekHeaders,
+  WeekSlotMode,
+  getDefaultWeekSlotMode,
+  getAnchorDateForWeekSlot,
+  getWeekMondayIso,
+} from './ChronologyEngine';
 import {
   resolveCanonicalGradeName,
   resolveCanonicalShift,
@@ -25,6 +31,8 @@ export interface PublicDayConfigs {
   scheduleTypes?: Record<string, 'A' | 'B' | 'C' | 'D'>;
   blankMatrixMode?: boolean;
   updatedAtMs?: number;
+  activeWeekSlot?: WeekSlotMode;
+  anchorMondayIso?: string;
 }
 
 export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): PublicDayConfigs {
@@ -32,6 +40,8 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
   let storedEvent: Record<string, boolean> = {};
   let storedCustomHolidays: string[] = [];
   let storedScheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> = {};
+  let storedWeekSlot: WeekSlotMode | undefined;
+  let storedMondayIso: string | undefined;
 
   try {
     const m = localStorage.getItem('ievf_meeting_days');
@@ -61,12 +71,28 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     // ignore
   }
 
+  try {
+    const ws = localStorage.getItem('ievf_active_week_slot');
+    if (ws === 'current' || ws === 'next') storedWeekSlot = ws;
+    const mi = localStorage.getItem('ievf_active_monday_iso');
+    if (mi && /^\d{4}-\d{2}-\d{2}$/.test(mi)) storedMondayIso = mi;
+  } catch {
+    // ignore
+  }
+
   const meetingDays = { ...storedMeeting, ...(custom?.meetingDays || {}) };
   const eventDays = { ...storedEvent, ...(custom?.eventDays || {}) };
   const customHolidays = custom?.customHolidays ?? storedCustomHolidays;
   const scheduleTypes = { ...storedScheduleTypes, ...(custom?.scheduleTypes || {}) };
+  const activeWeekSlot: WeekSlotMode =
+    custom?.activeWeekSlot || storedWeekSlot || getDefaultWeekSlotMode(new Date());
+  const effectiveAnchorDate =
+    custom?.anchorMondayIso ||
+    storedMondayIso ||
+    getAnchorDateForWeekSlot(activeWeekSlot, new Date());
+  const anchorMondayIso = getWeekMondayIso(effectiveAnchorDate);
 
-  const weekHeaders = generateWeekHeaders(new Date(), customHolidays);
+  const weekHeaders = generateWeekHeaders(effectiveAnchorDate, customHolidays);
   const holidayDays: Record<string, boolean> = { ...(custom?.holidayDays || {}) };
   weekHeaders.forEach((d) => {
     if (d.isHoliday) {
@@ -92,6 +118,8 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     scheduleTypes,
     blankMatrixMode: custom?.blankMatrixMode !== undefined ? custom.blankMatrixMode : isLocalBlank,
     updatedAtMs: custom?.updatedAtMs,
+    activeWeekSlot,
+    anchorMondayIso,
   };
 }
 
@@ -180,7 +208,10 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
   const displayWeek = !academicWeek || academicWeek === 8 ? 9 : academicWeek;
   const effectiveDayConfigs = resolveEffectiveDayConfigs(dayConfigs);
   const dayConfigsSerialized = JSON.stringify(effectiveDayConfigs).replace(/</g, '\\u003c');
-  const weekHeadersList = generateWeekHeaders(new Date(), effectiveDayConfigs.customHolidays);
+  const weekHeadersList = generateWeekHeaders(
+    effectiveDayConfigs.anchorMondayIso || new Date(),
+    effectiveDayConfigs.customHolidays
+  );
   const weekHeadersMap: Record<string, string> = {};
   weekHeadersList.forEach((h) => {
     weekHeadersMap[h.id] = h.label;

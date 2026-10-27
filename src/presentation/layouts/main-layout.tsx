@@ -61,6 +61,10 @@ export const MainLayout: React.FC = () => {
     setCurrentAcademicWeek,
     currentPeriod: contextAcademicPeriod,
     setCurrentPeriod: setContextAcademicPeriod,
+    activeWeekSlot,
+    setActiveWeekSlot,
+    isAutoNextWeekCutoff,
+    weekInfo,
     teachers,
     isTeacherModalOpen,
     setIsTeacherModalOpen,
@@ -114,11 +118,8 @@ export const MainLayout: React.FC = () => {
     ? contextIsMatrixActive
     : currentSection === 'Inicio';
 
-  // Cronología Académica Oficial (Estrictamente de Solo Lectura)
-  const { lunesFormat, viernesFormat, weekNumber, periodNumber, totalWeeksInPeriod, isRecess, recessName } = useMemo(
-    () => getCurrentWeekText(new Date()),
-    []
-  );
+  // Cronología Académica Oficial Dinámica (Semana Actual vs Próxima Semana)
+  const { lunesFormat, viernesFormat, weekNumber, periodNumber, totalWeeksInPeriod, isRecess, recessName } = weekInfo;
 
   // Destrucción de Caché Visual (Busting) y Gestión Dinámica de Logo
   const [logoUrl, setLogoUrl] = useState<string>(() => {
@@ -394,21 +395,75 @@ export const MainLayout: React.FC = () => {
       {/* BARRA SUPERIOR UNIFICADA: Cabecera del menú lateral fija (abierto o cerrado) + Navbar principal */}
       <div className="sticky top-0 z-40 flex h-[96px] w-full bg-white border-b border-slate-200 shadow-2xs shrink-0">
         {/* Cabecera del menú lateral: Fija con el menú abierto o cerrado */}
-        <div className="w-52 sm:w-56 h-full border-r border-slate-200 bg-slate-50 border-l-4 border-blue-600 px-3.5 py-1.5 flex flex-col justify-center shrink-0 select-none">
-          {/* Nivel 1: Indicador de Periodo (Badge) */}
-          <div className="flex items-center gap-1.5 leading-none">
-            <svg className="w-5 h-5 text-blue-600 shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-            </svg>
-            <span className="text-[17px] font-medium text-blue-800 uppercase tracking-wide flex items-baseline">
-              <span>
-                {periodNumber}
-                <span className="text-[0.68em] relative -top-[0.25em] ml-[1px] lowercase font-medium">
-                  {getOrdinalSuffix(periodNumber)}
+        <div
+          className={`w-52 sm:w-56 h-full border-r border-slate-200 px-3 py-1.5 flex flex-col justify-center shrink-0 select-none transition-colors ${
+            activeWeekSlot === 'next'
+              ? 'bg-indigo-50/70 border-l-4 border-indigo-600'
+              : 'bg-slate-50 border-l-4 border-blue-600'
+          }`}
+        >
+          {/* Nivel 1: Indicador de Periodo + Selector Rápido de 2 Semanas */}
+          <div className="flex items-center justify-between gap-1 leading-none">
+            <div className="flex items-center gap-1 leading-none min-w-0">
+              <svg
+                className={`w-4 h-4 shrink-0 ${activeWeekSlot === 'next' ? 'text-indigo-600' : 'text-blue-600'}`}
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+                xmlns="http://www.w3.org/2000/svg"
+              >
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+              </svg>
+              <span
+                className={`text-[14px] font-bold uppercase tracking-wide flex items-baseline truncate ${
+                  activeWeekSlot === 'next' ? 'text-indigo-900' : 'text-blue-800'
+                }`}
+              >
+                <span>
+                  {periodNumber}
+                  <span className="text-[0.68em] relative -top-[0.25em] ml-[1px] lowercase font-semibold">
+                    {getOrdinalSuffix(periodNumber)}
+                  </span>
                 </span>
+                <span className="ml-1">Periodo</span>
               </span>
-              <span className="ml-1">Periodo</span>
-            </span>
+            </div>
+
+            {/* Selector 2 Semanas (Actual / Próxima) */}
+            <div
+              className="inline-flex items-center bg-white/90 p-0.5 rounded-lg border border-slate-200 shadow-2xs shrink-0"
+              title={
+                isAutoNextWeekCutoff
+                  ? 'Corte viernes 12:10 PM activo: mostrando Próxima Semana por defecto'
+                  : 'Alternar entre Semana Actual y Próxima Semana'
+              }
+            >
+              <button
+                type="button"
+                onClick={() => setActiveWeekSlot('current')}
+                className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer ${
+                  activeWeekSlot === 'current'
+                    ? 'bg-blue-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                Actual
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveWeekSlot('next')}
+                className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer flex items-center gap-0.5 ${
+                  activeWeekSlot === 'next'
+                    ? 'bg-indigo-600 text-white shadow-2xs'
+                    : 'text-slate-600 hover:text-slate-900'
+                }`}
+              >
+                <span>Próx.</span>
+                {isAutoNextWeekCutoff && (
+                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
+                )}
+              </button>
+            </div>
           </div>
 
           {/* Nivel 2: Rango de Fechas a 2 Líneas con Mes Completo y punto final */}
@@ -419,7 +474,7 @@ export const MainLayout: React.FC = () => {
 
           {/* Nivel 3: Conteo Académico con punto final */}
           <span
-            className="text-[12.5px] font-semibold text-slate-500 block truncate leading-tight mt-0.5 tracking-tight"
+            className="text-[11.5px] font-semibold text-slate-500 block truncate leading-tight mt-0.5 tracking-tight"
             title={formattedWeekSummary}
           >
             {formattedWeekSummary}
