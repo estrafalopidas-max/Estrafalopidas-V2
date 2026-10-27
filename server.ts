@@ -336,6 +336,7 @@ async function startServer() {
 
   interface ServerAccessControlConfig {
     requireAuth: boolean;
+    inactivityTimeoutMinutes: number;
     primaryAdminEmail: string;
     primaryAdminPassword?: string;
     editors: ServerAuthorizedEditor[];
@@ -349,6 +350,10 @@ async function startServer() {
         if (parsed && typeof parsed === 'object' && Array.isArray(parsed.editors)) {
           return {
             requireAuth: typeof parsed.requireAuth === 'boolean' ? parsed.requireAuth : true,
+            inactivityTimeoutMinutes:
+              typeof parsed.inactivityTimeoutMinutes === 'number'
+                ? parsed.inactivityTimeoutMinutes
+                : 30,
             primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
             primaryAdminPassword:
               typeof parsed.primaryAdminPassword === 'string' &&
@@ -366,6 +371,7 @@ async function startServer() {
     }
     return {
       requireAuth: true,
+      inactivityTimeoutMinutes: 30,
       primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
       primaryAdminPassword: 'piloro666',
       editors: [],
@@ -382,6 +388,10 @@ async function startServer() {
     const body = req.body || {};
     const nextRequireAuth =
       typeof body.requireAuth === 'boolean' ? body.requireAuth : accessControlState.requireAuth;
+    const nextInactivityMinutes =
+      typeof body.inactivityTimeoutMinutes === 'number'
+        ? body.inactivityTimeoutMinutes
+        : accessControlState.inactivityTimeoutMinutes ?? 30;
     const nextPrimaryAdminPassword =
       typeof body.primaryAdminPassword === 'string' &&
       body.primaryAdminPassword.trim() &&
@@ -411,6 +421,7 @@ async function startServer() {
 
     accessControlState = {
       requireAuth: nextRequireAuth,
+      inactivityTimeoutMinutes: nextInactivityMinutes,
       primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
       primaryAdminPassword: nextPrimaryAdminPassword,
       editors: nextEditors,

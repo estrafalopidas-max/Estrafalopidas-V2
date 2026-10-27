@@ -17,8 +17,17 @@ import {
   KeyRound,
   Eye,
   EyeOff,
+  Clock,
 } from 'lucide-react';
 import { useAuth, PRIMARY_ADMIN_EMAIL } from '../../context/AuthContext';
+
+const INACTIVITY_OPTIONS: { value: number; label: string }[] = [
+  { value: 15, label: '15 minutos' },
+  { value: 30, label: '30 minutos' },
+  { value: 60, label: '1 hora' },
+  { value: 120, label: '2 horas' },
+  { value: 0, label: 'Desactivado' },
+];
 
 interface AccessManagementModalProps {
   isOpen: boolean;
@@ -33,12 +42,14 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
     user,
     isAdmin,
     requireAuth,
+    inactivityTimeoutMinutes,
     editors,
     addEditor,
     updateEditorPassword,
     toggleEditorActive,
     removeEditor,
     setRequireAuth,
+    setInactivityTimeoutMinutes,
   } = useAuth();
 
   const visibleEditors = editors.filter(
@@ -53,21 +64,26 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
   const [newRole, setNewRole] = useState<'editor' | 'admin'>('editor');
   const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
   const roleMenuRef = useRef<HTMLDivElement>(null);
+  const [isInactivityMenuOpen, setIsInactivityMenuOpen] = useState(false);
+  const inactivityMenuRef = useRef<HTMLDivElement>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
 
   const [editingEditorEmail, setEditingEditorEmail] = useState<string | null>(null);
   const [editorPwdInput, setEditorPwdInput] = useState('');
 
   useEffect(() => {
-    if (!isRoleMenuOpen) return;
+    if (!isRoleMenuOpen && !isInactivityMenuOpen) return;
     const handleClickOutside = (e: MouseEvent) => {
       if (roleMenuRef.current && !roleMenuRef.current.contains(e.target as Node)) {
         setIsRoleMenuOpen(false);
       }
+      if (inactivityMenuRef.current && !inactivityMenuRef.current.contains(e.target as Node)) {
+        setIsInactivityMenuOpen(false);
+      }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [isRoleMenuOpen]);
+  }, [isRoleMenuOpen, isInactivityMenuOpen]);
 
   if (!isOpen) return null;
 
@@ -150,36 +166,98 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
 
         {/* Cuerpo */}
         <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
-          {/* Estado de bloqueo de seguridad */}
-          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between gap-4">
-            <div className="flex items-start gap-2.5">
-              {requireAuth ? (
-                <Lock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-              ) : (
-                <Unlock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              )}
-              <div>
-                <p className="font-bold text-slate-900">
-                  {requireAuth
-                    ? 'Protección activa: Solo usuarios registrados pueden editar'
-                    : 'Acceso abierto temporalmente (Sin solicitud de login)'}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  La consulta pública siempre permanece libre para toda la comunidad educativa
-                </p>
+          {/* Estado de bloqueo de seguridad y tiempo de inactividad */}
+          <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between gap-4">
+              <div className="flex items-start gap-2.5">
+                {requireAuth ? (
+                  <Lock className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+                ) : (
+                  <Unlock className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                )}
+                <div>
+                  <p className="font-bold text-slate-900">
+                    {requireAuth
+                      ? 'Protección activa: Solo usuarios registrados pueden editar'
+                      : 'Acceso abierto temporalmente (Sin solicitud de login)'}
+                  </p>
+                  <p className="text-[11px] text-slate-500">
+                    La consulta pública siempre permanece libre para toda la comunidad educativa
+                  </p>
+                </div>
               </div>
+
+              {isAdmin && (
+                <label className="inline-flex items-center cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={requireAuth}
+                    onChange={(e) => void setRequireAuth(e.target.checked)}
+                    className="sr-only peer"
+                  />
+                  <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all relative peer-checked:bg-blue-600" />
+                </label>
+              )}
             </div>
 
-            {isAdmin && (
-              <label className="inline-flex items-center cursor-pointer shrink-0">
-                <input
-                  type="checkbox"
-                  checked={requireAuth}
-                  onChange={(e) => void setRequireAuth(e.target.checked)}
-                  className="sr-only peer"
-                />
-                <div className="w-10 h-5 bg-slate-300 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all relative peer-checked:bg-blue-600" />
-              </label>
+            {requireAuth && (
+              <div className="pt-2.5 border-t border-slate-200/80 flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-slate-700">
+                  <Clock className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                  <span className="text-[11px] font-semibold">
+                    Cierre automático por inactividad:
+                  </span>
+                </div>
+
+                <div ref={inactivityMenuRef} className="relative w-40">
+                  <button
+                    type="button"
+                    disabled={!isAdmin}
+                    onClick={() => setIsInactivityMenuOpen((prev) => !prev)}
+                    className="h-8 w-full flex items-center justify-between gap-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs disabled:opacity-60"
+                  >
+                    <span className="font-bold truncate">
+                      {INACTIVITY_OPTIONS.find((o) => o.value === inactivityTimeoutMinutes)?.label ||
+                        `${inactivityTimeoutMinutes} min`}
+                    </span>
+                    <ChevronDown
+                      className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform duration-150 ${
+                        isInactivityMenuOpen ? 'rotate-180' : ''
+                      }`}
+                    />
+                  </button>
+
+                  {isInactivityMenuOpen && (
+                    <div className="absolute right-0 mt-1.5 w-44 bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
+                      {INACTIVITY_OPTIONS.map((opt) => {
+                        const selected = inactivityTimeoutMinutes === opt.value;
+                        return (
+                          <button
+                            key={opt.value}
+                            type="button"
+                            onClick={() => {
+                              void setInactivityTimeoutMinutes(opt.value);
+                              setIsInactivityMenuOpen(false);
+                            }}
+                            className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors text-left"
+                          >
+                            <span
+                              className={`text-xs font-semibold ${
+                                selected ? 'text-[#0c4da2] font-bold' : 'text-slate-700'
+                              }`}
+                            >
+                              {opt.label}
+                            </span>
+                            {selected && (
+                              <span className="w-2 h-2 rounded-full bg-[#0c4da2] shrink-0" />
+                            )}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+              </div>
             )}
           </div>
 

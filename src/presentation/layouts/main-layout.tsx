@@ -249,6 +249,7 @@ export const MainLayout: React.FC = () => {
 
   // Estado para el modal de validación de intención positiva (Hard-Confirm Modal)
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
+  const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
 
   // Ejecución protegida de Inicio de Año Escolar (3 opciones: 'blank' | 'auto' | 'template')
   const handleExecuteFactoryReset = useCallback(
@@ -791,7 +792,7 @@ export const MainLayout: React.FC = () => {
                   )}
                   <button
                     type="button"
-                    onClick={() => void logout()}
+                    onClick={() => setIsLogoutConfirmOpen(true)}
                     className="p-1.5 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer shrink-0"
                     title={
                       !authUser.isHiddenRoot && authUser.email
@@ -902,6 +903,60 @@ export const MainLayout: React.FC = () => {
         isOpen={isAccessModalOpen}
         onClose={() => setIsAccessModalOpen(false)}
       />
+
+      {/* Modal de Confirmación de Cierre de Sesión */}
+      {isLogoutConfirmOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 select-none"
+          onClick={() => setIsLogoutConfirmOpen(false)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="bg-gradient-to-r from-blue-950 via-indigo-900 to-sky-900 px-5 py-3.5 text-white flex items-center justify-between border-b-2 border-amber-400">
+              <div className="flex items-center gap-2.5">
+                <LogOut className="w-4 h-4 text-amber-300 shrink-0" />
+                <h3 className="text-sm font-bold">Cerrar sesión</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsLogoutConfirmOpen(false)}
+                className="p-1 rounded-lg text-white/70 hover:text-white hover:bg-white/10 transition cursor-pointer"
+                title="Cancelar"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <p className="leading-relaxed">
+                ¿Estás seguro de que deseas cerrar la sesión actual?
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsLogoutConfirmOpen(false)}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs transition cursor-pointer"
+                >
+                  Cancelar
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsLogoutConfirmOpen(false);
+                    void logout();
+                  }}
+                  className="px-4 py-2 rounded-xl bg-red-600 hover:bg-red-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Sí, cerrar sesión</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

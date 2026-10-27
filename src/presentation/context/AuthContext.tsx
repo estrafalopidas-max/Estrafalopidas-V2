@@ -1,10 +1,11 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
 import {
   signOut,
   onAuthStateChanged,
   sendPasswordResetEmail,
   User,
 } from 'firebase/auth';
+import { Clock, LogOut, CheckCircle2 } from 'lucide-react';
 import { auth } from '../../infrastructure/firebase/firebase-client';
 
 export const PRIMARY_ADMIN_EMAIL = 'estrafalopidas@gmail.com';
@@ -34,6 +35,7 @@ export interface AuthUser {
 
 interface StoredAccessControl {
   requireAuth: boolean;
+  inactivityTimeoutMinutes: number;
   primaryAdminPassword?: string;
   editors: AuthorizedEditor[];
   updatedAtMs?: number;
@@ -47,6 +49,7 @@ interface AuthContextValue {
   isAdmin: boolean;
   isLoading: boolean;
   requireAuth: boolean;
+  inactivityTimeoutMinutes: number;
   primaryAdminPassword: string;
   editors: AuthorizedEditor[];
   loginWithCredentials: (identifier: string, password: string) => Promise<{ ok: boolean; error?: string }>;
@@ -66,6 +69,7 @@ interface AuthContextValue {
   toggleEditorActive: (email: string) => Promise<void>;
   removeEditor: (email: string) => Promise<void>;
   setRequireAuth: (val: boolean) => Promise<void>;
+  setInactivityTimeoutMinutes: (minutes: number) => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -78,6 +82,10 @@ function loadLocalAccessControl(): StoredAccessControl {
       if (parsed && typeof parsed === 'object') {
         return {
           requireAuth: typeof parsed.requireAuth === 'boolean' ? parsed.requireAuth : true,
+          inactivityTimeoutMinutes:
+            typeof parsed.inactivityTimeoutMinutes === 'number'
+              ? parsed.inactivityTimeoutMinutes
+              : 30,
           primaryAdminPassword:
             typeof parsed.primaryAdminPassword === 'string' &&
             parsed.primaryAdminPassword.trim() &&
@@ -94,6 +102,7 @@ function loadLocalAccessControl(): StoredAccessControl {
   }
   return {
     requireAuth: true,
+    inactivityTimeoutMinutes: 30,
     primaryAdminPassword: DEFAULT_PRIMARY_ADMIN_PASSWORD,
     editors: [],
     updatedAtMs: 0,
@@ -111,6 +120,9 @@ function saveLocalAccessControl(data: StoredAccessControl): void {
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const initialConfig = loadLocalAccessControl();
   const [requireAuthState, setRequireAuthState] = useState<boolean>(initialConfig.requireAuth);
+  const [inactivityTimeoutMinutes, setInactivityTimeoutMinutesState] = useState<number>(
+    initialConfig.inactivityTimeoutMinutes
+  );
   const [primaryAdminPassword, setPrimaryAdminPassword] = useState<string>(
     initialConfig.primaryAdminPassword || DEFAULT_PRIMARY_ADMIN_PASSWORD
   );
@@ -125,6 +137,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   });
   const [unauthorizedEmail, setUnauthorizedEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [inactivityWarningSeconds, setInactivityWarningSeconds] = useState<number | null>(null);
+  const lastActivityRef = useRef<number>(Date.now());
 
   const syncWithServer = useCallback(async () => {
     try {
@@ -138,6 +152,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (serverUpdated >= localUpdated && Array.isArray(serverData.editors)) {
           const nextReq =
             typeof serverData.requireAuth === 'boolean' ? serverData.requireAuth : true;
+          const nextInactivity =
+            typeof serverData.inactivityTimeoutMinutes === 'number'
+              ? serverData.inactivityTimeoutMinutes
+              : localData.inactivityTimeoutMinutes ?? 30;
           const nextPrimaryPwd =
             typeof serverData.primaryAdminPassword === 'string' &&
             serverData.primaryAdminPassword.trim() &&
@@ -146,10 +164,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               : localData.primaryAdminPassword || DEFAULT_PRIMARY_ADMIN_PASSWORD;
 
           setRequireAuthState(nextReq);
+          setInactivityTimeoutMinutesState(nextInactivity);
           setPrimaryAdminPassword(nextPrimaryPwd);
           setEditors(serverData.editors);
           saveLocalAccessControl({
             requireAuth: nextReq,
+            inactivityTimeoutMinutes: nextInactivity,
             primaryAdminPassword: nextPrimaryPwd,
             editors: serverData.editors,
             updatedAtMs: serverUpdated,
@@ -183,14 +203,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     async (
       nextRequireAuth: boolean,
       nextEditors: AuthorizedEditor[],
-      nextPrimaryPwd: string = primaryAdminPassword
+      nextPrimaryPwd: string = primaryAdminPassword,
+      nextInactivityMinutes: number = inactivityTimeoutMinutes
     ) => {
       const updatedAtMs = Date.now();
       setRequireAuthState(nextRequireAuth);
+      setInactivityTimeoutMinutesState(nextInactivityMinutes);
       setPrimaryAdminPassword(nextPrimaryPwd);
       setEditors(nextEditors);
       saveLocalAccessControl({
         requireAuth: nextRequireAuth,
+        inactivityTimeoutMinutes: nextInactivityMinutes,
         primaryAdminPassword: nextPrimaryPwd,
         editors: nextEditors,
         updatedAtMs,
@@ -202,6 +225,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             requireAuth: nextRequireAuth,
+            inactivityTimeoutMinutes: nextInactivityMinutes,
             primaryAdminPassword: nextPrimaryPwd,
             editors: nextEditors,
           }),
@@ -210,7 +234,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         // Fallback local ya guardado
       }
     },
-    [primaryAdminPassword]
+    [primaryAdminPassword, inactivityTimeoutMinutes]
   );
 
   const resolveAuthorizedUser = useCallback(
@@ -288,6 +312,70 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     }
   }, [firebaseUser, activeUser]);
 
+  const logout = useCallback(async () => {
+    setManualSessionEmail(null);
+    setUnauthorizedEmail(null);
+    setInactivityWarningSeconds(null);
+    try {
+      localStorage.removeItem(VERIFIED_SESSION_STORAGE_KEY);
+    } catch {
+      // ignore
+    }
+    try {
+      await signOut(auth);
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  // Seguimiento de actividad e inactividad
+  const registerActivity = useCallback(() => {
+    lastActivityRef.current = Date.now();
+    setInactivityWarningSeconds((prev) => (prev !== null ? null : prev));
+  }, []);
+
+  useEffect(() => {
+    if (!activeUser || !requireAuthState || inactivityTimeoutMinutes <= 0) {
+      setInactivityWarningSeconds(null);
+      return;
+    }
+
+    lastActivityRef.current = Date.now();
+
+    const handleUserEvent = () => {
+      // Si ya está mostrando la advertencia de últimos 60s, requerir clic explícito en el botón para mayor claridad,
+      // o actualizar actividad si aún no está en ventana de advertencia
+      const elapsedSec = Math.floor((Date.now() - lastActivityRef.current) / 1000);
+      const totalSec = inactivityTimeoutMinutes * 60;
+      if (totalSec - elapsedSec > 60) {
+        lastActivityRef.current = Date.now();
+      }
+    };
+
+    const events = ['mousemove', 'mousedown', 'keydown', 'touchstart', 'scroll'];
+    events.forEach((ev) => window.addEventListener(ev, handleUserEvent, { passive: true }));
+
+    const interval = window.setInterval(() => {
+      const totalSec = inactivityTimeoutMinutes * 60;
+      const elapsedSec = Math.floor((Date.now() - lastActivityRef.current) / 1000);
+      const remainingSec = totalSec - elapsedSec;
+
+      if (remainingSec <= 0) {
+        setInactivityWarningSeconds(null);
+        void logout();
+      } else if (remainingSec <= 60) {
+        setInactivityWarningSeconds(remainingSec);
+      } else {
+        setInactivityWarningSeconds(null);
+      }
+    }, 1000);
+
+    return () => {
+      events.forEach((ev) => window.removeEventListener(ev, handleUserEvent));
+      window.clearInterval(interval);
+    };
+  }, [activeUser, requireAuthState, inactivityTimeoutMinutes, logout]);
+
   const loginWithCredentials = useCallback(
     async (identifierInput: string, passwordInput: string): Promise<{ ok: boolean; error?: string }> => {
       setUnauthorizedEmail(null);
@@ -315,10 +403,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (cleanPwd !== expectedPwd) {
           return {
             ok: false,
-            error: 'Contraseña incorrecta para la cuenta de Coordinación académica.',
+            error: 'Contraseña incorrecta.',
           };
         }
         const emailToStore = PRIMARY_ADMIN_EMAIL.toLowerCase();
+        lastActivityRef.current = Date.now();
         setManualSessionEmail(emailToStore);
         try {
           localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, emailToStore);
@@ -358,6 +447,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       const emailToStore = found.email.trim().toLowerCase();
+      lastActivityRef.current = Date.now();
       setManualSessionEmail(emailToStore);
       try {
         localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, emailToStore);
@@ -386,9 +476,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       setUnauthorizedEmail(null);
-      setManualSessionEmail(resolved.email);
+      lastActivityRef.current = Date.now();
+      const sessionKey = resolved.isHiddenRoot ? PRIMARY_ADMIN_EMAIL.toLowerCase() : resolved.email;
+      setManualSessionEmail(sessionKey);
       try {
-        localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, resolved.email);
+        localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, sessionKey);
       } catch {
         // ignore
       }
@@ -433,10 +525,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (newPasswordInput && newPasswordInput.trim().length >= 4) {
         const cleanNewPwd = newPasswordInput.trim();
         if (isPrimary) {
-          await persistAccessControl(requireAuthState, editors, cleanNewPwd);
+          await persistAccessControl(requireAuthState, editors, cleanNewPwd, inactivityTimeoutMinutes);
           return {
             ok: true,
-            message: 'Contraseña de Coordinación académica actualizada correctamente. Ya puedes iniciar sesión.',
+            message: 'Contraseña actualizada correctamente. Ya puedes iniciar sesión.',
           };
         }
 
@@ -446,7 +538,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               ? { ...e, password: cleanNewPwd }
               : e
           );
-          await persistAccessControl(requireAuthState, updatedEditors, primaryAdminPassword);
+          await persistAccessControl(requireAuthState, updatedEditors, primaryAdminPassword, inactivityTimeoutMinutes);
           return {
             ok: true,
             message: `Contraseña actualizada correctamente para ${foundEditor.email}. Ya puedes iniciar sesión.`,
@@ -468,7 +560,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         message: 'Cuenta verificada. Ingresa tu nueva contraseña para restablecer el acceso inmediatamente.',
       };
     },
-    [editors, persistAccessControl, primaryAdminPassword, requireAuthState, syncWithServer]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, primaryAdminPassword, requireAuthState, syncWithServer]
   );
 
   const updatePrimaryAdminPassword = useCallback(
@@ -477,10 +569,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       if (clean.length < 4) {
         return { ok: false, error: 'La contraseña debe tener al menos 4 caracteres.' };
       }
-      await persistAccessControl(requireAuthState, editors, clean);
+      await persistAccessControl(requireAuthState, editors, clean, inactivityTimeoutMinutes);
       return { ok: true };
     },
-    [editors, persistAccessControl, requireAuthState]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, requireAuthState]
   );
 
   const updateEditorPassword = useCallback(
@@ -493,26 +585,11 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextEditors = editors.map((e) =>
         e.email.toLowerCase() === email ? { ...e, password: cleanPwd } : e
       );
-      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword);
+      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword, inactivityTimeoutMinutes);
       return { ok: true };
     },
-    [editors, persistAccessControl, primaryAdminPassword, requireAuthState]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, primaryAdminPassword, requireAuthState]
   );
-
-  const logout = useCallback(async () => {
-    setManualSessionEmail(null);
-    setUnauthorizedEmail(null);
-    try {
-      localStorage.removeItem(VERIFIED_SESSION_STORAGE_KEY);
-    } catch {
-      // ignore
-    }
-    try {
-      await signOut(auth);
-    } catch {
-      // ignore
-    }
-  }, []);
 
   const addEditor = useCallback(
     async (
@@ -542,7 +619,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
 
       if (email === PRIMARY_ADMIN_EMAIL.toLowerCase() || username === 'coordinacion') {
-        return { ok: false, error: 'Este usuario ya corresponde a Coordinación académica.' };
+        return { ok: false, error: 'Este usuario no está disponible para registro.' };
       }
 
       const exists = editors.some(
@@ -557,7 +634,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             ? { ...e, email, username, name, position, password, role, active: true }
             : e
         );
-        await persistAccessControl(requireAuthState, updated, primaryAdminPassword);
+        await persistAccessControl(requireAuthState, updated, primaryAdminPassword, inactivityTimeoutMinutes);
         return { ok: true };
       }
 
@@ -577,10 +654,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       };
 
       const nextEditors = [newEntry, ...editors];
-      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword);
+      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword, inactivityTimeoutMinutes);
       return { ok: true };
     },
-    [editors, persistAccessControl, primaryAdminPassword, requireAuthState]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, primaryAdminPassword, requireAuthState]
   );
 
   const toggleEditorActive = useCallback(
@@ -589,25 +666,34 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const nextEditors = editors.map((e) =>
         e.email.toLowerCase() === email ? { ...e, active: !e.active } : e
       );
-      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword);
+      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword, inactivityTimeoutMinutes);
     },
-    [editors, persistAccessControl, primaryAdminPassword, requireAuthState]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, primaryAdminPassword, requireAuthState]
   );
 
   const removeEditor = useCallback(
     async (emailRaw: string) => {
       const email = emailRaw.trim().toLowerCase();
       const nextEditors = editors.filter((e) => e.email.toLowerCase() !== email);
-      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword);
+      await persistAccessControl(requireAuthState, nextEditors, primaryAdminPassword, inactivityTimeoutMinutes);
     },
-    [editors, persistAccessControl, primaryAdminPassword, requireAuthState]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, primaryAdminPassword, requireAuthState]
   );
 
   const setRequireAuth = useCallback(
     async (val: boolean) => {
-      await persistAccessControl(val, editors, primaryAdminPassword);
+      await persistAccessControl(val, editors, primaryAdminPassword, inactivityTimeoutMinutes);
     },
-    [editors, persistAccessControl, primaryAdminPassword]
+    [editors, inactivityTimeoutMinutes, persistAccessControl, primaryAdminPassword]
+  );
+
+  const setInactivityTimeoutMinutes = useCallback(
+    async (minutes: number) => {
+      lastActivityRef.current = Date.now();
+      setInactivityWarningSeconds(null);
+      await persistAccessControl(requireAuthState, editors, primaryAdminPassword, minutes);
+    },
+    [editors, persistAccessControl, primaryAdminPassword, requireAuthState]
   );
 
   const isAuthorized = Boolean(activeUser) || !requireAuthState;
@@ -623,6 +709,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         isAdmin,
         isLoading,
         requireAuth: requireAuthState,
+        inactivityTimeoutMinutes,
         primaryAdminPassword,
         editors,
         loginWithCredentials,
@@ -635,9 +722,49 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         toggleEditorActive,
         removeEditor,
         setRequireAuth,
+        setInactivityTimeoutMinutes,
       }}
     >
       {children}
+
+      {/* Modal de Aviso de Cierre por Inactividad */}
+      {inactivityWarningSeconds !== null && activeUser && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs animate-in fade-in duration-200 select-none">
+          <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-sm overflow-hidden animate-in zoom-in-95 duration-200">
+            <div className="bg-gradient-to-r from-amber-500 to-orange-600 px-5 py-3.5 text-white flex items-center gap-2.5">
+              <Clock className="w-5 h-5 text-white shrink-0" />
+              <h3 className="text-sm font-bold">Cierre automático por inactividad</h3>
+            </div>
+            <div className="p-5 space-y-4 text-xs text-slate-700">
+              <p className="leading-relaxed">
+                No se ha detectado actividad reciente. Por seguridad, tu sesión se cerrará automáticamente en{' '}
+                <span className="font-extrabold text-amber-700 text-sm">
+                  {inactivityWarningSeconds}s
+                </span>
+                .
+              </p>
+              <div className="flex items-center justify-end gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => void logout()}
+                  className="px-3.5 py-2 rounded-xl border border-slate-200 hover:bg-slate-100 text-slate-700 font-semibold text-xs flex items-center gap-1.5 transition cursor-pointer"
+                >
+                  <LogOut className="w-3.5 h-3.5" />
+                  <span>Cerrar ahora</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={registerActivity}
+                  className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 shadow-xs transition cursor-pointer"
+                >
+                  <CheckCircle2 className="w-3.5 h-3.5" />
+                  <span>Continuar sesión</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </AuthContext.Provider>
   );
 };
