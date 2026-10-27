@@ -713,7 +713,7 @@ export const MainLayout: React.FC = () => {
               )}
             </button>
 
-            {/* 7. Delegar acceso y Gestión de Permisos */}
+            {/* 7. Accesos y Gestión de Permisos */}
             <button
               type="button"
               onClick={() => setIsAccessModalOpen(true)}
@@ -724,7 +724,7 @@ export const MainLayout: React.FC = () => {
                   ? 'bg-villa-blue-light text-white font-bold shadow-xs'
                   : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
               }`}
-              title="Delegar acceso y gestionar permisos de edición"
+              title="Accesos"
             >
               <ShieldCheck
                 className={`shrink-0 w-4 h-4 ${
@@ -732,22 +732,7 @@ export const MainLayout: React.FC = () => {
                 }`}
               />
               {!isSidebarCollapsed && (
-                <>
-                  <span className="text-xs tracking-tight truncate">Delegar acceso</span>
-                  <span
-                    className={`ml-auto text-[9px] font-semibold px-1.5 py-0.5 rounded ${
-                      isAccessModalOpen
-                        ? 'bg-white/20 text-white'
-                        : 'bg-blue-100 text-blue-800'
-                    }`}
-                  >
-                    {editors.filter((e) => e.active).length > 0
-                      ? `${editors.filter((e) => e.active).length} activo${
-                          editors.filter((e) => e.active).length > 1 ? 's' : ''
-                        }`
-                      : 'Auth'}
-                  </span>
-                </>
+                <span className="text-xs tracking-tight truncate">Accesos</span>
               )}
             </button>
           </nav>
@@ -795,18 +780,24 @@ export const MainLayout: React.FC = () => {
                   {!isSidebarCollapsed && (
                     <div className="min-w-0 pr-1">
                       <p className="text-[10px] font-bold text-slate-800 truncate">
-                        {authUser.role === 'admin' ? 'Coordinación' : 'Editor Delegado'}
+                        {authUser.role === 'admin' ? 'Coordinación' : 'Editor'}
                       </p>
-                      <p className="text-[9px] text-slate-500 font-mono truncate" title={authUser.email}>
-                        {authUser.email}
-                      </p>
+                      {!authUser.isHiddenRoot && authUser.email && (
+                        <p className="text-[9px] text-slate-500 font-mono truncate" title={authUser.email}>
+                          {authUser.email}
+                        </p>
+                      )}
                     </div>
                   )}
                   <button
                     type="button"
                     onClick={() => void logout()}
                     className="p-1.5 rounded-md text-slate-500 hover:text-red-600 hover:bg-red-50 transition cursor-pointer shrink-0"
-                    title={`Cerrar sesión (${authUser.email})`}
+                    title={
+                      !authUser.isHiddenRoot && authUser.email
+                        ? `Cerrar sesión (${authUser.email})`
+                        : 'Cerrar sesión'
+                    }
                     aria-label="Cerrar sesión"
                   >
                     <LogOut className="w-3.5 h-3.5" />

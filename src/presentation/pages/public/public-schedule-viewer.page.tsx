@@ -25,7 +25,7 @@ import { MatrixSlotCard } from '../../components/matrix/MatrixSlotCard';
 import { TimeBlockEntity, DayOfWeek } from '../../../domain/entities/time-block.entity';
 import { ShiftType } from '../../../domain/entities/grade.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
-import { getTodayDayOfWeek } from '../../../domain/services/ChronologyEngine';
+import { getTodayDayOfWeek, generateWeekHeaders } from '../../../domain/services/ChronologyEngine';
 import { normalizeTimeBlocksGrades, resolveCanonicalShift } from '../../../domain/services/grade-normalization.service';
 import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed';
 import {
@@ -423,6 +423,11 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     [snapshot?.dayConfigs]
   );
 
+  const weekHeaders = useMemo(
+    () => generateWeekHeaders(new Date(), dayConfigs.customHolidays),
+    [dayConfigs.customHolidays]
+  );
+
   const isHoliday = Boolean(dayConfigs.holidayDays?.[selectedDay]);
   const isMeetingDay = Boolean(
     dayConfigs.meetingDays?.[`${selectedShift}_${selectedDay}`] !== undefined
@@ -642,10 +647,11 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     setIsExportingPdf(true);
     try {
       const activeDayObj = DAYS.find((d) => d.key === selectedDay);
+      const fullDayHeader = weekHeaders.find((w) => w.id === selectedDay)?.label;
       await downloadScheduleAsPdf({
         shiftLabel: SHIFT_LABELS[selectedShift],
         shiftKey: selectedShift,
-        dayLabel: activeDayObj?.label || selectedDay,
+        dayLabel: fullDayHeader || activeDayObj?.label || selectedDay,
         scheduleType: activeScheduleType,
         academicPeriod: displayAcademicPeriod,
         academicWeek: displayAcademicWeek,
@@ -967,18 +973,19 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
         {/* Fila Inferior: Días de la Semana (Más grandes y con mayor contraste) + Datos de Periodo y Semana */}
         <div className="flex flex-wrap items-center justify-between gap-4 pt-3.5 border-t border-slate-200">
-          {/* Pestañas de Días de la Semana */}
+          {/* Pestañas de Días de la Semana con Fecha Completa */}
           <div className="flex flex-wrap items-center gap-2 bg-brand-50/70 p-1.5 rounded-2xl border border-brand-100 overflow-x-auto">
             {DAYS.map((d) => {
               const dayIsHoliday = Boolean(dayConfigs.holidayDays?.[d.key]);
               const isSelected = selectedDay === d.key;
               const isToday = d.key === todayDayKey;
+              const fullDateLabel = weekHeaders.find((w) => w.id === d.key)?.label || d.label;
               return (
                 <button
                   key={d.key}
                   type="button"
                   onClick={() => setSelectedDay(d.key)}
-                  className={`px-5 py-2.5 rounded-xl text-sm font-extrabold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+                  className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                     isSelected
                       ? dayIsHoliday
                         ? 'bg-red-600 text-white shadow-md ring-2 ring-red-600/25'
@@ -990,7 +997,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                       : 'bg-white text-villa-dark border border-slate-300 hover:bg-brand-50/60 hover:border-villa-blue-light/60 hover:text-villa-blue-dark shadow-2xs'
                   }`}
                 >
-                  <span>{d.label}</span>
+                  <span>{fullDateLabel}</span>
                   {isToday && (
                     <span
                       className={`px-2 py-0.5 rounded-md text-[10px] font-black uppercase tracking-wider leading-none ${
@@ -1209,20 +1216,20 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                   if (slot.isBreak) {
                     if (selectedShift === 'transicion-1') {
                       return (
-                        <tr key={`break-${slot.period}`} className="bg-amber-50/70 border-y border-amber-200/80">
+                        <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
                           {activeGrades.map((g) => {
                             const isT2 = g === 'Transición 2';
                             const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
                             return (
                               <React.Fragment key={`break-${g}`}>
-                                <td className="p-2 bg-amber-100/80 border-r border-amber-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
+                                <td className="p-2.5 bg-amber-200/80 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
                                   <div className="font-extrabold text-amber-950 text-sm whitespace-nowrap leading-tight">Receso</div>
-                                  <div className="text-xs font-mono font-bold text-amber-800 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                  <div className="text-xs font-mono font-bold text-amber-900 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                                    <Clock className="w-3 h-3 text-amber-700 shrink-0" />
                                     <span className="whitespace-nowrap">{slotTime}</span>
                                   </div>
                                 </td>
-                                <td className="py-2 px-4 text-center font-bold text-amber-900 text-xs tracking-wide border-r border-amber-200 last:border-r-0">
+                                <td className="py-3 px-4 text-center font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide border-r border-amber-300 last:border-r-0">
                                   ☕ {slot.label}
                                 </td>
                               </React.Fragment>
@@ -1232,10 +1239,10 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                       );
                     }
                     return (
-                      <tr key={`break-${slot.period}`} className="bg-amber-50/70 border-y border-amber-200/80">
+                      <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
                         <td
                           colSpan={activeGrades.length + 1}
-                          className="py-2 px-4 text-center font-bold text-amber-900 text-xs tracking-wide"
+                          className="py-3 px-4 text-center font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide"
                         >
                           ☕ {slot.label} &bull; ({slot.time})
                         </td>
@@ -1245,10 +1252,10 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
                   if (slot.isTransition) {
                     return (
-                      <tr key="transition-mt" className="bg-slate-100 border-y-2 border-slate-300">
+                      <tr key="transition-mt" className="bg-slate-200/90 border-y-2 border-slate-400">
                         <td
                           colSpan={activeGrades.length + 1}
-                          className="py-1.5 px-4 text-center font-extrabold text-slate-600 text-[11px] uppercase tracking-wider"
+                          className="py-3 px-4 text-center font-extrabold text-slate-800 text-xs sm:text-[13px] uppercase tracking-wider"
                         >
                           🎓 {slot.label} &bull; ({slot.time})
                         </td>

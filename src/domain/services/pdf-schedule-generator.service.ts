@@ -232,8 +232,8 @@ export async function downloadScheduleAsPdf(options: PdfScheduleExportOptions): 
   const holidayBannerH = isHoliday ? 38 : 0;
 
   const rowHeights = periodSlots.map((slot) => {
-    if (slot.isBreak) return 40;
-    if (slot.isTransition) return 34;
+    if (slot.isBreak) return 44;
+    if (slot.isTransition) return 40;
     if ((slot.isPreJornada || slot.isMeetingFirstHour) && !isHoliday) return 68;
     return 96;
   });
@@ -404,35 +404,43 @@ export async function downloadScheduleAsPdf(options: PdfScheduleExportOptions): 
     const rowH = rowHeights[rIdx];
 
     if (slot.isBreak) {
-      ctx.fillStyle = '#fffbeb';
+      ctx.fillStyle = '#fef3c7';
       ctx.fillRect(hx, curY, hw, rowH);
-      ctx.fillStyle = '#92400e';
-      ctx.font = '800 12.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#78350f';
+      ctx.font = '800 13px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${slot.label} • (${slot.time})`, hx + hw / 2, curY + rowH / 2);
+      ctx.fillText(`☕ ${slot.label} • (${slot.time})`, hx + hw / 2, curY + rowH / 2);
 
-      ctx.strokeStyle = '#e2e8f0';
+      ctx.strokeStyle = '#fcd34d';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
+      ctx.moveTo(hx, curY);
+      ctx.lineTo(hx + hw, curY);
       ctx.moveTo(hx, curY + rowH);
       ctx.lineTo(hx + hw, curY + rowH);
       ctx.stroke();
+      ctx.lineWidth = 1;
       curY += rowH;
       return;
     }
 
     if (slot.isTransition) {
-      ctx.fillStyle = '#f1f5f9';
+      ctx.fillStyle = '#e2e8f0';
       ctx.fillRect(hx, curY, hw, rowH);
-      ctx.fillStyle = '#475569';
-      ctx.font = '800 11.5px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = '#1e293b';
+      ctx.font = '800 12px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.textAlign = 'center';
-      ctx.fillText(`${slot.label} • (${slot.time})`, hx + hw / 2, curY + rowH / 2);
+      ctx.fillText(`🎓 ${slot.label.toUpperCase()} • (${slot.time})`, hx + hw / 2, curY + rowH / 2);
 
-      ctx.strokeStyle = '#cbd5e1';
+      ctx.strokeStyle = '#94a3b8';
+      ctx.lineWidth = 1.5;
       ctx.beginPath();
+      ctx.moveTo(hx, curY);
+      ctx.lineTo(hx + hw, curY);
       ctx.moveTo(hx, curY + rowH);
       ctx.lineTo(hx + hw, curY + rowH);
       ctx.stroke();
+      ctx.lineWidth = 1;
       curY += rowH;
       return;
     }

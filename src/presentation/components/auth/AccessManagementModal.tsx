@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import {
   ShieldCheck,
   UserPlus,
@@ -12,7 +12,11 @@ import {
   Lock,
   Unlock,
   AlertCircle,
-  Crown,
+  ChevronDown,
+  Briefcase,
+  KeyRound,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { useAuth, PRIMARY_ADMIN_EMAIL } from '../../context/AuthContext';
 
@@ -31,15 +35,39 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
     requireAuth,
     editors,
     addEditor,
+    updateEditorPassword,
     toggleEditorActive,
     removeEditor,
     setRequireAuth,
   } = useAuth();
 
+  const visibleEditors = editors.filter(
+    (ed) => ed.email.trim().toLowerCase() !== PRIMARY_ADMIN_EMAIL.toLowerCase()
+  );
+
   const [newEmail, setNewEmail] = useState('');
   const [newName, setNewName] = useState('');
+  const [newPosition, setNewPosition] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [newRole, setNewRole] = useState<'editor' | 'admin'>('editor');
+  const [isRoleMenuOpen, setIsRoleMenuOpen] = useState(false);
+  const roleMenuRef = useRef<HTMLDivElement>(null);
   const [feedback, setFeedback] = useState<{ type: 'ok' | 'err'; text: string } | null>(null);
+
+  const [editingEditorEmail, setEditingEditorEmail] = useState<string | null>(null);
+  const [editorPwdInput, setEditorPwdInput] = useState('');
+
+  useEffect(() => {
+    if (!isRoleMenuOpen) return;
+    const handleClickOutside = (e: MouseEvent) => {
+      if (roleMenuRef.current && !roleMenuRef.current.contains(e.target as Node)) {
+        setIsRoleMenuOpen(false);
+      }
+    };
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [isRoleMenuOpen]);
 
   if (!isOpen) return null;
 
@@ -47,19 +75,42 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
     e.preventDefault();
     setFeedback(null);
 
-    const res = await addEditor(newEmail, newName, newRole);
+    const res = await addEditor(
+      newEmail,
+      newName,
+      newRole,
+      newPosition,
+      newPassword
+    );
     if (!res.ok) {
-      setFeedback({ type: 'err', text: res.error || 'No se pudo autorizar el correo.' });
+      setFeedback({ type: 'err', text: res.error || 'No se pudo registrar el usuario.' });
       return;
     }
 
     setFeedback({
       type: 'ok',
-      text: `Se autorizó a ${newEmail.trim().toLowerCase()} para editar la parrilla.`,
+      text: `Usuario ${newEmail.trim().toLowerCase()} creado con contraseña asignada.`,
     });
     setNewEmail('');
     setNewName('');
+    setNewPosition('');
+    setNewPassword('');
     setNewRole('editor');
+    setTimeout(() => setFeedback(null), 4000);
+  };
+
+  const handleSaveEditorPassword = async (email: string) => {
+    const res = await updateEditorPassword(email, editorPwdInput);
+    if (!res.ok) {
+      setFeedback({ type: 'err', text: res.error || 'No se pudo actualizar la contraseña.' });
+      return;
+    }
+    setEditingEditorEmail(null);
+    setEditorPwdInput('');
+    setFeedback({
+      type: 'ok',
+      text: `Contraseña de ${email} actualizada correctamente.`,
+    });
     setTimeout(() => setFeedback(null), 4000);
   };
 
@@ -80,13 +131,10 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
             </div>
             <div>
               <h2 className="text-base font-bold text-white flex items-center gap-2">
-                <span>Delegación de Edición y Accesos</span>
-                <span className="text-[10px] font-semibold bg-amber-400/20 text-amber-200 border border-amber-300/30 px-2 py-0.5 rounded-full">
-                  Control de Coordinación
-                </span>
+                <span>Control de accesos</span>
               </h2>
               <p className="text-xs text-blue-200/90">
-                Autoriza o revoca a terceros para que editen la parrilla horaria
+                Registro y control de usuarios
               </p>
             </div>
           </div>
@@ -113,11 +161,11 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
               <div>
                 <p className="font-bold text-slate-900">
                   {requireAuth
-                    ? 'Protección activa: Solo correos autorizados pueden editar'
+                    ? 'Protección activa: Solo usuarios registrados pueden editar'
                     : 'Acceso abierto temporalmente (Sin solicitud de login)'}
                 </p>
                 <p className="text-[11px] text-slate-500">
-                  La Consulta Pública (<code className="font-mono">/h</code>) siempre permanece libre para padres, estudiantes y docentes.
+                  La consulta pública siempre permanece libre para toda la comunidad educativa
                 </p>
               </div>
             </div>
@@ -135,32 +183,7 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
             )}
           </div>
 
-          {/* Cuenta Principal de Coordinación */}
-          <div className="space-y-2">
-            <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-              Cuenta Principal (Propietaria)
-            </span>
-            <div className="p-3 rounded-xl bg-blue-50/70 border border-blue-200 flex items-center justify-between">
-              <div className="flex items-center gap-2.5 min-w-0">
-                <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center font-bold shrink-0">
-                  <Crown className="w-4 h-4 text-amber-300" />
-                </div>
-                <div className="min-w-0">
-                  <p className="font-bold text-slate-900 truncate">
-                    Coordinación Académica Principal
-                  </p>
-                  <p className="text-[11px] font-mono text-blue-700 truncate">
-                    {PRIMARY_ADMIN_EMAIL}
-                  </p>
-                </div>
-              </div>
-              <span className="px-2.5 py-1 rounded-full bg-blue-600 text-white text-[10px] font-bold shrink-0">
-                Admin Permanente
-              </span>
-            </div>
-          </div>
-
-          {/* Formulario para delegar a un tercero */}
+          {/* Formulario para crear usuario */}
           {isAdmin ? (
             <form
               onSubmit={handleAddEditor}
@@ -168,30 +191,13 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
             >
               <div className="flex items-center gap-2 text-slate-900 font-bold">
                 <UserPlus className="w-4 h-4 text-blue-600" />
-                <span>Delegar edición a un tercero</span>
+                <span>Crear usuario</span>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                    Correo electrónico (Google) *
-                  </label>
-                  <div className="relative">
-                    <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
-                    <input
-                      type="email"
-                      required
-                      value={newEmail}
-                      onChange={(e) => setNewEmail(e.target.value)}
-                      placeholder="tercero@gmail.com"
-                      className="w-full h-9 pl-8 pr-3 rounded-lg bg-white border border-slate-300 focus:border-blue-600 text-xs text-slate-900 outline-none"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-                    Nombre o Cargo
+                    Nombre y apellido
                   </label>
                   <div className="relative">
                     <User className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
@@ -199,24 +205,140 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
                       type="text"
                       value={newName}
                       onChange={(e) => setNewName(e.target.value)}
+                      placeholder="Ej. Laura Gómez"
+                      className="w-full h-9 pl-8 pr-3 rounded-lg bg-white border border-slate-300 focus:border-blue-600 text-xs text-slate-900 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                    Cargo
+                  </label>
+                  <div className="relative">
+                    <Briefcase className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      value={newPosition}
+                      onChange={(e) => setNewPosition(e.target.value)}
                       placeholder="Ej. Secretaría / Apoyo"
                       className="w-full h-9 pl-8 pr-3 rounded-lg bg-white border border-slate-300 focus:border-blue-600 text-xs text-slate-900 outline-none"
                     />
                   </div>
                 </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                    Usuario o correo electrónico *
+                  </label>
+                  <div className="relative">
+                    <Mail className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type="text"
+                      required
+                      value={newEmail}
+                      onChange={(e) => setNewEmail(e.target.value)}
+                      placeholder="usuario o correo@gmail.com"
+                      className="w-full h-9 pl-8 pr-3 rounded-lg bg-white border border-slate-300 focus:border-blue-600 text-xs text-slate-900 outline-none"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+                    Contraseña *
+                  </label>
+                  <div className="relative">
+                    <Lock className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2 pointer-events-none" />
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      required
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      placeholder="Asignar contraseña"
+                      className="w-full h-9 pl-8 pr-8 rounded-lg bg-white border border-slate-300 focus:border-blue-600 text-xs text-slate-900 outline-none"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowNewPassword((prev) => !prev)}
+                      className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
+                      tabIndex={-1}
+                    >
+                      {showNewPassword ? (
+                        <EyeOff className="w-3.5 h-3.5" />
+                      ) : (
+                        <Eye className="w-3.5 h-3.5" />
+                      )}
+                    </button>
+                  </div>
+                </div>
               </div>
 
-              <div className="flex items-center justify-between gap-2 pt-1">
+              <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
                 <div className="flex items-center gap-2">
                   <span className="text-[11px] font-semibold text-slate-600">Rol:</span>
-                  <select
-                    value={newRole}
-                    onChange={(e) => setNewRole(e.target.value as 'editor' | 'admin')}
-                    className="h-8 px-2.5 rounded-lg bg-white border border-slate-300 text-xs font-semibold text-slate-800 outline-none cursor-pointer"
-                  >
-                    <option value="editor">Editor Delegado (Edita parrilla y docentes)</option>
-                    <option value="admin">Administrador (También gestiona accesos)</option>
-                  </select>
+                  <div ref={roleMenuRef} className="relative w-64 sm:w-72">
+                    <button
+                      type="button"
+                      onClick={() => setIsRoleMenuOpen((prev) => !prev)}
+                      className="h-9 w-full flex items-center justify-between gap-2 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-800 transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs"
+                    >
+                      <span className="font-bold truncate">
+                        {newRole === 'editor'
+                          ? 'Editor (Edita parrilla y docentes)'
+                          : 'Administrador (También gestiona accesos)'}
+                      </span>
+                      <ChevronDown
+                        className={`w-3.5 h-3.5 text-slate-500 shrink-0 transition-transform duration-150 ${
+                          isRoleMenuOpen ? 'rotate-180' : ''
+                        }`}
+                      />
+                    </button>
+
+                    {isRoleMenuOpen && (
+                      <div className="absolute left-0 mt-1.5 w-full bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewRole('editor');
+                            setIsRoleMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors text-left"
+                        >
+                          <span
+                            className={`text-xs font-semibold ${
+                              newRole === 'editor' ? 'text-[#0c4da2] font-bold' : 'text-slate-700'
+                            }`}
+                          >
+                            Editor (Edita parrilla y docentes)
+                          </span>
+                          {newRole === 'editor' && (
+                            <span className="w-2 h-2 rounded-full bg-[#0c4da2] shrink-0" />
+                          )}
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setNewRole('admin');
+                            setIsRoleMenuOpen(false);
+                          }}
+                          className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors text-left"
+                        >
+                          <span
+                            className={`text-xs font-semibold ${
+                              newRole === 'admin' ? 'text-[#0c4da2] font-bold' : 'text-slate-700'
+                            }`}
+                          >
+                            Administrador (También gestiona accesos)
+                          </span>
+                          {newRole === 'admin' && (
+                            <span className="w-2 h-2 rounded-full bg-[#0c4da2] shrink-0" />
+                          )}
+                        </button>
+                      </div>
+                    )}
+                  </div>
                 </div>
 
                 <button
@@ -224,7 +346,7 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
                   className="h-9 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs flex items-center gap-1.5 transition cursor-pointer shrink-0 shadow-xs"
                 >
                   <UserPlus className="w-3.5 h-3.5" />
-                  <span>Autorizar Correo</span>
+                  <span>Crear usuario</span>
                 </button>
               </div>
 
@@ -247,95 +369,138 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
             </form>
           ) : (
             <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[11px]">
-              Has ingresado como <strong>Editor Delegado</strong> ({user?.email}). Solo la cuenta de Coordinación Principal puede agregar o revocar correos.
+              Has ingresado como <strong>Editor</strong> ({user?.email}). Solo Coordinación académica puede agregar o revocar usuarios.
             </div>
           )}
 
-          {/* Lista de Terceros Delegados */}
+          {/* Lista de Usuarios Registrados */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
               <span className="text-[11px] font-bold uppercase tracking-wider text-slate-500">
-                Terceros Delegados ({editors.length})
+                Usuarios registrados ({visibleEditors.length})
               </span>
-              {editors.length > 0 && (
+              {visibleEditors.length > 0 && (
                 <span className="text-[10px] text-slate-400">
-                  Puedes pausar o revocar el permiso en cualquier momento
+                  Puedes pausar, cambiar contraseña o revocar el permiso
                 </span>
               )}
             </div>
 
-            {editors.length === 0 ? (
+            {visibleEditors.length === 0 ? (
               <div className="p-5 rounded-xl border border-dashed border-slate-200 text-center text-slate-400 text-xs">
-                No hay terceros delegados registrados. Solo Coordinación Principal tiene acceso de edición.
+                No hay usuarios registrados. Solo Coordinación académica puede editar.
               </div>
             ) : (
               <div className="space-y-2">
-                {editors.map((ed) => (
+                {visibleEditors.map((ed) => (
                   <div
                     key={ed.email}
-                    className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition ${
+                    className={`p-3 rounded-xl border space-y-2 transition ${
                       ed.active
                         ? 'bg-white border-slate-200'
                         : 'bg-slate-50 border-slate-200 opacity-70'
                     }`}
                   >
-                    <div className="min-w-0">
-                      <div className="flex items-center gap-2">
-                        <span className="font-bold text-slate-900 truncate">{ed.name}</span>
-                        <span
-                          className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                            ed.active
-                              ? 'bg-emerald-100 text-emerald-800'
-                              : 'bg-amber-100 text-amber-800'
-                          }`}
-                        >
-                          {ed.active ? 'Activo' : 'Pausado'}
-                        </span>
-                        <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">
-                          {ed.role === 'admin' ? 'Admin' : 'Editor'}
-                        </span>
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="font-bold text-slate-900 truncate">{ed.name}</span>
+                          {ed.position && (
+                            <span className="text-[11px] text-slate-500 font-medium truncate">
+                              • {ed.position}
+                            </span>
+                          )}
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              ed.active
+                                ? 'bg-emerald-100 text-emerald-800'
+                                : 'bg-amber-100 text-amber-800'
+                            }`}
+                          >
+                            {ed.active ? 'Activo' : 'Pausado'}
+                          </span>
+                          <span className="px-2 py-0.5 rounded bg-slate-100 text-slate-600 text-[10px] font-semibold">
+                            {ed.role === 'admin' ? 'Admin' : 'Editor'}
+                          </span>
+                        </div>
+                        <p className="text-[11px] font-mono text-slate-600 truncate mt-0.5">
+                          {ed.email} <span className="text-slate-400 font-sans">• Desde {ed.addedAt}</span>
+                        </p>
                       </div>
-                      <p className="text-[11px] font-mono text-slate-600 truncate mt-0.5">
-                        {ed.email} <span className="text-slate-400 font-sans">• Desde {ed.addedAt}</span>
-                      </p>
+
+                      {isAdmin && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              if (editingEditorEmail === ed.email) {
+                                setEditingEditorEmail(null);
+                                setEditorPwdInput('');
+                              } else {
+                                setEditingEditorEmail(ed.email);
+                                setEditorPwdInput(ed.password || '');
+                              }
+                            }}
+                            className="p-1.5 rounded-lg bg-slate-100 hover:bg-blue-50 text-slate-700 hover:text-blue-700 border border-slate-200 transition cursor-pointer"
+                            title="Asignar o cambiar contraseña"
+                          >
+                            <KeyRound className="w-3.5 h-3.5" />
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void toggleEditorActive(ed.email)}
+                            className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ${
+                              ed.active
+                                ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
+                                : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
+                            }`}
+                            title={
+                              ed.active
+                                ? 'Pausar temporalmente el acceso de este usuario'
+                                : 'Reactivar el acceso de este usuario'
+                            }
+                          >
+                            {ed.active ? (
+                              <>
+                                <PauseCircle className="w-3.5 h-3.5" />
+                                <span>Pausar</span>
+                              </>
+                            ) : (
+                              <>
+                                <PlayCircle className="w-3.5 h-3.5" />
+                                <span>Activar</span>
+                              </>
+                            )}
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => void removeEditor(ed.email)}
+                            className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition cursor-pointer"
+                            title="Revocar y eliminar usuario"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      )}
                     </div>
 
-                    {isAdmin && (
-                      <div className="flex items-center gap-1.5 shrink-0">
+                    {editingEditorEmail === ed.email && isAdmin && (
+                      <div className="pt-2 border-t border-slate-100 flex items-center gap-2">
+                        <input
+                          type="text"
+                          value={editorPwdInput}
+                          onChange={(e) => setEditorPwdInput(e.target.value)}
+                          placeholder="Nueva contraseña para este usuario"
+                          className="flex-1 h-8 px-3 rounded-lg bg-slate-50 border border-slate-300 text-xs text-slate-900 outline-none"
+                        />
                         <button
                           type="button"
-                          onClick={() => void toggleEditorActive(ed.email)}
-                          className={`px-2.5 py-1.5 rounded-lg text-[11px] font-semibold flex items-center gap-1 transition cursor-pointer ${
-                            ed.active
-                              ? 'bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200'
-                              : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200'
-                          }`}
-                          title={
-                            ed.active
-                              ? 'Pausar temporalmente el acceso de este usuario'
-                              : 'Reactivar el acceso de este usuario'
-                          }
+                          onClick={() => void handleSaveEditorPassword(ed.email)}
+                          className="h-8 px-3 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer shrink-0"
                         >
-                          {ed.active ? (
-                            <>
-                              <PauseCircle className="w-3.5 h-3.5" />
-                              <span>Pausar</span>
-                            </>
-                          ) : (
-                            <>
-                              <PlayCircle className="w-3.5 h-3.5" />
-                              <span>Activar</span>
-                            </>
-                          )}
-                        </button>
-
-                        <button
-                          type="button"
-                          onClick={() => void removeEditor(ed.email)}
-                          className="p-1.5 rounded-lg bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 transition cursor-pointer"
-                          title="Revocar y eliminar correo"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
+                          Guardar clave
                         </button>
                       </div>
                     )}
@@ -346,17 +511,14 @@ export const AccessManagementModal: React.FC<AccessManagementModalProps> = ({
           </div>
         </div>
 
-        {/* Pie del Modal */}
-        <div className="bg-slate-50 px-6 py-3.5 border-t border-slate-200 flex items-center justify-between shrink-0">
-          <span className="text-[11px] text-slate-500">
-            Sesión actual: <strong className="text-slate-800">{user?.email || PRIMARY_ADMIN_EMAIL}</strong>
-          </span>
+        {/* Pie */}
+        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-end shrink-0">
           <button
             type="button"
             onClick={onClose}
             className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs transition cursor-pointer"
           >
-            Listo
+            Cerrar
           </button>
         </div>
       </div>

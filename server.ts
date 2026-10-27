@@ -325,7 +325,10 @@ async function startServer() {
 
   interface ServerAuthorizedEditor {
     email: string;
+    username?: string;
     name: string;
+    position?: string;
+    password?: string;
     role: 'admin' | 'editor';
     addedAt: string;
     active: boolean;
@@ -334,6 +337,7 @@ async function startServer() {
   interface ServerAccessControlConfig {
     requireAuth: boolean;
     primaryAdminEmail: string;
+    primaryAdminPassword?: string;
     editors: ServerAuthorizedEditor[];
     updatedAtMs: number;
   }
@@ -346,6 +350,12 @@ async function startServer() {
           return {
             requireAuth: typeof parsed.requireAuth === 'boolean' ? parsed.requireAuth : true,
             primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+            primaryAdminPassword:
+              typeof parsed.primaryAdminPassword === 'string' &&
+              parsed.primaryAdminPassword.trim() &&
+              parsed.primaryAdminPassword.trim() !== 'VillaFlora2026*'
+                ? parsed.primaryAdminPassword.trim()
+                : 'piloro666',
             editors: parsed.editors,
             updatedAtMs: Number(parsed.updatedAtMs || Date.now()),
           };
@@ -357,6 +367,7 @@ async function startServer() {
     return {
       requireAuth: true,
       primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+      primaryAdminPassword: 'piloro666',
       editors: [],
       updatedAtMs: Date.now(),
     };
@@ -371,12 +382,27 @@ async function startServer() {
     const body = req.body || {};
     const nextRequireAuth =
       typeof body.requireAuth === 'boolean' ? body.requireAuth : accessControlState.requireAuth;
+    const nextPrimaryAdminPassword =
+      typeof body.primaryAdminPassword === 'string' &&
+      body.primaryAdminPassword.trim() &&
+      body.primaryAdminPassword.trim() !== 'VillaFlora2026*'
+        ? body.primaryAdminPassword.trim()
+        : accessControlState.primaryAdminPassword || 'piloro666';
     const nextEditors: ServerAuthorizedEditor[] = Array.isArray(body.editors)
       ? body.editors
           .filter((e: any) => e && typeof e.email === 'string' && e.email.trim())
           .map((e: any) => ({
             email: e.email.trim().toLowerCase(),
+            ...(typeof e.username === 'string' && e.username.trim()
+              ? { username: e.username.trim().toLowerCase() }
+              : {}),
             name: typeof e.name === 'string' && e.name.trim() ? e.name.trim() : e.email.trim(),
+            ...(typeof e.position === 'string' && e.position.trim()
+              ? { position: e.position.trim() }
+              : {}),
+            ...(typeof e.password === 'string' && e.password.trim()
+              ? { password: e.password.trim() }
+              : {}),
             role: e.role === 'admin' ? 'admin' : 'editor',
             addedAt: typeof e.addedAt === 'string' ? e.addedAt : new Date().toISOString(),
             active: typeof e.active === 'boolean' ? e.active : true,
@@ -386,6 +412,7 @@ async function startServer() {
     accessControlState = {
       requireAuth: nextRequireAuth,
       primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+      primaryAdminPassword: nextPrimaryAdminPassword,
       editors: nextEditors,
       updatedAtMs: Date.now(),
     };

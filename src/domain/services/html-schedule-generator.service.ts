@@ -180,6 +180,12 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
   const displayWeek = !academicWeek || academicWeek === 8 ? 9 : academicWeek;
   const effectiveDayConfigs = resolveEffectiveDayConfigs(dayConfigs);
   const dayConfigsSerialized = JSON.stringify(effectiveDayConfigs).replace(/</g, '\\u003c');
+  const weekHeadersList = generateWeekHeaders(new Date(), effectiveDayConfigs.customHolidays);
+  const weekHeadersMap: Record<string, string> = {};
+  weekHeadersList.forEach((h) => {
+    weekHeadersMap[h.id] = h.label;
+  });
+  const weekHeadersSerialized = JSON.stringify(weekHeadersMap).replace(/</g, '\\u003c');
 
   // Helper to resolve shift from block or grade name
   const resolveBlockShift = (b: TimeBlockEntity): 'morning' | 'afternoon' | 'transicion-1' => {
@@ -1087,26 +1093,28 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     }
 
     .break-row {
-      background-color: #fffbeb;
+      background-color: #fef3c7;
       text-align: center;
-      padding: 12px;
-      color: #92400e;
+      padding: 13px 16px !important;
+      color: #78350f;
       font-weight: 800;
       font-size: 0.85rem;
-      border-top: 1px dashed #fde68a;
-      border-bottom: 1px dashed #fde68a;
+      border-top: 2px solid #fcd34d !important;
+      border-bottom: 2px solid #fcd34d !important;
+      height: auto !important;
     }
     .transition-row {
-      background-color: #f1f5f9;
+      background-color: #e2e8f0;
       text-align: center;
-      padding: 8px 12px;
-      color: #475569;
+      padding: 13px 16px !important;
+      color: #1e293b;
       font-weight: 800;
-      font-size: 0.75rem;
+      font-size: 0.82rem;
       text-transform: uppercase;
       letter-spacing: 0.06em;
-      border-top: 2px solid #cbd5e1;
-      border-bottom: 2px solid #cbd5e1;
+      border-top: 2px solid #94a3b8 !important;
+      border-bottom: 2px solid #94a3b8 !important;
+      height: auto !important;
     }
     .empty-state {
       text-align: center;
@@ -1239,6 +1247,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     const ALL_BLOCKS = ${jsonSerialized};
     const ALL_TEACHERS = ${teachersSerialized};
     const DAY_CONFIGS = ${dayConfigsSerialized};
+    const INITIAL_WEEK_HEADERS = ${weekHeadersSerialized};
     const MEETING_DAYS = (DAY_CONFIGS && DAY_CONFIGS.meetingDays) || {};
     const EVENT_DAYS = (DAY_CONFIGS && DAY_CONFIGS.eventDays) || {};
     const HOLIDAY_DAYS = (DAY_CONFIGS && DAY_CONFIGS.holidayDays) || {};
@@ -1396,10 +1405,29 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       teacherSelect.appendChild(opt);
     });
 
+    function computeDynamicFullDayLabel(dayKey, fallbackLabel) {
+      try {
+        const now = new Date();
+        const d = now.getDay();
+        const diff = d === 0 ? -6 : 1 - d;
+        const mon = new Date(now);
+        mon.setDate(now.getDate() + diff);
+        const offsets = { lunes: 0, martes: 1, miercoles: 2, jueves: 3, viernes: 4 };
+        const target = new Date(mon);
+        target.setDate(mon.getDate() + (offsets[dayKey] || 0));
+        const raw = new Intl.DateTimeFormat('es-CO', { weekday: 'long', day: '2-digit', month: 'long' }).format(target);
+        const clean = raw.replace(/,/g, '').replace(/\./g, '').trim();
+        return clean.charAt(0).toUpperCase() + clean.slice(1);
+      } catch (e) {
+        return INITIAL_WEEK_HEADERS[dayKey] || fallbackLabel;
+      }
+    }
+
     function updateDayTabLabels() {
       document.querySelectorAll('.day-tab').forEach(b => {
         const dayKey = b.getAttribute('data-day');
         const baseLabel = b.getAttribute('data-label') || b.textContent;
+        const fullLabel = computeDynamicFullDayLabel(dayKey, baseLabel);
         const isHol = Boolean(HOLIDAY_DAYS[dayKey]);
         const isToday = dayKey === todayDayKey;
         if (isToday) {
@@ -1407,7 +1435,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         } else {
           b.classList.remove('is-today-tab');
         }
-        let htmlContent = '<span>' + baseLabel + '</span>';
+        let htmlContent = '<span>' + fullLabel + '</span>';
         if (isToday) {
           htmlContent += '<span class="badge-today">Hoy</span>';
         }
@@ -1690,17 +1718,17 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
             html += '<tr>';
             gradesInFilter.forEach(g => {
               const slotTime = (g === 'Transición 2' && slot.secondaryTime) ? slot.secondaryTime : slot.time;
-              html += '<td class="time-col-td" style="background-color: #fef3c7;"><span class="time-slot-label" style="color: #78350f;">Receso</span><span class="time-slot-hours">' + slotTime + '</span></td>';
+              html += '<td class="time-col-td" style="background-color: #fde68a;"><span class="time-slot-label" style="color: #78350f;">Receso</span><span class="time-slot-hours">' + slotTime + '</span></td>';
               html += '<td class="break-row">☕ ' + slot.label + '</td>';
             });
             html += '</tr>';
             return;
           }
-          html += '<tr><td colspan="' + totalCols + '" class="break-row">☕ ' + slot.label + ' (' + slot.time + ')</td></tr>';
+          html += '<tr><td colspan="' + totalCols + '" class="break-row">☕ ' + slot.label + ' &bull; (' + slot.time + ')</td></tr>';
           return;
         }
         if (slot.isTransition) {
-          html += '<tr><td colspan="' + totalCols + '" class="transition-row">🎓 ' + slot.label + ' (' + slot.time + ')</td></tr>';
+          html += '<tr><td colspan="' + totalCols + '" class="transition-row">🎓 ' + slot.label + ' &bull; (' + slot.time + ')</td></tr>';
           return;
         }
 
@@ -1911,7 +1939,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           const gradeColW = (tableW - timeColW) / Math.max(1, grades.length);
           const padX = 28;
           const logW = tableW + padX * 2;
-          const rowHeights = activePeriods.map(s => s.isBreak ? 40 : s.isTransition ? 34 : ((s.isPreJornada || s.isMeetingFirstHour) && !isHoliday) ? 68 : 96);
+          const rowHeights = activePeriods.map(s => s.isBreak ? 44 : s.isTransition ? 40 : ((s.isPreJornada || s.isMeetingFirstHour) && !isHoliday) ? 68 : 96);
           const totalRowsH = rowHeights.reduce((a, b) => a + b, 0);
           const holH = isHoliday ? 38 : 0;
           const logH = 20 + 108 + 16 + 42 + holH + totalRowsH + 40;
@@ -1969,12 +1997,12 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(padX, curY, tableW, rH);
             if (slot.isBreak || slot.isTransition) {
-              ctx.fillStyle = slot.isBreak ? '#fffbeb' : '#f1f5f9';
+              ctx.fillStyle = slot.isBreak ? '#fef3c7' : '#e2e8f0';
               ctx.fillRect(padX, curY, tableW, rH);
-              ctx.fillStyle = slot.isBreak ? '#92400e' : '#475569';
-              ctx.font = '800 12px sans-serif';
+              ctx.fillStyle = slot.isBreak ? '#78350f' : '#1e293b';
+              ctx.font = '800 12.5px sans-serif';
               ctx.textAlign = 'center';
-              ctx.fillText(slot.label + ' (' + slot.time + ')', padX + tableW / 2, curY + rH / 2);
+              ctx.fillText((slot.isBreak ? '☕ ' : '🎓 ') + slot.label + ' • (' + slot.time + ')', padX + tableW / 2, curY + rH / 2);
               curY += rH;
               return;
             }
