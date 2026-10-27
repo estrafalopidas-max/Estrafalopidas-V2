@@ -578,6 +578,46 @@ export function sortTeachersWithLowPriorityLast<
  * Example: 'Mariluz Viviana Martínez Cortés' -> 'Mariluz Martínez'
  * Example: 'Alejandro Ramírez Cañas' -> 'Alejandro Ramírez'
  */
+function findEditedUserInStorage(idOrName?: string | null): {
+  id: string;
+  displayName?: string;
+  shortName?: string;
+  groupDirection?: string;
+  color_hex?: string;
+  userEdited?: boolean;
+} | undefined {
+  if (!idOrName) return undefined;
+  try {
+    const raw = localStorage.getItem('ievf_users_v1');
+    if (!raw) return undefined;
+    const users = JSON.parse(raw);
+    if (!Array.isArray(users)) return undefined;
+    const target = idOrName.trim().toLowerCase();
+    return users.find(
+      (u: any) =>
+        u &&
+        (String(u.id || '').trim().toLowerCase() === target ||
+          String(u.displayName || '').trim().toLowerCase() === target ||
+          String(u.shortName || '').trim().toLowerCase() === target)
+    );
+  } catch {
+    return undefined;
+  }
+}
+
+export function computeDefaultShortName(candidate: string): string {
+  const clean = (candidate || '')
+    .replace(/^(prof\.|docente|profesor|profesora|lic\.|ing\.|coord\.)\s+/i, '')
+    .trim();
+  const words = clean.split(/\s+/).filter(Boolean);
+  if (words.length === 0) return 'Sin Asignar';
+  if (words.length === 1) return toTitleCase(words[0]);
+  if (words.length === 2) return toTitleCase(`${words[0]} ${words[1]}`);
+  const firstGivenName = words[0];
+  const firstSurname = words[words.length - 2];
+  return toTitleCase(`${firstGivenName} ${firstSurname}`);
+}
+
 export function getShortTeacherName(
   teacherIdOrName?: string | null,
   teacherNameOptional?: string | null
@@ -597,25 +637,20 @@ export function getShortTeacherName(
     return 'Sin Asignar';
   }
 
+  const storedUser = findEditedUserInStorage(rawId || candidate);
+  if (storedUser?.shortName?.trim()) {
+    return storedUser.shortName.trim();
+  }
+  if (storedUser?.userEdited && storedUser?.displayName?.trim()) {
+    return computeDefaultShortName(storedUser.displayName.trim());
+  }
+
   const matched = resolveOfficialTeacherEntry(rawId || candidate, rawName || candidate);
   if (matched?.shortName) {
     return matched.shortName;
   }
 
-  // Automatic extraction of First Name + First Surname for custom/new teachers
-  const clean = candidate
-    .replace(/^(prof\.|docente|profesor|profesora|lic\.|ing\.|coord\.)\s+/i, '')
-    .trim();
-  const words = clean.split(/\s+/).filter(Boolean);
-  if (words.length === 0) return 'Sin Asignar';
-  if (words.length === 1) return toTitleCase(words[0]);
-  if (words.length === 2) return toTitleCase(`${words[0]} ${words[1]}`);
-
-  // For 3 or 4 words in standard 'Nombre1 [Nombre2] Apellido1 Apellido2' format:
-  // words[0] is Primer Nombre, words[words.length - 2] is Primer Apellido
-  const firstGivenName = words[0];
-  const firstSurname = words[words.length - 2];
-  return toTitleCase(`${firstGivenName} ${firstSurname}`);
+  return computeDefaultShortName(candidate);
 }
 
 /**
@@ -638,6 +673,11 @@ export function getFullTeacherName(
     candidate.toLowerCase() === 'periodo libre'
   ) {
     return 'Sin Asignar';
+  }
+
+  const storedUser = findEditedUserInStorage(rawId || candidate);
+  if (storedUser?.displayName?.trim()) {
+    return storedUser.displayName.trim();
   }
 
   const matched = resolveOfficialTeacherEntry(rawId || candidate, rawName || candidate);
@@ -755,6 +795,51 @@ export function updateTeacherDictionaryColor(teacherIdOrName: string, newHex: st
   const cleanUpper = teacherIdOrName.trim().toUpperCase();
   if (EXCEL_TEACHERS_DICTIONARY[cleanUpper]) {
     EXCEL_TEACHERS_DICTIONARY[cleanUpper].originalExcelHex = newHex;
+  }
+}
+
+export function updateTeacherDictionaryProfile(
+  teacherId: string,
+  updates: {
+    fullName?: string;
+    shortName?: string;
+    colorHex?: string;
+    groupDirection?: string;
+  }
+): void {
+  if (!teacherId) return;
+  const existing = resolveOfficialTeacherEntry(teacherId, updates.fullName);
+  if (existing) {
+    if (updates.fullName?.trim()) {
+      existing.canonicalName = updates.fullName.trim();
+      EXCEL_TEACHERS_DICTIONARY[updates.fullName.trim().toUpperCase()] = existing;
+      EXCEL_TEACHERS_DICTIONARY[normalizeKey(updates.fullName.trim())] = existing;
+    }
+    if (updates.shortName?.trim()) {
+      existing.shortName = updates.shortName.trim();
+      EXCEL_TEACHERS_DICTIONARY[updates.shortName.trim().toUpperCase()] = existing;
+      EXCEL_TEACHERS_DICTIONARY[normalizeKey(updates.shortName.trim())] = existing;
+    }
+    if (updates.colorHex?.trim()) {
+      existing.originalExcelHex = updates.colorHex.trim();
+    }
+    if (updates.groupDirection !== undefined) {
+      existing.groupDirection = updates.groupDirection;
+    }
+  } else if (updates.fullName?.trim()) {
+    const newEntry: ExcelTeacherEntry = {
+      id: teacherId,
+      canonicalName: updates.fullName.trim(),
+      shortName: updates.shortName?.trim() || computeDefaultShortName(updates.fullName.trim()),
+      originalExcelHex: updates.colorHex?.trim() || '#007DC5',
+      groupDirection: updates.groupDirection || 'Sin asignación',
+    };
+    EXCEL_TEACHERS_DICTIONARY[teacherId] = newEntry;
+    EXCEL_TEACHERS_DICTIONARY[teacherId.toUpperCase()] = newEntry;
+    EXCEL_TEACHERS_DICTIONARY[newEntry.canonicalName.toUpperCase()] = newEntry;
+    EXCEL_TEACHERS_DICTIONARY[normalizeKey(newEntry.canonicalName)] = newEntry;
+    EXCEL_TEACHERS_DICTIONARY[newEntry.shortName.toUpperCase()] = newEntry;
+    EXCEL_TEACHERS_DICTIONARY[normalizeKey(newEntry.shortName)] = newEntry;
   }
 }
 

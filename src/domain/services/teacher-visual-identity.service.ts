@@ -11,6 +11,7 @@ import {
   TeacherEntrySchedule,
   toTitleCase,
   getTeacherInitials,
+  computeDefaultShortName,
   getShortTeacherName,
   getFullTeacherName,
   resolveOfficialTeacherEntry,
@@ -22,6 +23,7 @@ import {
   EXCEL_TEACHERS_DICTIONARY,
   OFFICIAL_TEACHERS_ROSTER,
   updateTeacherDictionaryColor,
+  updateTeacherDictionaryProfile,
 } from './teacher-normalization.service';
 
 export type TeacherVisualIdentity = TeacherExcelIdentity & {
@@ -33,6 +35,7 @@ export type { TeacherEntrySchedule };
 export {
   toTitleCase,
   getTeacherInitials,
+  computeDefaultShortName,
   getShortTeacherName,
   getFullTeacherName,
   resolveOfficialTeacherEntry,
@@ -44,6 +47,7 @@ export {
   EXCEL_TEACHERS_DICTIONARY,
   OFFICIAL_TEACHERS_ROSTER,
   updateTeacherDictionaryColor,
+  updateTeacherDictionaryProfile,
 };
 
 /**

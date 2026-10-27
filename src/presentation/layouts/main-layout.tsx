@@ -833,9 +833,15 @@ export const MainLayout: React.FC = () => {
         }}
         teacher={selectedTeacherForEdit}
         onSelectTeacher={(t) => setSelectedTeacherForEdit(t)}
-        onSuccess={() => {
+        onSuccess={(msg) => {
           setIsTeacherModalOpen(false);
           setSelectedTeacherForEdit(null);
+          const confirmText = msg || 'Los datos del docente se actualizaron correctamente.';
+          setUploadSuccess(confirmText);
+          window.dispatchEvent(
+            new CustomEvent('teacher_action_confirmed', { detail: confirmText })
+          );
+          setTimeout(() => setUploadSuccess(null), 4000);
         }}
       />
 

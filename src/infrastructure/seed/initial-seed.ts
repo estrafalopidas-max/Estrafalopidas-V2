@@ -1074,8 +1074,19 @@ export function ensureSeedDataLoaded() {
     localStorage.setItem('ievf_locked_teacher_colors_v1', JSON.stringify(lockedColors));
   } catch {}
 
+  let deletedIds = new Set<string>();
+  try {
+    const delRaw = localStorage.getItem('ievf_deleted_teacher_ids_v1');
+    if (delRaw) {
+      const parsedDel = JSON.parse(delRaw);
+      if (Array.isArray(parsedDel)) {
+        deletedIds = new Set(parsedDel.map((id: any) => String(id)));
+      }
+    }
+  } catch {}
+
   if (!isCurrentVersion || !localStorage.getItem('ievf_users_v1')) {
-    const mergedTeachers = SEED_TEACHERS.map((t) => {
+    const mergedTeachers = SEED_TEACHERS.filter((t) => !deletedIds.has(t.id)).map((t) => {
       const lockedHex = lockedColors[t.id] || t.color_hex || t.color || '#007DC5';
       return { ...t, color: lockedHex, color_hex: lockedHex, avatarColor: lockedHex };
     });
@@ -1093,6 +1104,7 @@ export function ensureSeedDataLoaded() {
           const filtered = parsed
             .filter((u: any) => {
               const rem =
+                (u?.id && deletedIds.has(String(u.id))) ||
                 u?.id === 't-adriana-mier' ||
                 String(u?.displayName || '').toLowerCase().includes('adriana mier') ||
                 String(u?.displayName || '').toLowerCase().includes('adriana luc');
@@ -1100,6 +1112,19 @@ export function ensureSeedDataLoaded() {
               return !rem;
             })
             .map((u: any) => {
+              if (u?.userEdited) {
+                const userHex = u?.color_hex || u?.color || (u?.id && lockedColors[u.id]) || '#007DC5';
+                if (u?.id && userHex) {
+                  updateTeacherDictionaryColor(u.id, userHex);
+                }
+                return {
+                  ...u,
+                  color: userHex,
+                  color_hex: userHex,
+                  avatarColor: userHex,
+                };
+              }
+
               let nextUser = u;
               const canonicalSeed = u?.id ? seedTeacherById.get(u.id) : undefined;
               if (canonicalSeed) {

@@ -227,11 +227,20 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
   useEffect(() => {
     ensureSeedDataLoaded();
     const repo = new FirestoreUserRepository();
-    repo.getTeachers().then((list) => {
-      if (list && list.length > 0) {
-        setTeachers(list);
-      }
-    }).catch(() => {});
+    const refreshTeachers = () => {
+      repo.getTeachers().then((list) => {
+        if (Array.isArray(list)) {
+          setTeachers(list);
+        }
+      }).catch(() => {});
+    };
+    refreshTeachers();
+    window.addEventListener('users_collection_updated', refreshTeachers);
+    window.addEventListener('storage', refreshTeachers);
+    return () => {
+      window.removeEventListener('users_collection_updated', refreshTeachers);
+      window.removeEventListener('storage', refreshTeachers);
+    };
   }, []);
 
   const setOnReload = useCallback((fn: (() => void) | null) => {
