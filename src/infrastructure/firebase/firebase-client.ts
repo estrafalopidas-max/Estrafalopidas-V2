@@ -4,20 +4,21 @@ import {
   initializeFirestore,
   memoryLocalCache,
   disableNetwork,
-  doc,
-  setDoc,
-  getDoc,
-  getDocFromServer,
-  onSnapshot,
-  serverTimestamp,
+  setLogLevel,
 } from 'firebase/firestore';
 import firebaseConfig from '../../../firebase-applet-config.json';
 import {
   PublicScheduleSnapshot,
-  PublicDayConfigs,
   resolveEffectiveDayConfigs,
 } from '../../domain/services/html-schedule-generator.service';
-import { resolveCanonicalGradeName, resolveCanonicalShift, normalizeTimeBlocksGrades } from '../../domain/services/grade-normalization.service';
+import { normalizeTimeBlocksGrades } from '../../domain/services/grade-normalization.service';
+
+// Silenciar logs internos del SDK de Firestore para evitar ruido por cuota gratuita agotada
+try {
+  setLogLevel('silent');
+} catch {
+  // ignore
+}
 
 const app = initializeApp(firebaseConfig);
 
@@ -28,6 +29,11 @@ export const db = initializeFirestore(
   },
   firebaseConfig.firestoreDatabaseId
 );
+
+// Mantener la red de Firestore deshabilitada: toda la persistencia opera en el servidor propio (/api/published-schedule en NAS/Docker) y localStorage
+if (typeof window !== 'undefined') {
+  disableNetwork(db).catch(() => {});
+}
 
 export const auth = getAuth(app);
 
@@ -83,84 +89,9 @@ export function handleFirestoreError(
   throw new Error(JSON.stringify(errInfo));
 }
 
-const QUOTA_BACKOFF_KEY = 'ievf_fb_quota_backoff_until';
-const LAST_PUBLISHED_HASH_KEY = 'ievf_last_published_hash_v1';
 const LOCAL_UPDATED_AT_KEY = 'ievf_local_schedule_updated_at';
-
-function isQuotaExceededError(error: unknown): boolean {
-  const msg = error instanceof Error ? error.message : String(error);
-  const code = (error as any)?.code || '';
-  return (
-    code === 'resource-exhausted' ||
-    msg.includes('Quota exceeded') ||
-    msg.includes('Quota limit exceeded') ||
-    msg.includes('resource-exhausted')
-  );
-}
-
-function isQuotaBackedOff(): boolean {
-  try {
-    const until = Number(
-      localStorage.getItem(QUOTA_BACKOFF_KEY) || sessionStorage.getItem(QUOTA_BACKOFF_KEY) || '0'
-    );
-    return Date.now() < until;
-  } catch {
-    return false;
-  }
-}
-
-function markQuotaBackedOff(): void {
-  try {
-    // La cuota gratuita de Firebase Spark se renueva a diario. Pausamos llamadas remotas 8 horas.
-    const untilStr = String(Date.now() + 8 * 60 * 60 * 1000);
-    localStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
-    sessionStorage.setItem(QUOTA_BACKOFF_KEY, untilStr);
-    disableNetwork(db).catch(() => {});
-  } catch {
-    // ignore
-  }
-}
-
-if (typeof window !== 'undefined' && isQuotaBackedOff()) {
-  disableNetwork(db).catch(() => {});
-}
-
-function computeSimpleHash(input: string): string {
-  let h1 = 0xdeadbeef ^ input.length;
-  let h2 = 0x41c6ce57 ^ input.length;
-  for (let i = 0, ch; i < input.length; i++) {
-    ch = input.charCodeAt(i);
-    h1 = Math.imul(h1 ^ ch, 2654435761);
-    h2 = Math.imul(h2 ^ ch, 1597334677);
-  }
-  h1 = Math.imul(h1 ^ (h1 >>> 16), 2246822507) ^ Math.imul(h2 ^ (h2 >>> 13), 3266489909);
-  h2 = Math.imul(h2 ^ (h2 >>> 16), 2246822507) ^ Math.imul(h1 ^ (h1 >>> 13), 3266489909);
-  return (4294967296 * (2097151 & h2) + (h1 >>> 0)).toString(36);
-}
-
-async function testConnection() {
-  try {
-    if (localStorage.getItem('ievf_fb_tested') === '1' || isQuotaBackedOff()) return;
-    localStorage.setItem('ievf_fb_tested', '1');
-    await getDocFromServer(doc(db, 'test', 'connection'));
-  } catch (error) {
-    if (isQuotaExceededError(error)) {
-      markQuotaBackedOff();
-      return;
-    }
-    if (error instanceof Error && error.message.includes('the client is offline')) {
-      console.error('Please check your Firebase configuration.');
-    }
-  }
-}
-
-testConnection();
-
-const SCHEDULE_COLLECTION = 'published_schedules';
-const OFFICIAL_DOC_ID = 'official';
 const LAST_FETCH_KEY = 'ievf_cloud_schedule_fetched_at';
 const DAY_CONFIG_BLOCK_ID = '__ievf_day_configs__';
-const FETCH_CACHE_TTL_MS = 2 * 60 * 1000; // 2 minutos de caché para evitar lecturas repetidas al recargar
 
 export interface CloudPublishedScheduleData extends PublicScheduleSnapshot {
   shortUrl?: string;
@@ -228,7 +159,7 @@ export async function publishScheduleToCloud(
   snapshot: PublicScheduleSnapshot,
   shortUrl?: string,
   shortCode = 'vf',
-  forceWrite = false
+  _forceWrite = false
 ): Promise<void> {
   const nowMs = Date.now();
   const isBlankMatrix =
@@ -283,138 +214,6 @@ export async function publishScheduleToCloud(
     } catch {
       // ignore network error
     }
-  }
-
-  if (isQuotaBackedOff()) {
-    return;
-  }
-
-  const docPath = `${SCHEDULE_COLLECTION}/${OFFICIAL_DOC_ID}`;
-  const sanitizedBlocks = normalizedSnapshot.timeBlocks
-    .filter((b) => b.id !== DAY_CONFIG_BLOCK_ID)
-    .slice(0, 1499)
-    .map((b) => ({
-      id: String(b.id || ''),
-      dayOfWeek: b.dayOfWeek,
-      period: Number(b.period || 1),
-      startTime: String(b.startTime || ''),
-      endTime: String(b.endTime || ''),
-      subject: String(b.subject || ''),
-      teacherId: String(b.teacherId || ''),
-      teacherName: String(b.teacherName || ''),
-      classroomName: String(b.classroomName || ''),
-      gradeName: resolveCanonicalGradeName(b),
-      gradeId: String(b.gradeId || ''),
-      status: String(b.status || 'covered'),
-      block_type: String(b.block_type || 'class'),
-      shift: resolveCanonicalShift(b),
-      motivo_novedad: b.motivo_novedad ? String(b.motivo_novedad) : null,
-      notes: b.notes ? String(b.notes) : null,
-      replacementTeacherName: b.replacementTeacherName ? String(b.replacementTeacherName) : null,
-      replacementTeacherId: b.replacementTeacherId ? String(b.replacementTeacherId) : null,
-    }));
-
-  sanitizedBlocks.push({
-    id: DAY_CONFIG_BLOCK_ID,
-    dayOfWeek: 'lunes',
-    period: 0,
-    startTime: '00:00',
-    endTime: '00:00',
-    subject: JSON.stringify(effectiveDayConfigs),
-    teacherId: 'system',
-    teacherName: 'System',
-    classroomName: 'System',
-    gradeName: 'System',
-    gradeId: '',
-    status: 'cancelled',
-    block_type: 'exit',
-    shift: 'morning',
-    motivo_novedad: null,
-    notes: null,
-    replacementTeacherName: null,
-    replacementTeacherId: null,
-  });
-
-  const sanitizedTeachers = normalizedSnapshot.teachers.slice(0, 300).map((t) => ({
-    id: String(t.id || ''),
-    displayName: String(t.displayName || 'Docente'),
-    color: String(t.color || '#007DC5'),
-  }));
-
-  // Huella determinista estricta: NO incluye timestamps volátiles (updatedAtMs, nowMs)
-  // De esta forma, si ningún docente, asignatura, horario o configuración cambia, el hash coincide y se omiten escrituras redundantes.
-  const stableConfigs = {
-    meetingDays: effectiveDayConfigs.meetingDays || {},
-    eventDays: effectiveDayConfigs.eventDays || {},
-    customHolidays: effectiveDayConfigs.customHolidays || [],
-    scheduleTypes: effectiveDayConfigs.scheduleTypes || {},
-    blankMatrixMode: isBlankMatrix,
-  };
-
-  const contentFingerprint = computeSimpleHash(
-    JSON.stringify({
-      b: sanitizedBlocks
-        .filter((b) => b.id !== DAY_CONFIG_BLOCK_ID)
-        .map((b) => ({
-          i: b.id,
-          d: b.dayOfWeek,
-          p: b.period,
-          s: b.subject,
-          t: b.teacherId,
-          c: b.classroomName,
-          g: b.gradeId,
-          st: b.status,
-          bt: b.block_type,
-          mn: b.motivo_novedad,
-        })),
-      t: sanitizedTeachers,
-      p: normalizedSnapshot.metadata.academicPeriod,
-      w: normalizedSnapshot.metadata.academicWeek,
-      s: shortUrl || '',
-      dc: stableConfigs,
-      blank: isBlankMatrix,
-    })
-  );
-
-  try {
-    const lastHash = localStorage.getItem(LAST_PUBLISHED_HASH_KEY);
-    if (lastHash === contentFingerprint && !forceWrite) {
-      // Redundancia prevenida: contenido idéntico, se evita setDoc en Firestore
-      return;
-    }
-    if (lastHash === contentFingerprint) {
-      return;
-    }
-  } catch {
-    // ignore
-  }
-
-  const payload: Record<string, unknown> = {
-    institutionName: String(normalizedSnapshot.metadata.institutionName || 'Institución Educativa Villa Flora').slice(0, 200),
-    academicPeriod: String(normalizedSnapshot.metadata.academicPeriod || '3° Periodo').slice(0, 100),
-    academicWeek: Math.max(1, Math.min(52, Math.round(Number(normalizedSnapshot.metadata.academicWeek || 8)))),
-    lastUpdated: String(normalizedSnapshot.metadata.lastUpdated || new Date().toLocaleString('es-CO')).slice(0, 100),
-    shortCode: String(shortCode || 'vf').replace(/[^a-zA-Z0-9_-]/g, '').slice(0, 50) || 'vf',
-    timeBlocks: sanitizedBlocks,
-    teachers: sanitizedTeachers,
-    updatedAt: serverTimestamp(),
-  };
-
-  if (shortUrl && shortUrl.length <= 300) {
-    payload.shortUrl = shortUrl;
-  }
-
-  try {
-    await setDoc(doc(db, SCHEDULE_COLLECTION, OFFICIAL_DOC_ID), payload);
-    localStorage.setItem(LAST_PUBLISHED_HASH_KEY, contentFingerprint);
-    localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
-  } catch (error) {
-    if (isQuotaExceededError(error)) {
-      markQuotaBackedOff();
-      console.warn('[Firebase] Cuota diaria alcanzada. Operando en modo local sin interrupción.');
-      return;
-    }
-    handleFirestoreError(error, OperationType.WRITE, docPath);
   }
 }
 
@@ -597,82 +396,7 @@ export function subscribeToPublishedSchedule(
     void fetchServerSnapshot();
   }, 2500);
 
-  void fetchServerSnapshot().then((foundInServer) => {
-    if (isQuotaBackedOff()) return;
-
-    // Optimización de lecturas: Si ya hay datos frescos en memoria/servidor local o en localStorage dentro del TTL de 2 minutos, omitir lectura a Firestore
-    try {
-      const lastFetch = Number(localStorage.getItem(LAST_FETCH_KEY) || '0');
-      const now = Date.now();
-      if (foundInServer || (lastFetch > 0 && now - lastFetch < FETCH_CACHE_TTL_MS)) {
-        return;
-      }
-    } catch {
-      // ignore
-    }
-
-    getDoc(doc(db, SCHEDULE_COLLECTION, OFFICIAL_DOC_ID))
-      .then((snapshot) => {
-        if (!snapshot.exists()) return;
-        const raw = snapshot.data();
-        if (!raw || !Array.isArray(raw.timeBlocks)) return;
-
-        let extractedDayConfigs: PublicDayConfigs | undefined;
-        const cleanBlocks = raw.timeBlocks.filter((b: any) => {
-          if (b && b.id === DAY_CONFIG_BLOCK_ID) {
-            try {
-              extractedDayConfigs = JSON.parse(b.subject);
-            } catch {
-              // ignore
-            }
-            return false;
-          }
-          return true;
-        });
-
-        const cloudIsBlank =
-          Boolean(extractedDayConfigs?.blankMatrixMode) || cleanBlocks.length === 0;
-        const cloudUpdatedAtMs = Number(extractedDayConfigs?.updatedAtMs || 0);
-
-        // Si el servidor en memoria ya entregó una versión más reciente (por ejemplo durante la misma sesión), respetarla
-        if (foundInServer && lastAppliedUpdatedAtMs > 0 && cloudUpdatedAtMs < lastAppliedUpdatedAtMs) {
-          return;
-        }
-
-        const effectiveBlocks = cloudIsBlank ? [] : normalizeTimeBlocksGrades(cleanBlocks);
-        const resolvedConfigs = resolveEffectiveDayConfigs({
-          ...extractedDayConfigs,
-          blankMatrixMode: cloudIsBlank,
-        });
-
-        const parsed: CloudPublishedScheduleData = {
-          metadata: {
-            institutionName: raw.institutionName || 'Institución Educativa Villa Flora',
-            academicPeriod: raw.academicPeriod || '3° Periodo',
-            academicWeek: Number(raw.academicWeek || 8),
-            lastUpdated: raw.lastUpdated || 'Sincronizado',
-            totalBlocks: effectiveBlocks.length,
-            totalTeachers: Array.isArray(raw.teachers) ? raw.teachers.length : 0,
-            blankMatrixMode: cloudIsBlank,
-            updatedAtMs: cloudUpdatedAtMs || Date.now(),
-          },
-          timeBlocks: effectiveBlocks,
-          teachers: Array.isArray(raw.teachers) ? raw.teachers : [],
-          dayConfigs: resolvedConfigs,
-          shortUrl: raw.shortUrl,
-          shortCode: raw.shortCode,
-        };
-
-        applyPublishedData(parsed, cloudUpdatedAtMs);
-      })
-      .catch((error) => {
-        if (isQuotaExceededError(error)) {
-          markQuotaBackedOff();
-          return;
-        }
-        console.warn('[Firebase] Lectura remota omitida, usando instantánea local:', error);
-      });
-  });
+  void fetchServerSnapshot();
 
   return () => {
     window.clearInterval(pollInterval);
