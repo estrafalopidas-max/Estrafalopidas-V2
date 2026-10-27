@@ -1,4 +1,5 @@
 import React, { useMemo, useState, useEffect, useRef } from 'react';
+import { createPortal } from 'react-dom';
 import { TimeBlockEntity, classifyBlockType } from '../../../domain/entities/time-block.entity';
 import { AbsenceRequestEntity } from '../../../domain/entities/absence-request.entity';
 import {
@@ -16,6 +17,11 @@ import {
   Megaphone,
   UserCheck,
   CalendarDays,
+  MapPin,
+  ChevronDown,
+  X,
+  Check,
+  RotateCcw,
 } from 'lucide-react';
 import {
   getTeacherVisualIdentity,
@@ -25,7 +31,13 @@ import {
   EXCEL_TEACHERS_DICTIONARY,
 } from '../../../domain/services/teacher-visual-identity.service';
 import { reconcileSubjectWithCatalog } from '../../../domain/services/subject-normalization.service';
-import { resolveEffectiveClassroomForBlock } from '../../../domain/services/grade-normalization.service';
+import {
+  resolveEffectiveClassroomForBlock,
+  resolveCanonicalGradeName,
+  isRotatingGrade,
+  getSuggestedClassroomsForSlot,
+  SPECIAL_SCHOOL_SPACES,
+} from '../../../domain/services/grade-normalization.service';
 import { useCoordinatorMatrix } from '../../context/CoordinatorMatrixContext';
 import { calculateLuminanceContrast } from '../../../domain/services/teacher-color.service';
 
@@ -68,6 +80,8 @@ interface MatrixSlotCardProps {
   timeBlock: TimeBlockEntity | null;
   pendingAbsence?: AbsenceRequestEntity | null;
   officialSubjects?: string[];
+  allTimeBlocks?: TimeBlockEntity[];
+  onQuickChangeClassroom?: (block: TimeBlockEntity, newClassroom: string) => void;
   onClick?: () => void;
 }
 
@@ -75,6 +89,8 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
   timeBlock,
   pendingAbsence,
   officialSubjects,
+  allTimeBlocks,
+  onQuickChangeClassroom,
   onClick,
 }) => {
   const { officialSubjects: contextOfficialSubjects, getTeacherColor, teachers, openTeacherModal } = useCoordinatorMatrix();
@@ -84,6 +100,41 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
   // Transición suave al reordenar o reubicar un bloque en la celda
   const [isSettling, setIsSettling] = useState(false);
   const prevSignatureRef = useRef<string | null>(null);
+
+  // Estado del selector rápido de aula en rotación (Opción 1)
+  const [isRoomMenuOpen, setIsRoomMenuOpen] = useState(false);
+  const [roomMenuCoords, setRoomMenuCoords] = useState<{ top: number; left: number; openUpward: boolean }>({
+    top: 0,
+    left: 0,
+    openUpward: false,
+  });
+  const [customRoomText, setCustomRoomText] = useState('');
+  const roomBadgeBtnRef = useRef<HTMLButtonElement>(null);
+  const roomPopoverRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!isRoomMenuOpen) return;
+    const handleOutside = (e: MouseEvent) => {
+      const target = e.target as Node;
+      if (
+        roomPopoverRef.current &&
+        !roomPopoverRef.current.contains(target) &&
+        roomBadgeBtnRef.current &&
+        !roomBadgeBtnRef.current.contains(target)
+      ) {
+        setIsRoomMenuOpen(false);
+      }
+    };
+    const handleKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setIsRoomMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handleOutside);
+    window.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handleOutside);
+      window.removeEventListener('keydown', handleKey);
+    };
+  }, [isRoomMenuOpen]);
 
   useEffect(() => {
     if (!timeBlock) {
@@ -336,6 +387,51 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
   // Motor de Contraste: text-white o text-gray-900 (sin grises)
   const contrastClass = getContrastTextColor(docenteColorHex);
 
+  const effectiveClassroom = resolveEffectiveClassroomForBlock(timeBlock);
+  const canonicalGrade = resolveCanonicalGradeName(timeBlock);
+  const isSupportPeriod = Number(timeBlock.period) >= 101 && Number(timeBlock.period) <= 104;
+  const isRotating = isRotatingGrade(timeBlock) && !isSupportPeriod;
+  const isUnassignedRotation = effectiveClassroom === 'Aula (ROTACIÓN)';
+  const canEditClassroomInline = Boolean(onQuickChangeClassroom) && !isSupportPeriod;
+
+  const handleOpenRoomMenu = (e: React.MouseEvent<HTMLButtonElement>) => {
+    e.stopPropagation();
+    e.preventDefault();
+    if (!canEditClassroomInline) return;
+    if (isRoomMenuOpen) {
+      setIsRoomMenuOpen(false);
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const viewportH = window.innerHeight;
+    const viewportW = window.innerWidth;
+    const menuWidth = 280;
+    const menuApproxHeight = 340;
+    const openUpward = rect.bottom + menuApproxHeight > viewportH && rect.top > menuApproxHeight;
+    const left = Math.max(8, Math.min(rect.left + rect.width / 2 - menuWidth / 2, viewportW - menuWidth - 8));
+    const top = openUpward ? Math.max(8, rect.top - 6) : rect.bottom + 4;
+
+    setCustomRoomText(isUnassignedRotation ? '' : effectiveClassroom);
+    setRoomMenuCoords({ top, left, openUpward });
+    setIsRoomMenuOpen(true);
+  };
+
+  const handleSelectClassroom = (newRoom: string) => {
+    if (!onQuickChangeClassroom || !timeBlock) return;
+    const trimmed = newRoom.trim() || (isRotating ? 'Aula (ROTACIÓN)' : 'Aula Base');
+    onQuickChangeClassroom(timeBlock, trimmed);
+    setIsRoomMenuOpen(false);
+  };
+
+  const classroomSuggestions = isRoomMenuOpen
+    ? getSuggestedClassroomsForSlot(
+        allTimeBlocks || [],
+        timeBlock.dayOfWeek,
+        timeBlock.period,
+        timeBlock.id
+      )
+    : { suggestedFree: [], allFixed: [] };
+
   return (
     <div
       onClick={onClick}
@@ -374,10 +470,52 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
           {subjectResult.shortName || subjectResult.displayName || subjectResult.rawSubject}
         </span>
 
-        {/* Aula en el centro (debajo de la materia) */}
-        <span className="text-[10px] font-medium text-gray-500 font-mono mt-0.5 truncate block w-full leading-none">
-          {resolveEffectiveClassroomForBlock(timeBlock)}
-        </span>
+        {/* Aula en el centro (debajo de la materia): Interactiva en grupos con rotación (9°1) */}
+        {canEditClassroomInline && isRotating ? (
+          <button
+            ref={roomBadgeBtnRef}
+            type="button"
+            onClick={handleOpenRoomMenu}
+            onMouseDown={(e) => e.stopPropagation()}
+            draggable={false}
+            title={`Clic para asignar o cambiar el aula de rotación para ${canonicalGrade} en la ${timeBlock.period}ª Hora`}
+            className={`mt-0.5 px-1.5 py-0.5 rounded inline-flex items-center justify-center gap-0.5 max-w-[96%] text-[9.5px] font-mono font-bold leading-none transition-all cursor-pointer shadow-2xs border ${
+              isUnassignedRotation
+                ? 'bg-amber-100/90 hover:bg-amber-200 text-amber-900 border-amber-300 border-dashed'
+                : 'bg-blue-50 hover:bg-blue-100 text-blue-800 border-blue-200'
+            }`}
+          >
+            <MapPin className="w-2.5 h-2.5 shrink-0" />
+            <span className="truncate">
+              {isUnassignedRotation ? 'Asignar aula' : effectiveClassroom}
+            </span>
+            <ChevronDown className="w-2.5 h-2.5 shrink-0 opacity-75" />
+          </button>
+        ) : canEditClassroomInline ? (
+          <button
+            ref={roomBadgeBtnRef}
+            type="button"
+            onClick={handleOpenRoomMenu}
+            onMouseDown={(e) => e.stopPropagation()}
+            draggable={false}
+            title="Clic para cambiar aula de esta hora"
+            className="text-[10px] font-medium text-gray-500 hover:text-blue-700 font-mono mt-0.5 truncate inline-flex items-center justify-center gap-0.5 max-w-[96%] leading-none cursor-pointer transition-colors"
+          >
+            <span className="truncate">{effectiveClassroom}</span>
+          </button>
+        ) : isRotating && !isUnassignedRotation ? (
+          <span
+            className="mt-0.5 px-1.5 py-0.5 rounded inline-flex items-center justify-center gap-0.5 max-w-[96%] text-[9.5px] font-mono font-bold leading-none bg-blue-50 text-blue-800 border border-blue-200/80 truncate"
+            title={`Aula asignada por rotación: ${effectiveClassroom}`}
+          >
+            <MapPin className="w-2.5 h-2.5 shrink-0" />
+            <span className="truncate">{effectiveClassroom}</span>
+          </span>
+        ) : (
+          <span className="text-[10px] font-medium text-gray-500 font-mono mt-0.5 truncate block w-full leading-none">
+            {effectiveClassroom}
+          </span>
+        )}
 
         {/* Badges de estado si aplica */}
         {isAbsent && (
@@ -391,6 +529,197 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
           </span>
         )}
       </div>
+
+      {/* Popover Flotante de Selección Rápida de Aula (Portal sobre document.body) */}
+      {isRoomMenuOpen &&
+        canEditClassroomInline &&
+        typeof document !== 'undefined' &&
+        createPortal(
+          <div
+            ref={roomPopoverRef}
+            onClick={(e) => e.stopPropagation()}
+            onMouseDown={(e) => e.stopPropagation()}
+            style={{
+              position: 'fixed',
+              top: roomMenuCoords.top,
+              left: roomMenuCoords.left,
+              transform: roomMenuCoords.openUpward ? 'translateY(-100%)' : 'none',
+              width: 280,
+              zIndex: 99999,
+            }}
+            className="bg-white rounded-2xl shadow-2xl border border-slate-200 overflow-hidden text-xs select-none animate-in fade-in zoom-in-95 duration-150"
+          >
+            <div className="bg-slate-900 text-white px-3.5 py-2.5 flex items-center justify-between">
+              <div className="flex items-center gap-1.5 min-w-0">
+                <MapPin className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                <div className="truncate">
+                  <div className="font-bold text-[11px] leading-tight">
+                    Asignar aula • {canonicalGrade}
+                  </div>
+                  <div className="text-[10px] text-slate-300 leading-tight truncate">
+                    {timeBlock.period}ª Hora ({timeBlock.dayOfWeek}) • {subjectResult.shortName || timeBlock.subject}
+                  </div>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsRoomMenuOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 cursor-pointer shrink-0"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            <div className="p-3 max-h-72 overflow-y-auto space-y-3">
+              {/* Sugeridas Libres en esta Hora */}
+              {classroomSuggestions.suggestedFree.length > 0 && (
+                <div>
+                  <div className="text-[10px] font-extrabold uppercase tracking-wider text-emerald-700 mb-1.5 flex items-center gap-1">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                    <span>Aulas disponibles en esta hora</span>
+                  </div>
+                  <div className="grid grid-cols-1 gap-1">
+                    {classroomSuggestions.suggestedFree.map((item) => {
+                      const isCurrent = effectiveClassroom.toLowerCase() === item.room.toLowerCase();
+                      return (
+                        <button
+                          key={`free-${item.room}`}
+                          type="button"
+                          onClick={() => handleSelectClassroom(item.room)}
+                          className={`w-full flex items-center justify-between gap-2 px-2.5 py-1.5 rounded-xl border text-left transition cursor-pointer ${
+                            isCurrent
+                              ? 'bg-emerald-600 text-white border-emerald-600 font-bold'
+                              : 'bg-emerald-50/80 hover:bg-emerald-100/80 text-emerald-950 border-emerald-200 font-semibold'
+                          }`}
+                        >
+                          <span className="font-mono font-bold text-[11px] shrink-0">{item.room}</span>
+                          <span
+                            className={`text-[10px] truncate ${
+                              isCurrent ? 'text-emerald-100' : 'text-emerald-700'
+                            }`}
+                          >
+                            {item.reason}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Todas las Aulas Base del Colegio */}
+              <div>
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Aulas del colegio
+                </div>
+                <div className="grid grid-cols-2 gap-1">
+                  {classroomSuggestions.allFixed.map((item) => {
+                    const isCurrent = effectiveClassroom.toLowerCase() === item.room.toLowerCase();
+                    return (
+                      <button
+                        key={`all-${item.room}`}
+                        type="button"
+                        onClick={() => handleSelectClassroom(item.room)}
+                        className={`px-2 py-1.5 rounded-lg border text-left transition cursor-pointer flex items-center justify-between gap-1 ${
+                          isCurrent
+                            ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                            : item.isSuggestedFree
+                            ? 'bg-white hover:bg-emerald-50 text-slate-800 border-emerald-200'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                        title={item.reason}
+                      >
+                        <span className="font-mono text-[10.5px] font-bold truncate">{item.room}</span>
+                        <span
+                          className={`text-[9px] shrink-0 px-1 rounded ${
+                            isCurrent
+                              ? 'bg-white/20 text-white'
+                              : item.isSuggestedFree
+                              ? 'bg-emerald-100 text-emerald-800 font-bold'
+                              : 'text-slate-400'
+                          }`}
+                        >
+                          {item.ownerGrade}
+                        </span>
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Espacios Especiales */}
+              <div>
+                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
+                  Espacios especiales
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {SPECIAL_SCHOOL_SPACES.map((space) => {
+                    const isCurrent = effectiveClassroom.toLowerCase() === space.toLowerCase();
+                    return (
+                      <button
+                        key={space}
+                        type="button"
+                        onClick={() => handleSelectClassroom(space)}
+                        className={`px-2 py-1 rounded-lg border text-[10px] font-semibold transition cursor-pointer ${
+                          isCurrent
+                            ? 'bg-blue-600 text-white border-blue-600 font-bold'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {space}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Campo manual + Restaurar a Rotación */}
+              <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                <div className="flex items-center gap-1.5">
+                  <input
+                    type="text"
+                    value={customRoomText}
+                    onChange={(e) => setCustomRoomText(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (customRoomText.trim()) {
+                          handleSelectClassroom(customRoomText);
+                        }
+                      }
+                    }}
+                    placeholder="Otra aula (ej. Aula 202)..."
+                    className="flex-1 px-2.5 py-1.5 text-[11px] border border-slate-300 rounded-lg focus:outline-none focus:border-blue-500"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (customRoomText.trim()) {
+                        handleSelectClassroom(customRoomText);
+                      }
+                    }}
+                    className="px-2.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white font-bold text-[10.5px] cursor-pointer shrink-0 flex items-center gap-1"
+                  >
+                    <Check className="w-3 h-3" />
+                    <span>OK</span>
+                  </button>
+                </div>
+
+                {isRotating && !isUnassignedRotation && (
+                  <button
+                    type="button"
+                    onClick={() => handleSelectClassroom('Aula (ROTACIÓN)')}
+                    className="w-full py-1.5 px-2.5 rounded-lg bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-200 font-semibold text-[10.5px] flex items-center justify-center gap-1.5 cursor-pointer transition"
+                  >
+                    <RotateCcw className="w-3 h-3" />
+                    <span>Dejar pendiente: Aula (ROTACIÓN)</span>
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>,
+          document.body
+        )}
 
       {/* BLOQUE INFERIOR (Firma / Píldora del Docente - 42%): Solo Nombre y Apellido en la casilla, Nombre Completo en tooltip/modal */}
       <div

@@ -247,20 +247,185 @@ export function normalizeTimeBlocksGrades(blocks: TimeBlockEntity[]): TimeBlockE
     const shouldSyncClassroom =
       ((b.period >= 101 && b.period <= 104) || isMediaTecnicaRoom) &&
       b.classroomName !== effectiveClassroom;
-    if (
-      (canonical && b.gradeName !== canonical) ||
-      b.shift !== canonicalShift ||
-      shouldSyncClassroom
-    ) {
-      return {
-        ...b,
-        gradeName: canonical || b.gradeName,
-        shift: canonicalShift,
-        classroomId: shouldSyncClassroom ? effectiveClassroom : b.classroomId,
-        classroomName: shouldSyncClassroom ? effectiveClassroom : b.classroomName,
-      };
-    }
-    return b;
+  if (
+    (canonical && b.gradeName !== canonical) ||
+    b.shift !== canonicalShift ||
+    shouldSyncClassroom
+  ) {
+    return {
+      ...b,
+      gradeName: canonical || b.gradeName,
+      shift: canonicalShift,
+      classroomId: shouldSyncClassroom ? effectiveClassroom : b.classroomId,
+      classroomName: shouldSyncClassroom ? effectiveClassroom : b.classroomName,
+    };
+  }
+  return b;
   });
 }
+
+export const BACHILLERATO_FIXED_CLASSROOMS: Array<{ room: string; ownerGrade: string }> = [
+  { room: 'Aula 102', ownerGrade: '10°2' },
+  { room: 'Aula 103', ownerGrade: '11°1' },
+  { room: 'Aula 201', ownerGrade: '10°1' },
+  { room: 'Aula 202', ownerGrade: '7°1' },
+  { room: 'Aula 301', ownerGrade: '9°2' },
+  { room: 'Aula 302', ownerGrade: '8°2' },
+  { room: 'Aula 303', ownerGrade: '6°1' },
+  { room: 'Aula 304', ownerGrade: '7°2' },
+  { room: 'Aula 305', ownerGrade: '11°2' },
+  { room: 'Aula 401', ownerGrade: '8°1' },
+  { room: 'Aula 402', ownerGrade: '6°2' },
+];
+
+export const SPECIAL_SCHOOL_SPACES: string[] = [
+  'Sala de Sistemas',
+  'Laboratorio',
+  'Biblioteca',
+  'Auditorio',
+  'Medellín Digital/Auditorio',
+  'Nube/Auditorio',
+  'Cancha',
+];
+
+export function isRotatingGrade(
+  input:
+    | {
+        id?: string;
+        gradeId?: string;
+        fullName?: string;
+        gradeName?: string;
+        defaultClassroomId?: string;
+      }
+    | string
+    | null
+    | undefined
+): boolean {
+  if (!input) return false;
+  if (typeof input === 'string') {
+    const clean = input.trim();
+    const canonical = CANONICAL_GRADE_MAP[clean.toLowerCase()] || clean;
+    return (
+      canonical === '9°1' ||
+      clean.toUpperCase().includes('ROTACIÓN') ||
+      clean.toUpperCase().includes('ROTACION') ||
+      clean.toUpperCase() === 'AULA ROTA'
+    );
+  }
+  const canonical = resolveCanonicalGradeName({
+    id: input.id,
+    gradeId: input.gradeId || input.id,
+    gradeName: input.gradeName || input.fullName,
+  });
+  if (canonical === '9°1') return true;
+  const defRoom = (input.defaultClassroomId || '').trim().toUpperCase();
+  return (
+    defRoom === 'AULA ROTA' ||
+    defRoom === 'ROTA' ||
+    defRoom.includes('ROTACIÓN') ||
+    defRoom.includes('ROTACION')
+  );
+}
+
+export interface ClassroomOptionStatus {
+  room: string;
+  ownerGrade: string;
+  isSuggestedFree: boolean;
+  reason?: string;
+}
+
+export function getSuggestedClassroomsForSlot(
+  allBlocks: TimeBlockEntity[],
+  dayOfWeek: string,
+  period: number,
+  currentBlockId?: string
+): {
+  suggestedFree: ClassroomOptionStatus[];
+  allFixed: ClassroomOptionStatus[];
+} {
+  const normalizeText = (s: string | null | undefined) =>
+    (s || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const slotBlocks = (allBlocks || []).filter(
+    (b) =>
+      b.dayOfWeek === dayOfWeek &&
+      Number(b.period) === Number(period) &&
+      b.status !== 'cancelled' &&
+      b.block_type !== 'exit' &&
+      b.block_type !== 'break' &&
+      !normalizeText(b.subject).includes('sin asignaci') &&
+      !normalizeText(b.subject).includes('salida')
+  );
+
+  const allFixed: ClassroomOptionStatus[] = BACHILLERATO_FIXED_CLASSROOMS.map(
+    ({ room, ownerGrade }) => {
+      const ownerBlock = slotBlocks.find(
+        (b) => resolveCanonicalGradeName(b) === ownerGrade && b.id !== currentBlockId
+      );
+      const otherOccupant = slotBlocks.find(
+        (b) =>
+          b.id !== currentBlockId &&
+          resolveCanonicalGradeName(b) !== ownerGrade &&
+          resolveEffectiveClassroomForBlock(b).toLowerCase() === room.toLowerCase()
+      );
+
+      if (otherOccupant) {
+        return {
+          room,
+          ownerGrade,
+          isSuggestedFree: false,
+          reason: `Ocupada por ${resolveCanonicalGradeName(otherOccupant)}`,
+        };
+      }
+
+      if (!ownerBlock) {
+        return {
+          room,
+          ownerGrade,
+          isSuggestedFree: true,
+          reason: `${ownerGrade} sin clase asignada`,
+        };
+      }
+
+      const subjNorm = normalizeText(ownerBlock.subject);
+      const effectiveOwnerRoom = resolveEffectiveClassroomForBlock(ownerBlock);
+      const isOutInSpecialSpace =
+        subjNorm.includes('educacion fisica') ||
+        subjNorm.includes('ed. fisica') ||
+        subjNorm.includes('deporte') ||
+        subjNorm.includes('tecnologia') ||
+        subjNorm.includes('informatica') ||
+        subjNorm.includes('sistemas') ||
+        (effectiveOwnerRoom &&
+          effectiveOwnerRoom.toLowerCase() !== room.toLowerCase() &&
+          effectiveOwnerRoom !== 'Aula Base');
+
+      if (isOutInSpecialSpace) {
+        return {
+          room,
+          ownerGrade,
+          isSuggestedFree: true,
+          reason: `${ownerGrade} en ${ownerBlock.subject}`,
+        };
+      }
+
+      return {
+        room,
+        ownerGrade,
+        isSuggestedFree: false,
+        reason: `Aula base de ${ownerGrade}`,
+      };
+    }
+  );
+
+  return {
+    suggestedFree: allFixed.filter((item) => item.isSuggestedFree),
+    allFixed,
+  };
+}
+
 

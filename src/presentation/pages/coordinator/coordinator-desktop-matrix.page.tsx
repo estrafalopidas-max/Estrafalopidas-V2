@@ -555,6 +555,60 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     }
   };
 
+  // Handle quick inline classroom change (e.g. for rotating group 9°1)
+  const handleQuickChangeClassroom = useCallback(
+    async (block: TimeBlockEntity, newClassroom: string) => {
+      pushSnapshot();
+      const updatedBlock: TimeBlockEntity = {
+        ...block,
+        classroomId: newClassroom,
+        classroomName: newClassroom,
+        updatedAt: new Date().toISOString(),
+      };
+      const nextBlocks = upsertSingleTimeBlock(timeBlocks, updatedBlock);
+      setTimeBlocks(nextBlocks);
+      try {
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
+        savePublicScheduleSnapshot(
+          nextBlocks,
+          teachers,
+          currentPeriod || '3° Periodo',
+          currentAcademicWeek || 8,
+          {
+            meetingDays,
+            eventDays,
+            customHolidays,
+            scheduleTypes,
+          }
+        );
+        await timeBlockRepo.update(block.id, {
+          classroomId: newClassroom,
+          classroomName: newClassroom,
+          updatedAt: updatedBlock.updatedAt,
+        });
+        window.dispatchEvent(new Event('schedule_matrix_updated'));
+        showToast(`Aula actualizada: ${block.gradeName} → ${newClassroom}`);
+      } catch (err) {
+        console.error('[handleQuickChangeClassroom] Error actualizando aula:', err);
+      }
+    },
+    [
+      pushSnapshot,
+      timeBlocks,
+      teachers,
+      currentPeriod,
+      currentAcademicWeek,
+      meetingDays,
+      eventDays,
+      customHolidays,
+      scheduleTypes,
+      timeBlockRepo,
+      showToast,
+    ]
+  );
+
   // Handle Maker-Checker Review
   const handleReviewAbsence = async (params: {
     requestId: string;
@@ -729,12 +783,21 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       (isTargetT2 && periodInfo?.secondaryTime ? periodInfo.secondaryTime : periodInfo?.time) ||
       (selectedShift === 'morning' ? '06:10 - 07:05' : isTargetT2 ? '12:30 - 13:20' : '07:00 - 07:50');
     const [startTime, endTime] = rawTimeRange.split(' - ');
+    const preservedTargetClassroom =
+      existingTargetBlock?.classroomName &&
+      existingTargetBlock.classroomName !== 'Aula (ROTACIÓN)'
+        ? existingTargetBlock.classroomName
+        : undefined;
     const resolvedTargetClassroom = resolveEffectiveClassroomForBlock({
       gradeId: targetGrade.id,
       gradeName: targetGrade.fullName,
       period: targetSlot.period,
-      subject: draggedBlock?.subject,
-      classroomName: targetGrade.defaultClassroomId || draggedBlock?.classroomName || 'Aula Base',
+      subject: draggedBlock?.subject || existingTargetBlock?.subject,
+      classroomName:
+        preservedTargetClassroom ||
+        targetGrade.defaultClassroomId ||
+        draggedBlock?.classroomName ||
+        'Aula Base',
     });
     const targetClassroomId = resolvedTargetClassroom;
     const targetClassroomName = resolvedTargetClassroom;
@@ -1502,6 +1565,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     period: number;
     startTime: string;
     endTime: string;
+    classroomName?: string;
   }) => {
     // Snapshotting previo para Undo
     pushSnapshot();
@@ -1511,12 +1575,22 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     const teacherName =
       data.teacher.displayName || (data.teacher as any).fullName || data.teacher.id;
 
+    const existingCustomClassroom =
+      quickAssignTarget?.block?.classroomName &&
+      quickAssignTarget.block.classroomName !== 'Aula (ROTACIÓN)'
+        ? quickAssignTarget.block.classroomName
+        : undefined;
+
     const resolvedQuickClassroom = resolveEffectiveClassroomForBlock({
       gradeId: data.grade.id,
       gradeName: data.grade.fullName,
       period: data.period,
       subject: data.subject,
-      classroomName: data.grade.defaultClassroomId || 'Aula Base',
+      classroomName:
+        data.classroomName ||
+        existingCustomClassroom ||
+        data.grade.defaultClassroomId ||
+        'Aula Base',
     });
 
     const newBlock: TimeBlockEntity = {
@@ -2206,6 +2280,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             onTrashClick={handleTrashCellClick}
             onEmptyClick={handleEmptyClick}
             onToggleSelect={handleToggleSelectCell}
+            onQuickChangeClassroom={handleQuickChangeClassroom}
           />
         </div>
 

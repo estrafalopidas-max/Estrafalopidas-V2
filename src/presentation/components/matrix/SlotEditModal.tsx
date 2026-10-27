@@ -9,6 +9,10 @@ import {
   resolveTeacherDefaultSubject,
 } from '../../../domain/services/batch-cell-assignment.service';
 import { isLowPriorityListingTeacher } from '../../../domain/services/teacher-visual-identity.service';
+import {
+  getSuggestedClassroomsForSlot,
+  SPECIAL_SCHOOL_SPACES,
+} from '../../../domain/services/grade-normalization.service';
 
 export interface SlotEditModalProps {
   isOpen: boolean;
@@ -24,6 +28,7 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
   isOpen,
   onClose,
   block,
+  allBlocks,
   teachers,
   classrooms,
   onSave,
@@ -45,6 +50,11 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
         return nameA.localeCompare(nameB);
       });
   }, [teachers]);
+
+  const classroomSuggestions = useMemo(() => {
+    if (!block || !isOpen) return { suggestedFree: [], allFixed: [] };
+    return getSuggestedClassroomsForSlot(allBlocks || [], block.dayOfWeek, block.period, block.id);
+  }, [block, isOpen, allBlocks]);
 
   useEffect(() => {
     if (block) {
@@ -199,7 +209,7 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
             </select>
           </div>
 
-          <div>
+          <div className="space-y-2">
             <label className="font-bold text-slate-700 flex items-center gap-1.5 mb-1">
               <MapPin className="w-3.5 h-3.5 text-blue-600" />
               <span>Aula / Ubicación</span>
@@ -216,7 +226,38 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
               {classrooms.map((c) => (
                 <option key={c.id} value={c.name} />
               ))}
+              {classroomSuggestions.allFixed.map((item) => (
+                <option key={`fixed-${item.room}`} value={item.room} />
+              ))}
+              {SPECIAL_SCHOOL_SPACES.map((sp) => (
+                <option key={`sp-${sp}`} value={sp} />
+              ))}
             </datalist>
+
+            {classroomSuggestions.suggestedFree.length > 0 && (
+              <div className="pt-1">
+                <div className="text-[10px] font-bold text-emerald-700 mb-1">
+                  Sugeridas libres en esta hora:
+                </div>
+                <div className="flex flex-wrap gap-1">
+                  {classroomSuggestions.suggestedFree.map((item) => (
+                    <button
+                      key={`chip-${item.room}`}
+                      type="button"
+                      onClick={() => setClassroomName(item.room)}
+                      title={item.reason}
+                      className={`px-2 py-1 rounded-lg border text-[10.5px] font-mono font-bold transition cursor-pointer ${
+                        classroomName === item.room
+                          ? 'bg-emerald-600 text-white border-emerald-600'
+                          : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-200'
+                      }`}
+                    >
+                      {item.room} ({item.ownerGrade})
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           <div className="pt-3 border-t border-slate-200 flex justify-end gap-2">

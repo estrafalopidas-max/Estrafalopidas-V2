@@ -50,6 +50,7 @@ export interface MatrixCellProps {
   onTrashClick?: (block: TimeBlockEntity, slotId: string) => void;
   onEmptyClick?: (grade: GradeEntity, period: number, block: TimeBlockEntity | null, slotId: string) => void;
   onToggleSelect?: (cellId: string, blockId?: string) => void;
+  onQuickChangeClassroom?: (block: TimeBlockEntity, newClassroom: string) => void;
 }
 
 export const MatrixCell: React.FC<MatrixCellProps> = ({
@@ -77,6 +78,7 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
   onTrashClick,
   onEmptyClick,
   onToggleSelect,
+  onQuickChangeClassroom,
 }) => {
   // Estados de Interacción Local
   const [isOver, setIsOver] = useState<boolean>(false);
@@ -360,6 +362,8 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
             timeBlock={block}
             pendingAbsence={pending}
             officialSubjects={officialSubjects}
+            allTimeBlocks={allTimeBlocks}
+            onQuickChangeClassroom={onQuickChangeClassroom}
           />
 
           {/* Inyección de Selector Circular (UI): Bloque inferior 40% en esquina bottom-1 right-1 */}

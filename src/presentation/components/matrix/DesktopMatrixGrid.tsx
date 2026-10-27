@@ -385,6 +385,7 @@ export interface DesktopMatrixGridProps {
   onTrashClick?: (block: TimeBlockEntity, slotId: string) => void;
   onEmptyClick?: (grade: GradeEntity, period: number, block: TimeBlockEntity | null, slotId: string) => void;
   onToggleSelect?: (cellId: string, blockId?: string) => void;
+  onQuickChangeClassroom?: (block: TimeBlockEntity, newClassroom: string) => void;
 }
 
 export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
@@ -408,6 +409,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
   onTrashClick,
   onEmptyClick,
   onToggleSelect,
+  onQuickChangeClassroom,
 }) => {
   const isMorning = shift === 'morning';
   const { periods, breakTime, secondaryBreakTime, breakLabel, preJornada } = useMemo(
@@ -920,6 +922,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
           onTrashClick={onTrashClick}
           onEmptyClick={onEmptyClick}
           onToggleSelect={onToggleSelect}
+          onQuickChangeClassroom={onQuickChangeClassroom}
         />
       </div>
     );

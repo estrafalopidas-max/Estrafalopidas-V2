@@ -15,6 +15,11 @@ import {
 } from '../../../domain/services/teacher-visual-identity.service';
 import { asignaturasOficiales, ALL_OFFICIAL_MATERIAS, findOfficialSubject } from '../../../domain/constants/subjects';
 import {
+  isRotatingGrade,
+  getSuggestedClassroomsForSlot,
+  SPECIAL_SCHOOL_SPACES,
+} from '../../../domain/services/grade-normalization.service';
+import {
   X,
   Search,
   BookOpen,
@@ -29,6 +34,7 @@ import {
   ShieldCheck,
   Edit3,
   Check,
+  MapPin,
 } from 'lucide-react';
 
 export type InstitutionalEventType =
@@ -103,6 +109,7 @@ export interface QuickAssignModalProps {
     period: number;
     startTime: string;
     endTime: string;
+    classroomName?: string;
   }) => void;
   onAssignInstitutionalEvent?: (data: {
     eventName: string;
@@ -140,12 +147,25 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedTeacherId, setSelectedTeacherId] = useState<string | null>(null);
   const [selectedSubject, setSelectedSubject] = useState<string>('');
+  const [selectedClassroom, setSelectedClassroom] = useState<string>('');
   const searchInputRef = useRef<HTMLInputElement>(null);
 
   // Estados Tab 2: Eventos Institucionales
   const [selectedEventType, setSelectedEventType] = useState<InstitutionalEventType>('Acto cívico');
   const [customEventName, setCustomEventName] = useState<string>('');
   const customInputRef = useRef<HTMLInputElement>(null);
+
+  const isRotating = useMemo(
+    () => Boolean(grade && isRotatingGrade(grade) && period !== null && !(period >= 101 && period <= 104)),
+    [grade, period]
+  );
+
+  const classroomSuggestions = useMemo(() => {
+    if (!isOpen || !isRotating || period === null) {
+      return { suggestedFree: [], allFixed: [] };
+    }
+    return getSuggestedClassroomsForSlot(allBlocks, dayOfWeek, period);
+  }, [isOpen, isRotating, allBlocks, dayOfWeek, period]);
 
   // Arquitectura de Bloqueo de Scroll y Prevención de Layout Shift
   useEffect(() => {
@@ -168,6 +188,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
       setSearchTerm('');
       setSelectedTeacherId(null);
       setSelectedSubject('');
+      setSelectedClassroom('');
       setSelectedEventType('Acto cívico');
       setCustomEventName('');
       setTimeout(() => {
@@ -374,6 +395,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
       period,
       startTime,
       endTime,
+      classroomName: selectedClassroom.trim() || undefined,
     });
     onClose();
   };
@@ -395,6 +417,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
       period,
       startTime,
       endTime,
+      classroomName: selectedClassroom.trim() || undefined,
     });
     onClose();
   };
@@ -540,7 +563,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
         {activeTab === 'academic' && (
           <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
             {/* Search Bar */}
-            <div className="p-4 border-b border-slate-100 bg-white shrink-0">
+            <div className="p-4 border-b border-slate-100 bg-white shrink-0 space-y-2.5">
               <div className="relative flex items-center">
                 <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                 <input
@@ -563,6 +586,55 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
                   </button>
                 )}
               </div>
+
+              {isRotating && (
+                <div className="p-2.5 rounded-xl bg-amber-50/70 border border-amber-200/80 flex flex-wrap items-center justify-between gap-2 text-xs">
+                  <div className="flex items-center gap-1.5 text-amber-950 font-bold">
+                    <MapPin className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+                    <span>Aula en rotación ({grade.fullName}):</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    {classroomSuggestions.suggestedFree.slice(0, 3).map((item) => (
+                      <button
+                        key={item.room}
+                        type="button"
+                        onClick={() =>
+                          setSelectedClassroom((prev) => (prev === item.room ? '' : item.room))
+                        }
+                        title={item.reason}
+                        className={`px-2 py-1 rounded-lg border text-[11px] font-mono font-bold transition cursor-pointer ${
+                          selectedClassroom === item.room
+                            ? 'bg-emerald-600 text-white border-emerald-600'
+                            : 'bg-emerald-50 hover:bg-emerald-100 text-emerald-900 border-emerald-300'
+                        }`}
+                      >
+                        {item.room} Libre
+                      </button>
+                    ))}
+                    <select
+                      value={selectedClassroom}
+                      onChange={(e) => setSelectedClassroom(e.target.value)}
+                      className="px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-slate-800 font-semibold text-xs focus:outline-none focus:border-blue-500"
+                    >
+                      <option value="">Aula (ROTACIÓN) - Definir luego</option>
+                      <optgroup label="Aulas del colegio">
+                        {classroomSuggestions.allFixed.map((item) => (
+                          <option key={item.room} value={item.room}>
+                            {item.room} ({item.isSuggestedFree ? `Libre: ${item.reason}` : `Base ${item.ownerGrade}`})
+                          </option>
+                        ))}
+                      </optgroup>
+                      <optgroup label="Espacios especiales">
+                        {SPECIAL_SCHOOL_SPACES.map((sp) => (
+                          <option key={sp} value={sp}>
+                            {sp}
+                          </option>
+                        ))}
+                      </optgroup>
+                    </select>
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Teacher List con Scroll Seguro Delegado */}

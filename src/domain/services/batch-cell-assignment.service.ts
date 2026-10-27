@@ -250,12 +250,20 @@ export function applyBatchCellAssignment(input: BatchAssignmentInput): BatchAssi
     }
 
     const blockId = existing?.id || `tb-${target.grade.id}-${dayOfWeek}-p${target.period}`;
+    const existingCustomRoom =
+      existing?.classroomName &&
+      existing.classroomName.trim() !== '' &&
+      existing.classroomName !== 'Aula (ROTACIÓN)' &&
+      existing.classroomName.toUpperCase() !== 'AULA ROTA' &&
+      existing.classroomName.toUpperCase() !== 'ROTA'
+        ? existing.classroomName.trim()
+        : null;
     const resolvedClassroom = resolveEffectiveClassroomForBlock({
       gradeId: target.grade.id,
       gradeName: target.grade.fullName,
       period: target.period,
       subject: finalSubject,
-      classroomName: target.grade.defaultClassroomId || existing?.classroomName || 'Aula Base',
+      classroomName: existingCustomRoom || target.grade.defaultClassroomId || existing?.classroomName || 'Aula Base',
     });
 
     const newBlock: TimeBlockEntity = {
