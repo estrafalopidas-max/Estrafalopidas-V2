@@ -343,18 +343,20 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
   const [snapshot, setSnapshot] = useState<PublicScheduleSnapshot | null>(initialSnapshot);
 
   useEffect(() => {
-    if (!isEmbeddedModal) {
-      document.title = 'Sistema de Agendamiento Escolar Horarios, actividades y jornadas académicas';
+    if (isEmbeddedModal) {
+      return;
+    }
 
-      // Ocultar la ruta interna (/public/schedule o /h) en la barra de direcciones del navegador
-      try {
-        sessionStorage.setItem('ievf_public_view_active', '1');
-        if (window.location.pathname !== '/') {
-          window.history.replaceState(null, '', '/');
-        }
-      } catch {
-        // Ignore history security errors in restricted contexts
+    document.title = 'Sistema de Agendamiento Escolar Horarios, actividades y jornadas académicas';
+
+    // Ocultar la ruta interna (/public/schedule o /h) en la barra de direcciones del navegador
+    try {
+      sessionStorage.setItem('ievf_public_view_active', '1');
+      if (window.location.pathname !== '/') {
+        window.history.replaceState(null, '', '/');
       }
+    } catch {
+      // Ignore history security errors in restricted contexts
     }
 
     // Suscripción en tiempo real a Firestore y eventos locales

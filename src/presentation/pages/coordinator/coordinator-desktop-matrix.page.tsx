@@ -175,10 +175,34 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek(new Date(), activeWeekSlot));
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
 
+  const loadedMondayIsoRef = useRef<string>(activeMondayIso);
+
+  useEffect(() => {
+    if (loadedMondayIsoRef.current !== activeMondayIso) {
+      loadedMondayIsoRef.current = activeMondayIso;
+      setHistory([]);
+      try {
+        const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed)) {
+            setTimeBlocks(parsed);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+  }, [activeMondayIso]);
+
   useEffect(() => {
     const handleWeekSlotChanged = (ev: Event) => {
       const customEv = ev as CustomEvent<{ slot: 'current' | 'next'; mondayIso: string }>;
       const nextSlot = customEv.detail?.slot || activeWeekSlot;
+      if (customEv.detail?.mondayIso) {
+        loadedMondayIsoRef.current = customEv.detail.mondayIso;
+      }
+      setHistory([]);
       if (nextSlot === 'next') {
         setSelectedDay('lunes');
       } else {
@@ -304,6 +328,9 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   // Sincronización Continua (Write-Through Cache + Cloud Sync con Debounce y Deduplicación por Hash):
   // Guarda instantáneamente en localStorage y mantiene sincronizada la Consulta Pública oficial
   useEffect(() => {
+    if (loadedMondayIsoRef.current !== activeMondayIso) {
+      return;
+    }
     const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
     if (Array.isArray(timeBlocks) && (timeBlocks.length > 0 || isBlankMode)) {
       if (timeBlocks.length > 0 && isBlankMode) {
@@ -311,6 +338,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       }
       localStorage.setItem('villaFloraMatrix', JSON.stringify(timeBlocks));
       localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(timeBlocks));
+      window.dispatchEvent(new Event('active_week_blocks_persisted'));
 
       if (teachers.length > 0) {
         const snapshot = savePublicScheduleSnapshot(
@@ -2038,13 +2066,16 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
               <button
                 type="button"
                 onClick={() => {
-                  cloneCurrentWeekToNextWeek();
-                  showToast('Horario base copiado desde la Semana Actual a la Próxima Semana');
+                  pushSnapshot();
+                  cloneCurrentWeekToNextWeek(selectedDay, selectedShift);
+                  showToast(
+                    `Día ${activeDayHeader?.label || selectedDay} copiado de la semana anterior`
+                  );
                 }}
                 className="h-8 px-2.5 rounded-xl border border-indigo-200 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 text-[11px] font-bold transition-all cursor-pointer whitespace-nowrap shadow-2xs"
-                title="Copiar las asignaciones de la Semana Actual como punto de partida para la Próxima Semana"
+                title={`Copiar únicamente las asignaciones del día activo (${activeDayHeader?.label || selectedDay}) desde la semana anterior sin afectar los demás días`}
               >
-                Copiar de Actual
+                Copiar de la semana anterior
               </button>
             )}
 

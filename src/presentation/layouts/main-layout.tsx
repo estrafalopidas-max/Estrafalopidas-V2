@@ -27,7 +27,7 @@ import {
   ShieldCheck,
   LogOut,
 } from 'lucide-react';
-import { useCoordinatorMatrix } from '../context/CoordinatorMatrixContext';
+import { useCoordinatorMatrix, clearAllWeekContainers } from '../context/CoordinatorMatrixContext';
 import { useAuth } from '../context/AuthContext';
 import { AccessManagementModal } from '../components/auth/AccessManagementModal';
 import { TeacherFormModal } from '../components/teacher/TeacherFormModal';
@@ -36,7 +36,7 @@ import { UserEntity } from '../../domain/entities/user.entity';
 import { TimeBlockEntity } from '../../domain/entities/time-block.entity';
 import { FirestoreUserRepository } from '../../infrastructure/repositories/firestore-user.repository';
 import { getCurrentWeekText, getOrdinalSuffix } from '../../domain/services/ChronologyEngine';
-import { ensureSeedDataLoaded, generateSeedBlocks, SEED_TEACHERS, SEED_GRADES } from '../../infrastructure/seed/initial-seed';
+import { ensureSeedDataLoaded, getCleanBaseScheduleBlocks, SEED_TEACHERS, SEED_GRADES } from '../../infrastructure/seed/initial-seed';
 import { savePublicScheduleSnapshot } from '../../domain/services/html-schedule-generator.service';
 import { publishScheduleToCloud } from '../../infrastructure/firebase/firebase-client';
 import { ResetConfirmationModal, SchoolYearResetMode } from '../components/common/ResetConfirmationModal';
@@ -287,6 +287,8 @@ export const MainLayout: React.FC = () => {
 
       let targetBlocks: TimeBlockEntity[] = [];
 
+      clearAllWeekContainers();
+
       if (mode === 'blank') {
         // Opción 1: Reiniciar desde cero (Parrilla en blanco) conservando docentes y asignaturas
         localStorage.setItem('ievf_blank_matrix_mode', '1');
@@ -316,7 +318,7 @@ export const MainLayout: React.FC = () => {
         if (subjectsBackup) {
           localStorage.setItem('ievf_official_subjects_v1', subjectsBackup);
         }
-        targetBlocks = generateSeedBlocks();
+        targetBlocks = getCleanBaseScheduleBlocks();
         localStorage.setItem('ievf_baseline_2026_v1', JSON.stringify(targetBlocks));
         localStorage.setItem('villaFloraMatrix', JSON.stringify(targetBlocks));
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(targetBlocks));

@@ -1006,6 +1006,63 @@ export function generateSeedBlocks(): TimeBlockEntity[] {
   return [];
 }
 
+export function getCleanBaseScheduleBlocks(): TimeBlockEntity[] {
+  if (typeof window !== 'undefined' && localStorage.getItem('ievf_blank_matrix_mode') === '1') {
+    return [];
+  }
+  let deletedIds = new Set<string>();
+  const customShortNames = new Map<string, string>();
+  try {
+    const delRaw = localStorage.getItem('ievf_deleted_teacher_ids_v1');
+    if (delRaw) {
+      const parsedDel = JSON.parse(delRaw);
+      if (Array.isArray(parsedDel)) {
+        deletedIds = new Set(parsedDel.map((id: any) => String(id)));
+      }
+    }
+    const usersRaw = localStorage.getItem('ievf_users_v1');
+    if (usersRaw) {
+      const parsedUsers = JSON.parse(usersRaw);
+      if (Array.isArray(parsedUsers)) {
+        parsedUsers.forEach((u: any) => {
+          if (u?.id && (u?.shortName || u?.displayName)) {
+            customShortNames.set(String(u.id), String(u.shortName || u.displayName));
+          }
+        });
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return generateSeedBlocks().map((b) => {
+    if (b.teacherId && deletedIds.has(b.teacherId)) {
+      return {
+        ...b,
+        block_type: 'class',
+        teacherId: 'unassigned',
+        teacherName: 'Sin Asignar',
+        status: 'regular',
+        motivo_novedad: null,
+        notes: null,
+        replacementTeacherId: undefined,
+        replacementTeacherName: undefined,
+      };
+    }
+    const customName = b.teacherId ? customShortNames.get(b.teacherId) : undefined;
+    return {
+      ...b,
+      block_type: 'class',
+      teacherName: customName || b.teacherName,
+      status: 'regular',
+      motivo_novedad: null,
+      notes: null,
+      replacementTeacherId: undefined,
+      replacementTeacherName: undefined,
+    };
+  });
+}
+
 // Asignación de Paleta Curada Anti-Colisión (Selección sin Reemplazo de VILLA_FLORA_PALETTE)
 const usedSeedColors: string[] = [];
 
@@ -1032,7 +1089,7 @@ SEED_TEACHERS.forEach((teacher) => {
   }
 });
 
-export const OFFICIAL_2026_SEED_VERSION = 'v2026_definitiva';
+export const OFFICIAL_2026_SEED_VERSION = 'v2026_definitiva_clean_weeks_v3';
 
 export function ensureSeedDataLoaded() {
   const isCurrentVersion = localStorage.getItem('ievf_seed_version') === OFFICIAL_2026_SEED_VERSION;
@@ -1252,30 +1309,22 @@ export function ensureSeedDataLoaded() {
     localStorage.setItem('ievf_time_blocks_v1', '[]');
     localStorage.setItem('villaFloraMatrix', '[]');
   } else if (!isCurrentVersion) {
-    const seedBlocks = generateSeedBlocks();
+    const seedBlocks = getCleanBaseScheduleBlocks();
     localStorage.setItem('ievf_baseline_2026_v1', JSON.stringify(seedBlocks));
     try {
-      const existingRaw = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
-      if (existingRaw) {
-        const parsed = JSON.parse(existingRaw);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          const reconciled = reconcileBlocksWithOfficialRoster(parsed);
-          localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(reconciled));
-          localStorage.setItem('villaFloraMatrix', JSON.stringify(reconciled));
-        } else {
-          localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(seedBlocks));
-          localStorage.setItem('villaFloraMatrix', JSON.stringify(seedBlocks));
+      const keysToRemove: string[] = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith('ievf_week_container_')) {
+          keysToRemove.push(k);
         }
-      } else {
-        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(seedBlocks));
-        localStorage.setItem('villaFloraMatrix', JSON.stringify(seedBlocks));
       }
-    } catch {
-      localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(seedBlocks));
-      localStorage.setItem('villaFloraMatrix', JSON.stringify(seedBlocks));
-    }
+      keysToRemove.forEach((k) => localStorage.removeItem(k));
+    } catch {}
+    localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(seedBlocks));
+    localStorage.setItem('villaFloraMatrix', JSON.stringify(seedBlocks));
   } else if (!localStorage.getItem('ievf_time_blocks_v1') && !localStorage.getItem('villaFloraMatrix')) {
-    const seedBlocks = generateSeedBlocks();
+    const seedBlocks = getCleanBaseScheduleBlocks();
     localStorage.setItem('ievf_baseline_2026_v1', JSON.stringify(seedBlocks));
     localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(seedBlocks));
     localStorage.setItem('villaFloraMatrix', JSON.stringify(seedBlocks));

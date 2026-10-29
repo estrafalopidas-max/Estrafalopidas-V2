@@ -280,29 +280,36 @@ export function subscribeToPublishedSchedule(
     };
 
     try {
-      if (isBlank) {
-        localStorage.setItem('ievf_blank_matrix_mode', '1');
-        localStorage.setItem('villaFloraMatrix', '[]');
-        localStorage.setItem('ievf_time_blocks_v1', '[]');
-      } else {
-        localStorage.removeItem('ievf_blank_matrix_mode');
-        localStorage.setItem('villaFloraMatrix', JSON.stringify(normalizedBlocks));
-        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(normalizedBlocks));
+      const activeMondayIso = localStorage.getItem('ievf_active_monday_iso');
+      const incomingMondayIso = finalData.dayConfigs?.anchorMondayIso;
+      const isSameActiveWeek =
+        !activeMondayIso || !incomingMondayIso || activeMondayIso === incomingMondayIso;
+
+      if (isSameActiveWeek) {
+        if (isBlank) {
+          localStorage.setItem('ievf_blank_matrix_mode', '1');
+          localStorage.setItem('villaFloraMatrix', '[]');
+          localStorage.setItem('ievf_time_blocks_v1', '[]');
+        } else {
+          localStorage.removeItem('ievf_blank_matrix_mode');
+          localStorage.setItem('villaFloraMatrix', JSON.stringify(normalizedBlocks));
+          localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(normalizedBlocks));
+        }
+        if (finalData.dayConfigs) {
+          if (finalData.dayConfigs.meetingDays) {
+            localStorage.setItem('ievf_meeting_days', JSON.stringify(finalData.dayConfigs.meetingDays));
+          }
+          if (finalData.dayConfigs.eventDays) {
+            localStorage.setItem('ievf_event_days', JSON.stringify(finalData.dayConfigs.eventDays));
+          }
+          if (Array.isArray(finalData.dayConfigs.customHolidays)) {
+            localStorage.setItem('ievf_custom_holidays', JSON.stringify(finalData.dayConfigs.customHolidays));
+          }
+        }
       }
       localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(finalData));
       localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
       localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(resolvedTs));
-      if (finalData.dayConfigs) {
-        if (finalData.dayConfigs.meetingDays) {
-          localStorage.setItem('ievf_meeting_days', JSON.stringify(finalData.dayConfigs.meetingDays));
-        }
-        if (finalData.dayConfigs.eventDays) {
-          localStorage.setItem('ievf_event_days', JSON.stringify(finalData.dayConfigs.eventDays));
-        }
-        if (Array.isArray(finalData.dayConfigs.customHolidays)) {
-          localStorage.setItem('ievf_custom_holidays', JSON.stringify(finalData.dayConfigs.customHolidays));
-        }
-      }
       if (finalData.metadata?.lastUpdated) {
         localStorage.setItem('ievf_last_published_at', finalData.metadata.lastUpdated);
       }

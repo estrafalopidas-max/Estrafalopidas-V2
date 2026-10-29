@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useMemo, useRef, useEffect } from 'react';
 import { ShiftType } from '../../domain/entities/grade.entity';
+import { DayOfWeek } from '../../domain/entities/time-block.entity';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { getTeacherVisualIdentity } from '../../domain/services/teacher-visual-identity.service';
 import {
@@ -7,7 +8,11 @@ import {
   sortTeachersWithLowPriorityLast,
 } from '../../domain/services/teacher-normalization.service';
 import { FirestoreUserRepository } from '../../infrastructure/repositories/firestore-user.repository';
-import { ensureSeedDataLoaded, SEED_TEACHERS } from '../../infrastructure/seed/initial-seed';
+import {
+  ensureSeedDataLoaded,
+  getCleanBaseScheduleBlocks,
+  SEED_TEACHERS,
+} from '../../infrastructure/seed/initial-seed';
 import { ALL_OFFICIAL_MATERIAS } from '../../domain/constants/subjects';
 import {
   generateWeekHeaders,
@@ -30,6 +35,7 @@ export interface KpiStats {
 }
 
 interface WeekScheduleContainer {
+  schemaVersion?: number;
   mondayIso: string;
   timeBlocks: any[];
   meetingDays: Record<string, boolean>;
@@ -38,6 +44,42 @@ interface WeekScheduleContainer {
 }
 
 const WEEK_CONTAINER_PREFIX = 'ievf_week_container_';
+const WEEK_CONTAINER_SCHEMA_VERSION = 3;
+
+export function clearAllWeekContainers(): void {
+  try {
+    const keysToRemove: string[] = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const k = localStorage.key(i);
+      if (k && k.startsWith(WEEK_CONTAINER_PREFIX)) {
+        keysToRemove.push(k);
+      }
+    }
+    keysToRemove.forEach((k) => localStorage.removeItem(k));
+  } catch {
+    // ignore
+  }
+}
+
+function createCleanWeekContainer(mondayIso: string): WeekScheduleContainer {
+  const cleanBlocks = getCleanBaseScheduleBlocks();
+  const container: WeekScheduleContainer = {
+    schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
+    mondayIso,
+    timeBlocks: cleanBlocks,
+    meetingDays: {},
+    scheduleTypes: {},
+    updatedAt: Date.now(),
+  };
+  if (mondayIso) {
+    try {
+      localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`, JSON.stringify(container));
+    } catch {
+      // ignore storage quota errors
+    }
+  }
+  return container;
+}
 
 function saveCurrentStateToWeekContainer(mondayIso: string): void {
   if (!mondayIso) return;
@@ -46,6 +88,7 @@ function saveCurrentStateToWeekContainer(mondayIso: string): void {
     const rawMeeting = localStorage.getItem('ievf_meeting_days') || '{}';
     const rawTypes = localStorage.getItem('ievf_schedule_types') || '{}';
     const container: WeekScheduleContainer = {
+      schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
       mondayIso,
       timeBlocks: JSON.parse(rawBlocks),
       meetingDays: JSON.parse(rawMeeting),
@@ -64,9 +107,14 @@ function loadWeekContainer(mondayIso: string): WeekScheduleContainer | null {
     const raw = localStorage.getItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as WeekScheduleContainer;
-    if (parsed && Array.isArray(parsed.timeBlocks)) {
+    if (
+      parsed &&
+      parsed.schemaVersion === WEEK_CONTAINER_SCHEMA_VERSION &&
+      Array.isArray(parsed.timeBlocks)
+    ) {
       return parsed;
     }
+    localStorage.removeItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`);
   } catch {
     // ignore
   }
@@ -113,7 +161,7 @@ export interface CoordinatorMatrixContextType {
   activeAnchorDate: Date;
   activeMondayIso: string;
   weekInfo: CurrentWeekData;
-  cloneCurrentWeekToNextWeek: () => void;
+  cloneCurrentWeekToNextWeek: (dayOfWeek?: DayOfWeek, shift?: ShiftType) => void;
   teachers: UserEntity[];
   setTeachers: React.Dispatch<React.SetStateAction<UserEntity[]>>;
   getTeacherColor: (teacherId?: string, teacherName?: string) => string;
@@ -229,6 +277,43 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
   const [activeTeachers, setActiveTeachers] = useState<any[]>([]);
   const [officialSubjects, setOfficialSubjects] = useState<string[]>(DEFAULT_SUBJECT_NAMES);
   const [zoomLevel, setZoomLevel] = useState(100);
+
+  const [isAutoNextWeekCutoff, setIsAutoNextWeekCutoff] = useState<boolean>(() =>
+    isPastFridayCutoff(new Date())
+  );
+  const [activeWeekSlot, setActiveWeekSlotState] = useState<WeekSlotMode>(() => {
+    ensureSeedDataLoaded();
+    const defaultMode = getDefaultWeekSlotMode(new Date());
+    try {
+      const prevSavedIso = localStorage.getItem('ievf_active_monday_iso');
+      const anchor = getAnchorDateForWeekSlot(defaultMode, new Date());
+      const targetMondayIso = getWeekMondayIso(anchor);
+      if (prevSavedIso && prevSavedIso !== targetMondayIso) {
+        saveCurrentStateToWeekContainer(prevSavedIso);
+      }
+      const existingContainer = loadWeekContainer(targetMondayIso);
+      if (existingContainer) {
+        const blocksStr = JSON.stringify(existingContainer.timeBlocks);
+        localStorage.setItem('villaFloraMatrix', blocksStr);
+        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+        localStorage.setItem('ievf_meeting_days', JSON.stringify(existingContainer.meetingDays || {}));
+        localStorage.setItem('ievf_schedule_types', JSON.stringify(existingContainer.scheduleTypes || {}));
+      } else {
+        const cleanContainer = createCleanWeekContainer(targetMondayIso);
+        const blocksStr = JSON.stringify(cleanContainer.timeBlocks);
+        localStorage.setItem('villaFloraMatrix', blocksStr);
+        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+        localStorage.setItem('ievf_meeting_days', '{}');
+        localStorage.setItem('ievf_schedule_types', '{}');
+      }
+      localStorage.setItem('ievf_active_week_slot', defaultMode);
+      localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
+    } catch {
+      // ignore
+    }
+    return defaultMode;
+  });
+
   const [meetingDays, setMeetingDays] = useState<Record<string, boolean>>(() => {
     try {
       const saved = localStorage.getItem('ievf_meeting_days');
@@ -252,36 +337,6 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     } catch {
       return {};
     }
-  });
-
-  const [isAutoNextWeekCutoff, setIsAutoNextWeekCutoff] = useState<boolean>(() =>
-    isPastFridayCutoff(new Date())
-  );
-  const [activeWeekSlot, setActiveWeekSlotState] = useState<WeekSlotMode>(() => {
-    const defaultMode = getDefaultWeekSlotMode(new Date());
-    try {
-      const prevSavedIso = localStorage.getItem('ievf_active_monday_iso');
-      const anchor = getAnchorDateForWeekSlot(defaultMode, new Date());
-      const targetMondayIso = getWeekMondayIso(anchor);
-      if (prevSavedIso && prevSavedIso !== targetMondayIso) {
-        saveCurrentStateToWeekContainer(prevSavedIso);
-      }
-      const existingContainer = loadWeekContainer(targetMondayIso);
-      if (existingContainer && existingContainer.timeBlocks.length > 0) {
-        const blocksStr = JSON.stringify(existingContainer.timeBlocks);
-        localStorage.setItem('villaFloraMatrix', blocksStr);
-        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-        localStorage.setItem('ievf_meeting_days', JSON.stringify(existingContainer.meetingDays || {}));
-        localStorage.setItem('ievf_schedule_types', JSON.stringify(existingContainer.scheduleTypes || {}));
-      } else {
-        saveCurrentStateToWeekContainer(targetMondayIso);
-      }
-      localStorage.setItem('ievf_active_week_slot', defaultMode);
-      localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
-    } catch {
-      // ignore
-    }
-    return defaultMode;
   });
 
   const activeAnchorDate = useMemo(
@@ -391,18 +446,22 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
   const zoomOut = useCallback(() => setZoomLevel((z) => Math.max(70, z - 10)), []);
   const resetZoom = useCallback(() => setZoomLevel(100), []);
 
-  const setMeetingDay = useCallback((day: string, value: boolean, shift?: ShiftType) => {
-    const key = shift ? `${shift}_${day}` : day;
-    setMeetingDays((prev) => {
-      const next = shift ? { ...prev, [key]: value } : { ...prev, [day]: value };
-      try {
-        localStorage.setItem('ievf_meeting_days', JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, []);
+  const setMeetingDay = useCallback(
+    (day: string, value: boolean, shift?: ShiftType) => {
+      const key = shift ? `${shift}_${day}` : day;
+      setMeetingDays((prev) => {
+        const next = shift ? { ...prev, [key]: value } : { ...prev, [day]: value };
+        try {
+          localStorage.setItem('ievf_meeting_days', JSON.stringify(next));
+          saveCurrentStateToWeekContainer(activeMondayIso);
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    },
+    [activeMondayIso]
+  );
 
   const setEventDay = useCallback((day: string, value: boolean) => {
     setEventDays((prev) => {
@@ -416,18 +475,22 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     });
   }, []);
 
-  const setScheduleType = useCallback((day: string, type: 'A' | 'B' | 'C' | 'D', shift?: ShiftType) => {
-    const key = shift ? `${shift}_${day}` : day;
-    setScheduleTypes((prev) => {
-      const next = shift ? { ...prev, [day]: type, [key]: type } : { ...prev, [day]: type };
-      try {
-        localStorage.setItem('ievf_schedule_types', JSON.stringify(next));
-      } catch {
-        // ignore
-      }
-      return next;
-    });
-  }, []);
+  const setScheduleType = useCallback(
+    (day: string, type: 'A' | 'B' | 'C' | 'D', shift?: ShiftType) => {
+      const key = shift ? `${shift}_${day}` : day;
+      setScheduleTypes((prev) => {
+        const next = shift ? { ...prev, [day]: type, [key]: type } : { ...prev, [day]: type };
+        try {
+          localStorage.setItem('ievf_schedule_types', JSON.stringify(next));
+          saveCurrentStateToWeekContainer(activeMondayIso);
+        } catch {
+          // ignore
+        }
+        return next;
+      });
+    },
+    [activeMondayIso]
+  );
 
   const getTeacherColor = useCallback(
     (teacherId?: string, teacherName?: string) => {
@@ -496,30 +559,23 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
 
       saveCurrentStateToWeekContainer(prevMondayIso);
 
-      const targetContainer = loadWeekContainer(targetMondayIso);
-      if (targetContainer) {
-        try {
-          const blocksStr = JSON.stringify(targetContainer.timeBlocks);
-          localStorage.setItem('villaFloraMatrix', blocksStr);
-          localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-          localStorage.setItem('ievf_meeting_days', JSON.stringify(targetContainer.meetingDays || {}));
-          localStorage.setItem('ievf_schedule_types', JSON.stringify(targetContainer.scheduleTypes || {}));
-          setMeetingDays(targetContainer.meetingDays || {});
-          setScheduleTypes(targetContainer.scheduleTypes || {});
-        } catch {
-          // ignore
-        }
-      } else {
-        saveCurrentStateToWeekContainer(targetMondayIso);
-      }
+      const targetContainer =
+        loadWeekContainer(targetMondayIso) || createCleanWeekContainer(targetMondayIso);
 
       try {
+        const blocksStr = JSON.stringify(targetContainer.timeBlocks);
+        localStorage.setItem('villaFloraMatrix', blocksStr);
+        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+        localStorage.setItem('ievf_meeting_days', JSON.stringify(targetContainer.meetingDays || {}));
+        localStorage.setItem('ievf_schedule_types', JSON.stringify(targetContainer.scheduleTypes || {}));
         localStorage.setItem('ievf_active_week_slot', targetSlot);
         localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
       } catch {
         // ignore
       }
 
+      setMeetingDays(targetContainer.meetingDays || {});
+      setScheduleTypes(targetContainer.scheduleTypes || {});
       setActiveWeekSlotState(targetSlot);
       window.dispatchEvent(new Event('schedule_matrix_updated'));
       window.dispatchEvent(
@@ -531,20 +587,96 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     [activeWeekSlot]
   );
 
-  const cloneCurrentWeekToNextWeek = useCallback(() => {
-    const now = new Date();
-    const currentMondayIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', now));
-    const nextMondayIso = getWeekMondayIso(getAnchorDateForWeekSlot('next', now));
+  const cloneCurrentWeekToNextWeek = useCallback(
+    (targetDay?: DayOfWeek, _targetShift?: ShiftType) => {
+      const now = new Date();
+      const currentMondayIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', now));
+      const nextMondayIso = getWeekMondayIso(getAnchorDateForWeekSlot('next', now));
 
-    if (activeWeekSlot === 'current') {
-      saveCurrentStateToWeekContainer(currentMondayIso);
-    }
+      if (activeWeekSlot === 'current') {
+        saveCurrentStateToWeekContainer(currentMondayIso);
+      } else {
+        saveCurrentStateToWeekContainer(nextMondayIso);
+      }
 
-    const sourceContainer = loadWeekContainer(currentMondayIso);
-    if (sourceContainer) {
+      const sourceContainer = loadWeekContainer(currentMondayIso);
+      const sourceBlocks =
+        sourceContainer && Array.isArray(sourceContainer.timeBlocks) && sourceContainer.timeBlocks.length > 0
+          ? sourceContainer.timeBlocks
+          : getCleanBaseScheduleBlocks();
+
+      if (targetDay) {
+        const existingNext =
+          loadWeekContainer(nextMondayIso) || createCleanWeekContainer(nextMondayIso);
+        const copiedDayBlocks = JSON.parse(
+          JSON.stringify(sourceBlocks.filter((b: any) => b.dayOfWeek === targetDay))
+        );
+        const otherDaysBlocks = existingNext.timeBlocks.filter(
+          (b: any) => b.dayOfWeek !== targetDay
+        );
+        const mergedBlocks = [...otherDaysBlocks, ...copiedDayBlocks];
+
+        const nextMeetingDays: Record<string, boolean> = { ...(existingNext.meetingDays || {}) };
+        const nextScheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> = {
+          ...(existingNext.scheduleTypes || {}),
+        };
+        const dayKeys = [
+          targetDay,
+          `morning_${targetDay}`,
+          `afternoon_${targetDay}`,
+          `transicion-1_${targetDay}`,
+        ];
+        const srcMeeting = sourceContainer?.meetingDays || {};
+        const srcTypes = sourceContainer?.scheduleTypes || {};
+        dayKeys.forEach((k) => {
+          if (srcMeeting[k] !== undefined) {
+            nextMeetingDays[k] = srcMeeting[k];
+          } else {
+            delete nextMeetingDays[k];
+          }
+          if (srcTypes[k] !== undefined) {
+            nextScheduleTypes[k] = srcTypes[k];
+          } else {
+            delete nextScheduleTypes[k];
+          }
+        });
+
+        const updatedNextContainer: WeekScheduleContainer = {
+          schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
+          mondayIso: nextMondayIso,
+          timeBlocks: mergedBlocks,
+          meetingDays: nextMeetingDays,
+          scheduleTypes: nextScheduleTypes,
+          updatedAt: Date.now(),
+        };
+
+        try {
+          localStorage.setItem(
+            `${WEEK_CONTAINER_PREFIX}${nextMondayIso}`,
+            JSON.stringify(updatedNextContainer)
+          );
+          if (activeWeekSlot === 'next') {
+            const blocksStr = JSON.stringify(mergedBlocks);
+            localStorage.setItem('villaFloraMatrix', blocksStr);
+            localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+            localStorage.setItem('ievf_meeting_days', JSON.stringify(nextMeetingDays));
+            localStorage.setItem('ievf_schedule_types', JSON.stringify(nextScheduleTypes));
+            setMeetingDays(nextMeetingDays);
+            setScheduleTypes(nextScheduleTypes);
+            window.dispatchEvent(new Event('schedule_matrix_updated'));
+          }
+        } catch {
+          // ignore
+        }
+        return;
+      }
+
       const cloned: WeekScheduleContainer = {
-        ...sourceContainer,
+        schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
         mondayIso: nextMondayIso,
+        timeBlocks: JSON.parse(JSON.stringify(sourceBlocks)),
+        meetingDays: { ...(sourceContainer?.meetingDays || {}) },
+        scheduleTypes: { ...(sourceContainer?.scheduleTypes || {}) },
         updatedAt: Date.now(),
       };
       try {
@@ -562,18 +694,19 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       } catch {
         // ignore
       }
-    } else {
-      saveCurrentStateToWeekContainer(nextMondayIso);
-    }
-  }, [activeWeekSlot]);
+    },
+    [activeWeekSlot]
+  );
 
   useEffect(() => {
     const handleSyncActiveWeekContainer = () => {
       saveCurrentStateToWeekContainer(activeMondayIso);
     };
     window.addEventListener('schedule_matrix_updated', handleSyncActiveWeekContainer);
+    window.addEventListener('active_week_blocks_persisted', handleSyncActiveWeekContainer);
     return () => {
       window.removeEventListener('schedule_matrix_updated', handleSyncActiveWeekContainer);
+      window.removeEventListener('active_week_blocks_persisted', handleSyncActiveWeekContainer);
     };
   }, [activeMondayIso]);
 
