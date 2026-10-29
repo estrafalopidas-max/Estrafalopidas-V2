@@ -12,6 +12,12 @@ import {
   resolveEffectiveDayConfigs,
 } from '../../domain/services/html-schedule-generator.service';
 import { normalizeTimeBlocksGrades } from '../../domain/services/grade-normalization.service';
+import {
+  extractSnapshotTimestamp,
+  readSnapshotFromCacheStorage,
+  selectMostRecentSnapshot,
+  writeSnapshotToCacheStorage,
+} from '../../domain/services/schedule-cache-strategy.service';
 
 // Silenciar logs internos del SDK de Firestore para evitar ruido por cuota gratuita agotada
 try {
@@ -94,6 +100,7 @@ const LAST_FETCH_KEY = 'ievf_cloud_schedule_fetched_at';
 const DAY_CONFIG_BLOCK_ID = '__ievf_day_configs__';
 
 export interface CloudPublishedScheduleData extends PublicScheduleSnapshot {
+  updatedAtMs?: number;
   shortUrl?: string;
   shortCode?: string;
 }
@@ -172,8 +179,11 @@ export async function publishScheduleToCloud(
     updatedAtMs: nowMs,
   });
 
-  const normalizedSnapshot: PublicScheduleSnapshot = {
+  const normalizedSnapshot: CloudPublishedScheduleData = {
     ...snapshot,
+    updatedAtMs: nowMs,
+    shortUrl,
+    shortCode,
     timeBlocks: isBlankMatrix ? [] : snapshot.timeBlocks,
     dayConfigs: effectiveDayConfigs,
     metadata: {
@@ -198,17 +208,15 @@ export async function publishScheduleToCloud(
     // ignore
   }
 
+  await writeSnapshotToCacheStorage(normalizedSnapshot);
+
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
     try {
       await fetch('/api/published-schedule', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          snapshot: {
-            ...normalizedSnapshot,
-            shortUrl,
-            shortCode,
-          },
+          snapshot: normalizedSnapshot,
         }),
       });
     } catch {
@@ -238,14 +246,13 @@ export function subscribeToPublishedSchedule(
     }
     const effectiveBaselineTs = Math.max(lastAppliedUpdatedAtMs, localTs);
     const incomingTs = Number(
-      updatedAtMs || parsed.metadata?.updatedAtMs || parsed.dayConfigs?.updatedAtMs || 0
+      updatedAtMs || extractSnapshotTimestamp(parsed) || 0
     );
     if (effectiveBaselineTs > 0 && (incomingTs === 0 || incomingTs < effectiveBaselineTs)) {
       return;
     }
-    if (incomingTs > 0) {
-      lastAppliedUpdatedAtMs = incomingTs;
-    }
+    const resolvedTs = incomingTs > 0 ? incomingTs : Date.now();
+    lastAppliedUpdatedAtMs = resolvedTs;
 
     const isBlank =
       Boolean(parsed.metadata?.blankMatrixMode ?? parsed.dayConfigs?.blankMatrixMode) ||
@@ -257,17 +264,18 @@ export function subscribeToPublishedSchedule(
 
     const finalData: CloudPublishedScheduleData = {
       ...parsed,
+      updatedAtMs: resolvedTs,
       timeBlocks: normalizedBlocks,
       metadata: {
         ...parsed.metadata,
         totalBlocks: normalizedBlocks.length,
         blankMatrixMode: isBlank,
-        updatedAtMs: incomingTs || Date.now(),
+        updatedAtMs: resolvedTs,
       },
       dayConfigs: resolveEffectiveDayConfigs({
         ...parsed.dayConfigs,
         blankMatrixMode: isBlank,
-        updatedAtMs: incomingTs || Date.now(),
+        updatedAtMs: resolvedTs,
       }),
     };
 
@@ -283,9 +291,7 @@ export function subscribeToPublishedSchedule(
       }
       localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(finalData));
       localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
-      if (incomingTs > 0) {
-        localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(incomingTs));
-      }
+      localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(resolvedTs));
       if (finalData.dayConfigs) {
         if (finalData.dayConfigs.meetingDays) {
           localStorage.setItem('ievf_meeting_days', JSON.stringify(finalData.dayConfigs.meetingDays));
@@ -308,73 +314,139 @@ export function subscribeToPublishedSchedule(
       // ignore storage errors
     }
 
+    void writeSnapshotToCacheStorage(finalData);
     onUpdate(finalData);
   };
 
-  const loadFromLocalCache = (): boolean => {
+  const readLocalStorageCandidate = (): CloudPublishedScheduleData | null => {
     try {
       const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
-      const liveBlocksRaw = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
+      const localUpdatedTs = Number(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || '0');
+      const liveBlocksRaw =
+        localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       const cachedRaw = localStorage.getItem('ievf_public_schedule_snapshot');
-      if (cachedRaw) {
-        const cachedData = JSON.parse(cachedRaw) as CloudPublishedScheduleData;
-        if (cachedData) {
-          const snapIsBlank =
-            isBlankMode ||
-            Boolean(cachedData.metadata?.blankMatrixMode ?? cachedData.dayConfigs?.blankMatrixMode) ||
-            (Array.isArray(cachedData.timeBlocks) && cachedData.timeBlocks.length === 0);
 
-          if (snapIsBlank) {
-            cachedData.timeBlocks = [];
-            cachedData.metadata = {
-              ...cachedData.metadata,
-              totalBlocks: 0,
-              blankMatrixMode: true,
-            };
-            onUpdate(cachedData);
-            return true;
+      if (!cachedRaw) return null;
+      const cachedData = JSON.parse(cachedRaw) as CloudPublishedScheduleData;
+      if (!cachedData || typeof cachedData !== 'object') return null;
+
+      const snapshotTs = extractSnapshotTimestamp(cachedData);
+      const effectiveTs = Math.max(snapshotTs, localUpdatedTs);
+
+      const snapIsBlank =
+        isBlankMode ||
+        Boolean(cachedData.metadata?.blankMatrixMode ?? cachedData.dayConfigs?.blankMatrixMode) ||
+        (Array.isArray(cachedData.timeBlocks) && cachedData.timeBlocks.length === 0);
+
+      if (snapIsBlank) {
+        return {
+          ...cachedData,
+          updatedAtMs: effectiveTs,
+          timeBlocks: [],
+          metadata: {
+            ...cachedData.metadata,
+            totalBlocks: 0,
+            blankMatrixMode: true,
+            updatedAtMs: effectiveTs,
+          },
+        };
+      }
+
+      if (liveBlocksRaw && localUpdatedTs >= snapshotTs) {
+        try {
+          const liveBlocks = JSON.parse(liveBlocksRaw);
+          if (Array.isArray(liveBlocks)) {
+            cachedData.timeBlocks =
+              liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [];
           }
-          if (liveBlocksRaw) {
-            try {
-              const liveBlocks = JSON.parse(liveBlocksRaw);
-              if (Array.isArray(liveBlocks)) {
-                cachedData.timeBlocks =
-                  liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [];
-              }
-            } catch {
-              // ignore
-            }
-          }
-          if (Array.isArray(cachedData.timeBlocks)) {
-            onUpdate(cachedData);
-            return true;
-          }
+        } catch {
+          // ignore
         }
       }
+
+      if (Array.isArray(cachedData.timeBlocks)) {
+        return {
+          ...cachedData,
+          updatedAtMs: effectiveTs,
+          metadata: {
+            ...cachedData.metadata,
+            updatedAtMs: effectiveTs,
+          },
+        };
+      }
     } catch {
-      // Ignorar error de lectura de caché inicial
+      // Ignorar error de lectura de caché local
+    }
+    return null;
+  };
+
+  const loadFromLocalCache = (): boolean => {
+    const localCandidate = readLocalStorageCandidate();
+    if (localCandidate) {
+      const ts = extractSnapshotTimestamp(localCandidate);
+      if (ts > lastAppliedUpdatedAtMs) {
+        lastAppliedUpdatedAtMs = ts;
+      }
+      onUpdate(localCandidate);
+      return true;
     }
     return false;
   };
 
+  const hydrateCacheFirst = async (): Promise<void> => {
+    const localCandidate = readLocalStorageCandidate();
+    const swCacheCandidate = await readSnapshotFromCacheStorage();
+
+    let swFetchCandidate: CloudPublishedScheduleData | null = null;
+    if (!swCacheCandidate && typeof window !== 'undefined' && typeof fetch === 'function') {
+      try {
+        const cachedRes = await fetch('/api/published-schedule', { cache: 'default' });
+        if (cachedRes.ok) {
+          const cachedJson = await cachedRes.json();
+          if (cachedJson?.snapshot && Array.isArray(cachedJson.snapshot.timeBlocks)) {
+            swFetchCandidate = cachedJson.snapshot as CloudPublishedScheduleData;
+          }
+        }
+      } catch {
+        // Offline or cache miss
+      }
+    }
+
+    const newestCached = selectMostRecentSnapshot<CloudPublishedScheduleData>([
+      swCacheCandidate as CloudPublishedScheduleData | null,
+      swFetchCandidate,
+      localCandidate,
+    ]);
+
+    if (newestCached) {
+      applyPublishedData(newestCached, extractSnapshotTimestamp(newestCached));
+    }
+  };
+
   loadFromLocalCache();
+  void hydrateCacheFirst();
 
   const fetchServerSnapshot = async (): Promise<boolean> => {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return false;
     try {
-      const res = await fetch('/api/published-schedule', { cache: 'no-store' });
+      const controller = new AbortController();
+      const timeoutId = window.setTimeout(() => controller.abort(), 3500);
+      const res = await fetch(`/api/published-schedule?sync=${Date.now()}`, {
+        cache: 'no-store',
+        signal: controller.signal,
+      });
+      window.clearTimeout(timeoutId);
+
       if (!res.ok) return false;
       const data = await res.json();
-      const serverSnap = data?.snapshot;
+      const serverSnap = data?.snapshot as CloudPublishedScheduleData | undefined;
       if (serverSnap && Array.isArray(serverSnap.timeBlocks)) {
-        applyPublishedData(
-          serverSnap as CloudPublishedScheduleData,
-          Number(serverSnap.updatedAtMs || serverSnap.metadata?.updatedAtMs || serverSnap.dayConfigs?.updatedAtMs || Date.now())
-        );
+        const incomingTs = extractSnapshotTimestamp(serverSnap) || Date.now();
+        applyPublishedData(serverSnap, incomingTs);
         return true;
       }
     } catch {
-      // ignore
+      // Sin conexión o sin VPN: se mantiene intacta la versión más reciente de la caché (Cache-First)
     }
     return false;
   };
@@ -387,6 +459,7 @@ export function subscribeToPublishedSchedule(
   window.addEventListener('public_schedule_snapshot_updated', handleLocalStorageUpdate);
 
   const handleVisibilityOrFocus = () => {
+    void hydrateCacheFirst();
     void fetchServerSnapshot();
   };
   window.addEventListener('focus', handleVisibilityOrFocus);

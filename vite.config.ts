@@ -205,6 +205,65 @@ export default defineConfig({
       registerType: 'autoUpdate',
       workbox: {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+        skipWaiting: true,
+        clientsClaim: true,
+        cleanupOutdatedCaches: true,
+        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2,json}'],
+        navigateFallback: '/index.html',
+        navigateFallbackDenylist: [/^\/api\//],
+        runtimeCaching: [
+          {
+            urlPattern: ({ url }) =>
+              url.pathname === '/api/published-schedule' && !url.searchParams.has('sync'),
+            handler: 'NetworkFirst',
+            options: {
+              cacheName: 'ievf-published-schedule-cache-v1',
+              networkTimeoutSeconds: 3,
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 5,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
+          {
+            urlPattern: ({ request, url }) =>
+              request.destination === 'script' ||
+              request.destination === 'style' ||
+              request.destination === 'worker' ||
+              /\.(?:js|css|mjs)$/i.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'ievf-static-resources-cache-v1',
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 80,
+                maxAgeSeconds: 60 * 60 * 24 * 30,
+              },
+            },
+          },
+          {
+            urlPattern: ({ request, url }) =>
+              request.destination === 'image' ||
+              request.destination === 'font' ||
+              /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2|ttf)$/i.test(url.pathname),
+            handler: 'CacheFirst',
+            options: {
+              cacheName: 'ievf-media-assets-cache-v1',
+              cacheableResponse: {
+                statuses: [0, 200],
+              },
+              expiration: {
+                maxEntries: 60,
+                maxAgeSeconds: 60 * 60 * 24 * 60,
+              },
+            },
+          },
+        ],
       },
       devOptions: {
         enabled: true

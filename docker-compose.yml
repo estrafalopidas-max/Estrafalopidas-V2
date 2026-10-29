@@ -12,5 +12,4 @@ services:
       - PRIMARY_ADMIN_EMAIL=estrafalopidas@gmail.com
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:
-      # Reemplaza /mnt/tank/apps/horarios-villa-flora/data por la ruta de tu Dataset en TrueNAS
-      - /mnt/tank/apps/horarios-villa-flora/data:/app/data
+      - /mnt/Estrafalopio/apps/horarios-villa-flora/data:/app/data
