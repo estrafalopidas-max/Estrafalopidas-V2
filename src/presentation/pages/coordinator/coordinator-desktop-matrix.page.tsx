@@ -198,16 +198,10 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   useEffect(() => {
     const handleWeekSlotChanged = (ev: Event) => {
       const customEv = ev as CustomEvent<{ slot: 'current' | 'next'; mondayIso: string }>;
-      const nextSlot = customEv.detail?.slot || activeWeekSlot;
       if (customEv.detail?.mondayIso) {
         loadedMondayIsoRef.current = customEv.detail.mondayIso;
       }
       setHistory([]);
-      if (nextSlot === 'next') {
-        setSelectedDay('lunes');
-      } else {
-        setSelectedDay(getTodayDayOfWeek(new Date(), 'current'));
-      }
       try {
         const saved = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
         if (saved) {

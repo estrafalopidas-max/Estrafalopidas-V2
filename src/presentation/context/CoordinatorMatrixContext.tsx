@@ -44,7 +44,7 @@ interface WeekScheduleContainer {
 }
 
 const WEEK_CONTAINER_PREFIX = 'ievf_week_container_';
-const WEEK_CONTAINER_SCHEMA_VERSION = 3;
+const WEEK_CONTAINER_SCHEMA_VERSION = 4;
 
 export function clearAllWeekContainers(): void {
   try {
@@ -344,6 +344,8 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     [activeWeekSlot, isAutoNextWeekCutoff]
   );
   const activeMondayIso = useMemo(() => getWeekMondayIso(activeAnchorDate), [activeAnchorDate]);
+  const activeMondayIsoRef = useRef<string>(activeMondayIso);
+  activeMondayIsoRef.current = activeMondayIso;
   const weekInfo = useMemo(() => getCurrentWeekText(activeAnchorDate), [activeAnchorDate]);
 
   const [currentAcademicWeek, setCurrentAcademicWeek] = useState<number>(weekInfo.weekNumber || 9);
@@ -557,19 +559,23 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       const targetAnchor = getAnchorDateForWeekSlot(targetSlot, now);
       const targetMondayIso = getWeekMondayIso(targetAnchor);
 
-      saveCurrentStateToWeekContainer(prevMondayIso);
+      if (prevMondayIso) {
+        saveCurrentStateToWeekContainer(prevMondayIso);
+      }
+
+      activeMondayIsoRef.current = targetMondayIso;
 
       const targetContainer =
         loadWeekContainer(targetMondayIso) || createCleanWeekContainer(targetMondayIso);
 
       try {
+        localStorage.setItem('ievf_active_week_slot', targetSlot);
+        localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
         const blocksStr = JSON.stringify(targetContainer.timeBlocks);
         localStorage.setItem('villaFloraMatrix', blocksStr);
         localStorage.setItem('ievf_time_blocks_v1', blocksStr);
         localStorage.setItem('ievf_meeting_days', JSON.stringify(targetContainer.meetingDays || {}));
         localStorage.setItem('ievf_schedule_types', JSON.stringify(targetContainer.scheduleTypes || {}));
-        localStorage.setItem('ievf_active_week_slot', targetSlot);
-        localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
       } catch {
         // ignore
       }
@@ -577,12 +583,12 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       setMeetingDays(targetContainer.meetingDays || {});
       setScheduleTypes(targetContainer.scheduleTypes || {});
       setActiveWeekSlotState(targetSlot);
-      window.dispatchEvent(new Event('schedule_matrix_updated'));
       window.dispatchEvent(
         new CustomEvent('week_slot_changed', {
           detail: { slot: targetSlot, mondayIso: targetMondayIso },
         })
       );
+      window.dispatchEvent(new Event('schedule_matrix_updated'));
     },
     [activeWeekSlot]
   );
@@ -600,21 +606,73 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       }
 
       const sourceContainer = loadWeekContainer(currentMondayIso);
+      const baseBlocks = getCleanBaseScheduleBlocks();
       const sourceBlocks =
         sourceContainer && Array.isArray(sourceContainer.timeBlocks) && sourceContainer.timeBlocks.length > 0
           ? sourceContainer.timeBlocks
-          : getCleanBaseScheduleBlocks();
+          : baseBlocks;
 
       if (targetDay) {
         const existingNext =
           loadWeekContainer(nextMondayIso) || createCleanWeekContainer(nextMondayIso);
-        const copiedDayBlocks = JSON.parse(
-          JSON.stringify(sourceBlocks.filter((b: any) => b.dayOfWeek === targetDay))
-        );
+
+        const slotKey = (b: any) => `${b.gradeId || b.gradeName}__${b.period}`;
+        const isBlockModifiedFromBase = (b: any, base: any): boolean => {
+          if (!base) return true;
+          return (
+            (b.teacherId || '') !== (base.teacherId || '') ||
+            (b.teacherName || '') !== (base.teacherName || '') ||
+            (b.subject || '') !== (base.subject || '') ||
+            (b.block_type || 'class') !== (base.block_type || 'class') ||
+            (b.status || 'regular') !== (base.status || 'regular') ||
+            (b.motivo_novedad || null) !== (base.motivo_novedad || null) ||
+            (b.classroomId || '') !== (base.classroomId || '') ||
+            (b.replacementTeacherId || null) !== (base.replacementTeacherId || null)
+          );
+        };
+
+        const baseDayMap = new Map<string, any>();
+        baseBlocks
+          .filter((b: any) => b.dayOfWeek === targetDay)
+          .forEach((b: any) => baseDayMap.set(slotKey(b), b));
+
+        const sourceDayMap = new Map<string, any>();
+        sourceBlocks
+          .filter((b: any) => b.dayOfWeek === targetDay)
+          .forEach((b: any) => sourceDayMap.set(slotKey(b), b));
+
+        const nextDayMap = new Map<string, any>();
+        existingNext.timeBlocks
+          .filter((b: any) => b.dayOfWeek === targetDay)
+          .forEach((b: any) => nextDayMap.set(slotKey(b), b));
+
+        const allDaySlotKeys = new Set<string>([
+          ...Array.from(baseDayMap.keys()),
+          ...Array.from(sourceDayMap.keys()),
+          ...Array.from(nextDayMap.keys()),
+        ]);
+
+        const mergedDayBlocks: any[] = [];
+        allDaySlotKeys.forEach((k) => {
+          const baseBlock = baseDayMap.get(k);
+          const srcBlock = sourceDayMap.get(k);
+          const nxtBlock = nextDayMap.get(k);
+
+          if (srcBlock && isBlockModifiedFromBase(srcBlock, baseBlock)) {
+            mergedDayBlocks.push(JSON.parse(JSON.stringify(srcBlock)));
+          } else if (nxtBlock && isBlockModifiedFromBase(nxtBlock, baseBlock)) {
+            mergedDayBlocks.push(JSON.parse(JSON.stringify(nxtBlock)));
+          } else if (srcBlock) {
+            mergedDayBlocks.push(JSON.parse(JSON.stringify(srcBlock)));
+          } else if (nxtBlock) {
+            mergedDayBlocks.push(JSON.parse(JSON.stringify(nxtBlock)));
+          }
+        });
+
         const otherDaysBlocks = existingNext.timeBlocks.filter(
           (b: any) => b.dayOfWeek !== targetDay
         );
-        const mergedBlocks = [...otherDaysBlocks, ...copiedDayBlocks];
+        const mergedBlocks = [...otherDaysBlocks, ...mergedDayBlocks];
 
         const nextMeetingDays: Record<string, boolean> = { ...(existingNext.meetingDays || {}) };
         const nextScheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> = {
@@ -631,13 +689,9 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
         dayKeys.forEach((k) => {
           if (srcMeeting[k] !== undefined) {
             nextMeetingDays[k] = srcMeeting[k];
-          } else {
-            delete nextMeetingDays[k];
           }
           if (srcTypes[k] !== undefined) {
             nextScheduleTypes[k] = srcTypes[k];
-          } else {
-            delete nextScheduleTypes[k];
           }
         });
 
@@ -700,7 +754,11 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
 
   useEffect(() => {
     const handleSyncActiveWeekContainer = () => {
-      saveCurrentStateToWeekContainer(activeMondayIso);
+      const currentIso =
+        activeMondayIsoRef.current || localStorage.getItem('ievf_active_monday_iso');
+      if (currentIso) {
+        saveCurrentStateToWeekContainer(currentIso);
+      }
     };
     window.addEventListener('schedule_matrix_updated', handleSyncActiveWeekContainer);
     window.addEventListener('active_week_blocks_persisted', handleSyncActiveWeekContainer);
@@ -708,7 +766,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       window.removeEventListener('schedule_matrix_updated', handleSyncActiveWeekContainer);
       window.removeEventListener('active_week_blocks_persisted', handleSyncActiveWeekContainer);
     };
-  }, [activeMondayIso]);
+  }, []);
 
   useEffect(() => {
     const checkFridayCutoff = () => {

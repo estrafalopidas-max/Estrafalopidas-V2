@@ -52,7 +52,7 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
   }
 
   async update(id: string, partial: Partial<TimeBlockEntity>): Promise<void> {
-    const all = await this.getAll();
+    let all = await this.getAll();
     const now = new Date().toISOString();
     let idx = all.findIndex((b) => b.id === id);
 
@@ -65,6 +65,7 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
       );
     }
 
+    let updatedEntity: TimeBlockEntity;
     if (idx !== -1) {
       const merged: TimeBlockEntity = {
         ...all[idx],
@@ -75,6 +76,7 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
       merged.gradeName = resolveCanonicalGradeName(merged) || merged.gradeName;
       merged.shift = resolveCanonicalShift(merged);
       all[idx] = merged;
+      updatedEntity = merged;
     } else {
       const created: TimeBlockEntity = {
         id,
@@ -100,6 +102,20 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
       created.gradeName = resolveCanonicalGradeName(created) || created.gradeName;
       created.shift = resolveCanonicalShift(created);
       all.push(created);
+      updatedEntity = created;
+    }
+
+    if (updatedEntity.block_type !== 'exit') {
+      all = all.filter(
+        (b) =>
+          b.id === updatedEntity.id ||
+          !(
+            b.gradeId === updatedEntity.gradeId &&
+            b.dayOfWeek === updatedEntity.dayOfWeek &&
+            b.period === updatedEntity.period &&
+            b.block_type === 'exit'
+          )
+      );
     }
 
     localStorage.setItem(PRIMARY_LS_KEY, JSON.stringify(all));
@@ -109,8 +125,9 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
   }
 
   async updateBatch(updates: { id: string; data: Partial<TimeBlockEntity> }[]): Promise<void> {
-    const all = await this.getAll();
+    let all = await this.getAll();
     const now = new Date().toISOString();
+    const updatedEntities: TimeBlockEntity[] = [];
 
     updates.forEach(({ id, data }) => {
       let idx = all.findIndex((b) => b.id === id);
@@ -133,6 +150,7 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
         merged.gradeName = resolveCanonicalGradeName(merged) || merged.gradeName;
         merged.shift = resolveCanonicalShift(merged);
         all[idx] = merged;
+        updatedEntities.push(merged);
       } else {
         const created: TimeBlockEntity = {
           id,
@@ -158,6 +176,22 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
         created.gradeName = resolveCanonicalGradeName(created) || created.gradeName;
         created.shift = resolveCanonicalShift(created);
         all.push(created);
+        updatedEntities.push(created);
+      }
+    });
+
+    updatedEntities.forEach((updatedEntity) => {
+      if (updatedEntity.block_type !== 'exit') {
+        all = all.filter(
+          (b) =>
+            b.id === updatedEntity.id ||
+            !(
+              b.gradeId === updatedEntity.gradeId &&
+              b.dayOfWeek === updatedEntity.dayOfWeek &&
+              b.period === updatedEntity.period &&
+              b.block_type === 'exit'
+            )
+        );
       }
     });
 
