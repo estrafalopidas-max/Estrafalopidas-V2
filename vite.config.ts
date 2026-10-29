@@ -203,6 +203,9 @@ export default defineConfig({
     logoUploadPlugin(),
     VitePWA({
       registerType: 'autoUpdate',
+      workbox: {
+        maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
+      },
       devOptions: {
         enabled: true
       },

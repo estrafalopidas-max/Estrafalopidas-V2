@@ -12,7 +12,19 @@ import {
   Moon,
   ChevronDown,
   X,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RotateCcw,
 } from 'lucide-react';
+import {
+  clampZoomScale,
+  computeTouchDistance,
+  computePinchScale,
+  computeGridNaturalWidth,
+  computeFitToScreenScale,
+  MOBILE_TIME_COL_WIDTH_PX,
+} from '../../utils/mobile-schedule-zoom';
 import {
   getPublicScheduleSnapshot,
   DEFAULT_LOGO_BASE64,
@@ -642,6 +654,90 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
   const logoUrl = '/assets/aistudio/logo_html_859fb25c.png';
 
+  const [viewportWidth, setViewportWidth] = useState<number>(() =>
+    typeof window !== 'undefined' ? window.innerWidth : 1280
+  );
+  const [mobileZoom, setMobileZoom] = useState<number>(1);
+  const [tableNaturalHeight, setTableNaturalHeight] = useState<number>(0);
+  const tableRef = useRef<HTMLTableElement>(null);
+  const pinchStateRef = useRef<{ initialDistance: number; startScale: number } | null>(null);
+
+  useEffect(() => {
+    const handleResize = () => {
+      const w = window.innerWidth;
+      setViewportWidth(w);
+      if (w >= 1024) {
+        setMobileZoom(1);
+      }
+    };
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
+
+  const isMobileViewport = viewportWidth < 1024;
+  const gridNaturalWidth = useMemo(
+    () => computeGridNaturalWidth(activeGrades.length, selectedShift),
+    [activeGrades.length, selectedShift]
+  );
+  const isMultiColumnMobile = isMobileViewport && gridNaturalWidth > 0;
+
+  useEffect(() => {
+    if (!isMultiColumnMobile) {
+      setMobileZoom(1);
+    }
+  }, [isMultiColumnMobile, selectedGrade, selectedShift]);
+
+  useEffect(() => {
+    const el = tableRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return;
+    const updateHeight = () => {
+      setTableNaturalHeight(el.offsetHeight || 0);
+    };
+    updateHeight();
+    const observer = new ResizeObserver(updateHeight);
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [activeGrades.length, activePeriodSlots.length, selectedShift, selectedDay, isSupportPlanD]);
+
+  const handleTouchStartGrid = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMultiColumnMobile) return;
+    if (e.touches.length === 2) {
+      const dist = computeTouchDistance(
+        { x: e.touches[0].clientX, y: e.touches[0].clientY },
+        { x: e.touches[1].clientX, y: e.touches[1].clientY }
+      );
+      pinchStateRef.current = {
+        initialDistance: dist,
+        startScale: mobileZoom,
+      };
+    }
+  };
+
+  const handleTouchMoveGrid = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (!isMultiColumnMobile || e.touches.length !== 2 || !pinchStateRef.current) return;
+    const dist = computeTouchDistance(
+      { x: e.touches[0].clientX, y: e.touches[0].clientY },
+      { x: e.touches[1].clientX, y: e.touches[1].clientY }
+    );
+    const nextScale = computePinchScale(
+      pinchStateRef.current.initialDistance,
+      dist,
+      pinchStateRef.current.startScale
+    );
+    setMobileZoom(nextScale);
+  };
+
+  const handleTouchEndGrid = (e: React.TouchEvent<HTMLDivElement>) => {
+    if (e.touches.length < 2) {
+      pinchStateRef.current = null;
+    }
+  };
+
+  const handleFitPanoramic = () => {
+    const fitScale = computeFitToScreenScale(viewportWidth, gridNaturalWidth, 24);
+    setMobileZoom(fitScale);
+  };
+
   const handleDownloadPdf = async () => {
     if (isExportingPdf) return;
     setIsExportingPdf(true);
@@ -974,7 +1070,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
         {/* Fila Inferior: Días de la Semana (Más grandes y con mayor contraste) + Datos de Periodo y Semana */}
         <div className="flex flex-wrap items-center justify-between gap-4 pt-3.5 border-t border-slate-200">
           {/* Pestañas de Días de la Semana con Fecha Completa */}
-          <div className="flex flex-wrap items-center gap-2 bg-brand-50/70 p-1.5 rounded-2xl border border-brand-100 overflow-x-auto">
+          <div className="flex flex-nowrap lg:flex-wrap items-center gap-2 bg-brand-50/70 p-1.5 rounded-2xl border border-brand-100 overflow-x-auto w-full lg:w-auto">
             {DAYS.map((d) => {
               const dayIsHoliday = Boolean(dayConfigs.holidayDays?.[d.key]);
               const isSelected = selectedDay === d.key;
@@ -1045,6 +1141,103 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
       {/* Matriz / Cuadrícula de Horarios en Vivo (Por Jornada y por Día) */}
       <div className="bg-white rounded-2xl border border-slate-200 shadow-xs overflow-hidden">
+        {/* Barra Híbrida Móvil: Selección Rápida de Grupo + Controles de Zoom / Pellizcar */}
+        <div className="lg:hidden border-b border-slate-200 bg-slate-50/90 px-3 py-2.5 space-y-2 print:hidden">
+          {/* Chips deslizables de selección rápida de grupo */}
+          <div className="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+            <span className="text-[11px] font-extrabold text-slate-500 uppercase tracking-wider shrink-0 mr-1">
+              Grupo:
+            </span>
+            <button
+              type="button"
+              onClick={() => setSelectedGrade('ALL')}
+              className={`px-2.5 py-1 rounded-lg text-xs font-extrabold whitespace-nowrap transition cursor-pointer shrink-0 ${
+                selectedGrade === 'ALL'
+                  ? 'bg-[#0c4da2] text-white shadow-2xs'
+                  : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+              }`}
+            >
+              Todos ({shiftGrades.length})
+            </button>
+            {shiftGrades.map((g) => {
+              const isSelected = selectedGrade === g;
+              return (
+                <button
+                  key={`mobile-chip-${g}`}
+                  type="button"
+                  onClick={() => setSelectedGrade(isSelected ? 'ALL' : g)}
+                  className={`px-2.5 py-1 rounded-lg text-xs font-extrabold whitespace-nowrap transition cursor-pointer shrink-0 ${
+                    isSelected
+                      ? 'bg-[#0c4da2] text-white shadow-2xs ring-2 ring-[#0c4da2]/25'
+                      : 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-100'
+                  }`}
+                >
+                  {g}
+                </button>
+              );
+            })}
+          </div>
+
+          {/* Controles de Zoom Táctil y Vista Panorámica cuando se ven múltiples grupos */}
+          {isMultiColumnMobile && (
+            <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/80">
+              <span className="text-[11px] font-semibold text-slate-500 truncate">
+                Desliza o pellizca con 2 dedos para zoom
+              </span>
+              <div className="flex items-center gap-1 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleFitPanoramic}
+                  className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 text-[11px] font-bold shadow-2xs cursor-pointer"
+                  title="Ajustar toda la sábana a la pantalla"
+                  aria-label="Vista panorámica"
+                >
+                  <Maximize2 className="w-3 h-3 text-[#0c4da2]" />
+                  <span>Panorámica</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileZoom((z) => clampZoomScale(z - 0.15))}
+                  className="p-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 shadow-2xs cursor-pointer"
+                  title="Alejar horario"
+                  aria-label="Alejar horario"
+                >
+                  <ZoomOut className="w-3.5 h-3.5" />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileZoom(1)}
+                  className="px-2 py-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-800 text-[11px] font-mono font-extrabold shadow-2xs cursor-pointer min-w-[46px] text-center"
+                  title="Restablecer zoom al 100%"
+                  aria-label="Restablecer zoom al 100%"
+                >
+                  {Math.round(mobileZoom * 100)}%
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setMobileZoom((z) => clampZoomScale(z + 0.15))}
+                  className="p-1 rounded-lg bg-white border border-slate-200 hover:bg-slate-100 text-slate-700 shadow-2xs cursor-pointer"
+                  title="Acercar horario"
+                  aria-label="Acercar horario"
+                >
+                  <ZoomIn className="w-3.5 h-3.5" />
+                </button>
+                {mobileZoom !== 1 && (
+                  <button
+                    type="button"
+                    onClick={() => setMobileZoom(1)}
+                    className="p-1 rounded-lg bg-sky-50 border border-sky-200 text-[#0c4da2] shadow-2xs cursor-pointer"
+                    title="Volver a 100%"
+                    aria-label="Volver a 100%"
+                  >
+                    <RotateCcw className="w-3.5 h-3.5" />
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
+
         {isBlankSchedule && (
           <div className="bg-blue-50/90 border-b border-blue-200 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2 text-blue-950 text-xs font-extrabold">
@@ -1071,284 +1264,132 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
             </p>
           </div>
         ) : (
-          <div className="w-full overflow-hidden">
-            <table className="w-full table-fixed border-collapse text-left text-xs">
-              <thead>
-                {isSupportPlanD ? (
-                  <>
-                    <tr className="border-b border-slate-400">
-                      <th className="p-2 font-extrabold text-white uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-500 bg-slate-700 text-center">
-                        Horario
-                      </th>
-                      {supportPlanGroups.map((grp, i) => (
+          <div
+            data-testid="public-schedule-scroll-container"
+            onTouchStart={handleTouchStartGrid}
+            onTouchMove={handleTouchMoveGrid}
+            onTouchEnd={handleTouchEndGrid}
+            className="w-full overflow-x-auto lg:overflow-hidden touch-pan-x touch-pan-y"
+          >
+            <div
+              style={
+                isMultiColumnMobile
+                  ? {
+                      width:
+                        mobileZoom === 1
+                          ? `${gridNaturalWidth}px`
+                          : `${Math.ceil(gridNaturalWidth * mobileZoom)}px`,
+                      height:
+                        mobileZoom !== 1 && tableNaturalHeight > 0
+                          ? `${Math.ceil(tableNaturalHeight * mobileZoom)}px`
+                          : undefined,
+                    }
+                  : undefined
+              }
+            >
+              <table
+                ref={tableRef}
+                style={
+                  isMultiColumnMobile
+                    ? {
+                        width: `${gridNaturalWidth}px`,
+                        minWidth: `${gridNaturalWidth}px`,
+                        transform: mobileZoom === 1 ? undefined : `scale(${mobileZoom})`,
+                        transformOrigin: 'top left',
+                      }
+                    : undefined
+                }
+                className="w-full table-fixed border-collapse text-left text-xs"
+              >
+                <thead>
+                  {isSupportPlanD ? (
+                    <>
+                      <tr className="border-b border-slate-400">
                         <th
-                          key={`room-${grp.room}-${i}`}
-                          colSpan={grp.grades.length}
-                          className="p-2 font-black text-white text-center border-r border-slate-500 last:border-r-0 bg-[#7f7f7f] text-sm sm:text-base tracking-wide"
+                          style={
+                            isMultiColumnMobile ? { width: `${MOBILE_TIME_COL_WIDTH_PX}px` } : undefined
+                          }
+                          className={`p-2 font-extrabold text-white uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-500 bg-slate-700 text-center ${
+                            isMultiColumnMobile && mobileZoom === 1
+                              ? 'sticky left-0 z-20 shadow-[2px_0_6px_rgba(15,23,42,0.18)]'
+                              : ''
+                          }`}
                         >
-                          {grp.room}
+                          Horario
                         </th>
-                      ))}
-                    </tr>
-                    <tr className="border-b border-slate-300">
-                      <th className="p-2 font-extrabold text-slate-700 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-300 bg-slate-100 whitespace-nowrap text-center">
-                        Horario {activeScheduleType}
-                      </th>
-                      {activeGrades.map((g) => (
+                        {supportPlanGroups.map((grp, i) => (
+                          <th
+                            key={`room-${grp.room}-${i}`}
+                            colSpan={grp.grades.length}
+                            className="p-2 font-black text-white text-center border-r border-slate-500 last:border-r-0 bg-[#7f7f7f] text-sm sm:text-base tracking-wide"
+                          >
+                            {grp.room}
+                          </th>
+                        ))}
+                      </tr>
+                      <tr className="border-b border-slate-300">
                         <th
-                          key={g}
-                          className="p-1.5 font-black text-slate-900 text-center border-r border-slate-300 last:border-r-0 bg-[#b8cce4] text-xs sm:text-sm"
+                          style={
+                            isMultiColumnMobile ? { width: `${MOBILE_TIME_COL_WIDTH_PX}px` } : undefined
+                          }
+                          className={`p-2 font-extrabold text-slate-700 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-300 bg-slate-100 whitespace-nowrap text-center ${
+                            isMultiColumnMobile && mobileZoom === 1
+                              ? 'sticky left-0 z-20 shadow-[2px_0_6px_rgba(15,23,42,0.1)]'
+                              : ''
+                          }`}
                         >
-                          <div>{g}</div>
-                          <div className="text-[10px] font-semibold text-slate-700 mt-0.5 truncate">
-                            {getSupportRoomForGrade(g)}
-                          </div>
-                        </th>
-                      ))}
-                    </tr>
-                  </>
-                ) : (
-                  <tr className="bg-slate-50 border-b border-slate-200">
-                    {selectedShift === 'transicion-1' ? (
-                      activeGrades.map((g) => (
-                        <React.Fragment key={`th-pair-${g}`}>
-                          <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
-                            Horario {activeScheduleType}
-                          </th>
-                          <th className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
-                            <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
-                              {g}
-                            </span>
-                            {g === 'Transición 1' && (
-                              <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">07:00 - 12:00</div>
-                            )}
-                            {g === 'Transición 2' && (
-                              <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">12:30 - 17:30</div>
-                            )}
-                          </th>
-                        </React.Fragment>
-                      ))
-                    ) : (
-                      <>
-                        <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
                           Horario {activeScheduleType}
                         </th>
                         {activeGrades.map((g) => (
-                          <th key={g} className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
-                            <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
-                              {g}
-                            </span>
-                            {REGULAR_GRADE_CLASSROOMS[g] && (
-                              <div className="text-[10px] font-medium text-slate-500 mt-0.5 truncate">
-                                {REGULAR_GRADE_CLASSROOMS[g]}
-                              </div>
-                            )}
+                          <th
+                            key={g}
+                            className="p-1.5 font-black text-slate-900 text-center border-r border-slate-300 last:border-r-0 bg-[#b8cce4] text-xs sm:text-sm"
+                          >
+                            <div>{g}</div>
+                            <div className="text-[10px] font-semibold text-slate-700 mt-0.5 truncate">
+                              {getSupportRoomForGrade(g)}
+                            </div>
                           </th>
                         ))}
-                      </>
-                    )}
-                  </tr>
-                )}
-              </thead>
-              <tbody className="divide-y divide-slate-200">
-                {isHoliday && (
-                  <tr className="bg-red-50 border-b-2 border-red-200">
-                    <td
-                      colSpan={selectedShift === 'transicion-1' ? activeGrades.length * 2 : activeGrades.length + 1}
-                      className="py-2 px-4 text-center font-extrabold text-red-800 text-xs tracking-wide"
-                    >
-                      📅 Día Festivo Institucional &bull; Sin actividad académica programada
-                    </td>
-                  </tr>
-                )}
-                {activePeriodSlots.map((slot) => {
-                  if (slot.isPreJornada && !isHoliday) {
-                    if (selectedShift === 'transicion-1') {
-                      return (
-                        <tr key="pre-jornada-public" className="bg-amber-50/80 border-y-2 border-amber-300">
-                          {activeGrades.map((g) => {
-                            const isT2 = g === 'Transición 2';
-                            const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
-                            return (
-                              <React.Fragment key={`pre-jornada-${g}`}>
-                                <td className="p-2 bg-amber-50 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                                  <div className="font-extrabold text-amber-900 text-sm uppercase whitespace-nowrap leading-tight">{slot.label}</div>
-                                  <div className="text-xs font-mono font-bold text-amber-800 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                                    <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                                    <span className="whitespace-nowrap">{slotTime}</span>
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4 text-center bg-amber-50/70 border-r border-amber-300 last:border-r-0">
-                                  <div className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                                    👥 {slot.meetingTitle}
-                                  </div>
-                                  <div className="text-xs font-semibold text-amber-900/80 mt-0.5">
-                                    Franja institucional de excepción ({slotTime}) &bull; Sin asignación de clases ni sustituciones
-                                  </div>
-                                </td>
-                              </React.Fragment>
-                            );
-                          })}
-                        </tr>
-                      );
-                    }
-                    return (
-                      <tr key="pre-jornada-public" className="bg-amber-50/80 border-y-2 border-amber-300">
-                        <td className="p-2 bg-amber-50 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                          <div className="font-extrabold text-amber-900 text-sm uppercase whitespace-nowrap leading-tight">{slot.label}</div>
-                          <div className="text-xs font-mono font-bold text-amber-800 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                            <Clock className="w-3 h-3 text-amber-600 shrink-0" />
-                            <span className="whitespace-nowrap">{slot.time}</span>
-                          </div>
-                        </td>
-                        <td colSpan={activeGrades.length} className="py-3 px-4 text-center bg-amber-50/70">
-                          <div className="text-sm font-black text-slate-900 uppercase tracking-wider">
-                            👥 {slot.meetingTitle}
-                          </div>
-                          <div className="text-xs font-semibold text-amber-900/80 mt-0.5">
-                            {slot.meetingDesc}
-                          </div>
-                        </td>
                       </tr>
-                    );
-                  }
-
-                  if (slot.isBreak) {
-                    if (selectedShift === 'transicion-1') {
-                      return (
-                        <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
-                          {activeGrades.map((g) => {
-                            const isT2 = g === 'Transición 2';
-                            const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
-                            return (
-                              <React.Fragment key={`break-${g}`}>
-                                <td className="p-2.5 bg-amber-200/80 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                                  <div className="font-extrabold text-amber-950 text-sm whitespace-nowrap leading-tight">Receso</div>
-                                  <div className="text-xs font-mono font-bold text-amber-900 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                                    <Clock className="w-3 h-3 text-amber-700 shrink-0" />
-                                    <span className="whitespace-nowrap">{slotTime}</span>
-                                  </div>
-                                </td>
-                                <td className="py-3 px-4 text-center font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide border-r border-amber-300 last:border-r-0">
-                                  ☕ {slot.label}
-                                </td>
-                              </React.Fragment>
-                            );
-                          })}
-                        </tr>
-                      );
-                    }
-                    return (
-                      <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
-                        <td
-                          colSpan={activeGrades.length + 1}
-                          className="py-3 px-4 text-center font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide"
-                        >
-                          ☕ {slot.label} &bull; ({slot.time})
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  if (slot.isTransition) {
-                    return (
-                      <tr key="transition-mt" className="bg-slate-200/90 border-y-2 border-slate-400">
-                        <td
-                          colSpan={activeGrades.length + 1}
-                          className="py-3 px-4 text-center font-extrabold text-slate-800 text-xs sm:text-[13px] uppercase tracking-wider"
-                        >
-                          🎓 {slot.label} &bull; ({slot.time})
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  if (slot.isMeetingFirstHour && !isHoliday) {
-                    return (
-                      <tr key="meeting-first-hour" className="bg-amber-50/70 border-y-2 border-amber-300">
-                        <td className="p-2 bg-slate-100 border-r border-slate-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                          <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
-                          <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                            <Clock className="w-3 h-3 text-slate-500 shrink-0" />
-                            <span className="whitespace-nowrap">{slot.time}</span>
-                          </div>
-                        </td>
-                        <td colSpan={activeGrades.length} className="py-3 px-4 text-center bg-gray-200/90">
-                          <div className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider">
-                            👥 {slot.meetingTitle}
-                          </div>
-                          <div className="text-xs font-semibold text-slate-600 mt-0.5">
-                            {slot.meetingDesc}
-                          </div>
-                        </td>
-                      </tr>
-                    );
-                  }
-
-                  if (selectedShift === 'transicion-1') {
-                    return (
-                      <tr key={`slot-${slot.period}`} className="hover:bg-slate-50/50 transition">
-                        {activeGrades.map((grade) => {
-                          const isT2 = grade === 'Transición 2';
-                          const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
-                          const cellBlocks = filteredBlocks.filter(
-                            (b) => b.period === slot.period && b.gradeName === grade
-                          );
-                          const primaryBlock =
-                            cellBlocks.length > 0
-                              ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]
-                              : null;
-
-                          return (
-                            <React.Fragment key={`${slot.period}-${grade}`}>
-                              <td className="p-2 bg-slate-50/80 border-r border-slate-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                                <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
-                                <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                                  <Clock className="w-3 h-3 text-slate-500 shrink-0" />
-                                  <span className="whitespace-nowrap">{slotTime}</span>
-                                </div>
-                              </td>
-                              {isHoliday ? (
-                                <td className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden">
-                                  <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-center p-1.5 select-none space-y-0.5">
-                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                      Festivo
-                                    </span>
-                                    <span className="text-[9px] text-gray-400 font-medium leading-tight">
-                                      Sin actividad académica
-                                    </span>
-                                  </div>
-                                </td>
-                              ) : (
-                                <td className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden">
-                                  {!primaryBlock ? (
-                                    <MatrixSlotCard timeBlock={null} />
-                                  ) : (
-                                    <div className="h-full max-h-[102px]">
-                                      <MatrixSlotCard key={primaryBlock.id} timeBlock={primaryBlock} />
-                                    </div>
-                                  )}
-                                </td>
+                    </>
+                  ) : (
+                    <tr className="bg-slate-50 border-b border-slate-200">
+                      {selectedShift === 'transicion-1' ? (
+                        activeGrades.map((g) => (
+                          <React.Fragment key={`th-pair-${g}`}>
+                            <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
+                              Horario {activeScheduleType}
+                            </th>
+                            <th className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
+                              <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
+                                {g}
+                              </span>
+                              {g === 'Transición 1' && (
+                                <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">07:00 - 12:00</div>
                               )}
-                            </React.Fragment>
-                          );
-                        })}
-                      </tr>
-                    );
-                  }
-
-                  return (
-                    <React.Fragment key={`slot-group-${slot.period}`}>
-                      {isSupportPlanD && slot.period === 1 && (
-                        <tr className="bg-slate-50 border-y-2 border-slate-300">
-                          <th className="p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center">
+                              {g === 'Transición 2' && (
+                                <div className="text-[9.5px] font-mono text-slate-500 font-semibold mt-0.5">12:30 - 17:30</div>
+                              )}
+                            </th>
+                          </React.Fragment>
+                        ))
+                      ) : (
+                        <>
+                          <th
+                            style={
+                              isMultiColumnMobile ? { width: `${MOBILE_TIME_COL_WIDTH_PX}px` } : undefined
+                            }
+                            className={`p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center ${
+                              isMultiColumnMobile && mobileZoom === 1
+                                ? 'sticky left-0 z-20 shadow-[2px_0_6px_rgba(15,23,42,0.08)]'
+                                : ''
+                            }`}
+                          >
                             Horario {activeScheduleType}
                           </th>
                           {activeGrades.map((g) => (
-                            <th
-                              key={`inline-regular-${g}`}
-                              className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 bg-slate-50 truncate"
-                            >
+                            <th key={g} className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 truncate">
                               <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
                                 {g}
                               </span>
@@ -1359,78 +1400,333 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                               )}
                             </th>
                           ))}
-                        </tr>
+                        </>
                       )}
-                      <tr className="hover:bg-slate-50/50 transition">
-                        {/* Columna Horaria Fija */}
-                        <td className="p-2 bg-slate-50/80 border-r border-slate-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
-                          <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
-                          <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
-                            <Clock className="w-3 h-3 text-slate-500 shrink-0" />
-                            <span className="whitespace-nowrap">{slot.time}</span>
-                          </div>
-                        </td>
+                    </tr>
+                  )}
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {isHoliday && (
+                    <tr className="bg-red-50 border-b-2 border-red-200">
+                      <td
+                        colSpan={selectedShift === 'transicion-1' ? activeGrades.length * 2 : activeGrades.length + 1}
+                        className="py-2 px-4 text-center font-extrabold text-red-800 text-xs tracking-wide"
+                      >
+                        <span className={isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-block' : ''}>
+                          📅 Día Festivo Institucional &bull; Sin actividad académica programada
+                        </span>
+                      </td>
+                    </tr>
+                  )}
+                  {activePeriodSlots.map((slot) => {
+                    if (slot.isPreJornada && !isHoliday) {
+                      if (selectedShift === 'transicion-1') {
+                        return (
+                          <tr key="pre-jornada-public" className="bg-amber-50/80 border-y-2 border-amber-300">
+                            {activeGrades.map((g) => {
+                              const isT2 = g === 'Transición 2';
+                              const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
+                              return (
+                                <React.Fragment key={`pre-jornada-${g}`}>
+                                  <td className="p-2 bg-amber-50 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
+                                    <div className="font-extrabold text-amber-900 text-sm uppercase whitespace-nowrap leading-tight">{slot.label}</div>
+                                    <div className="text-xs font-mono font-bold text-amber-800 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                                      <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                                      <span className="whitespace-nowrap">{slotTime}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 text-center bg-amber-50/70 border-r border-amber-300 last:border-r-0">
+                                    <div className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                                      👥 {slot.meetingTitle}
+                                    </div>
+                                    <div className="text-xs font-semibold text-amber-900/80 mt-0.5">
+                                      Franja institucional de excepción ({slotTime}) &bull; Sin asignación de clases ni sustituciones
+                                    </div>
+                                  </td>
+                                </React.Fragment>
+                              );
+                            })}
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key="pre-jornada-public" className="bg-amber-50/80 border-y-2 border-amber-300">
+                          <td
+                            className={`p-2 bg-amber-50 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center ${
+                              isMultiColumnMobile && mobileZoom === 1
+                                ? 'sticky left-0 z-10 shadow-[2px_0_6px_rgba(15,23,42,0.06)]'
+                                : ''
+                            }`}
+                          >
+                            <div className="font-extrabold text-amber-900 text-sm uppercase whitespace-nowrap leading-tight">{slot.label}</div>
+                            <div className="text-xs font-mono font-bold text-amber-800 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                              <Clock className="w-3 h-3 text-amber-600 shrink-0" />
+                              <span className="whitespace-nowrap">{slot.time}</span>
+                            </div>
+                          </td>
+                          <td colSpan={activeGrades.length} className="py-3 px-4 text-center bg-amber-50/70">
+                            <div className="text-sm font-black text-slate-900 uppercase tracking-wider">
+                              👥 {slot.meetingTitle}
+                            </div>
+                            <div className="text-xs font-semibold text-amber-900/80 mt-0.5">
+                              {slot.meetingDesc}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
 
-                        {/* Celdas por Grado */}
-                        {activeGrades.map((grade) => {
-                          if (isHoliday) {
+                    if (slot.isBreak) {
+                      if (selectedShift === 'transicion-1') {
+                        return (
+                          <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
+                            {activeGrades.map((g) => {
+                              const isT2 = g === 'Transición 2';
+                              const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
+                              return (
+                                <React.Fragment key={`break-${g}`}>
+                                  <td className="p-2.5 bg-amber-200/80 border-r border-amber-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
+                                    <div className="font-extrabold text-amber-950 text-sm whitespace-nowrap leading-tight">Receso</div>
+                                    <div className="text-xs font-mono font-bold text-amber-900 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                                      <Clock className="w-3 h-3 text-amber-700 shrink-0" />
+                                      <span className="whitespace-nowrap">{slotTime}</span>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 text-center font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide border-r border-amber-300 last:border-r-0">
+                                    ☕ {slot.label}
+                                  </td>
+                                </React.Fragment>
+                              );
+                            })}
+                          </tr>
+                        );
+                      }
+                      return (
+                        <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
+                          <td
+                            colSpan={activeGrades.length + 1}
+                            className={`py-3 px-4 font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide ${
+                              isMultiColumnMobile && mobileZoom === 1 ? 'text-left' : 'text-center'
+                            }`}
+                          >
+                            <span className={isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-block' : ''}>
+                              ☕ {slot.label} &bull; ({slot.time})
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (slot.isTransition) {
+                      return (
+                        <tr key="transition-mt" className="bg-slate-200/90 border-y-2 border-slate-400">
+                          <td
+                            colSpan={activeGrades.length + 1}
+                            className={`py-3 px-4 font-extrabold text-slate-800 text-xs sm:text-[13px] uppercase tracking-wider ${
+                              isMultiColumnMobile && mobileZoom === 1 ? 'text-left' : 'text-center'
+                            }`}
+                          >
+                            <span className={isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-block' : ''}>
+                              🎓 {slot.label} &bull; ({slot.time})
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (slot.isMeetingFirstHour && !isHoliday) {
+                      return (
+                        <tr key="meeting-first-hour" className="bg-amber-50/70 border-y-2 border-amber-300">
+                          <td
+                            className={`p-2 bg-slate-100 border-r border-slate-300 w-28 sm:w-32 whitespace-nowrap align-middle text-center ${
+                              isMultiColumnMobile && mobileZoom === 1
+                                ? 'sticky left-0 z-10 shadow-[2px_0_6px_rgba(15,23,42,0.06)]'
+                                : ''
+                            }`}
+                          >
+                            <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
+                            <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                              <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                              <span className="whitespace-nowrap">{slot.time}</span>
+                            </div>
+                          </td>
+                          <td colSpan={activeGrades.length} className="py-3 px-4 text-center bg-gray-200/90">
+                            <div className="text-sm sm:text-base font-black text-slate-900 uppercase tracking-wider">
+                              👥 {slot.meetingTitle}
+                            </div>
+                            <div className="text-xs font-semibold text-slate-600 mt-0.5">
+                              {slot.meetingDesc}
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    }
+
+                    if (selectedShift === 'transicion-1') {
+                      return (
+                        <tr key={`slot-${slot.period}`} className="hover:bg-slate-50/50 transition">
+                          {activeGrades.map((grade) => {
+                            const isT2 = grade === 'Transición 2';
+                            const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
+                            const cellBlocks = filteredBlocks.filter(
+                              (b) => b.period === slot.period && b.gradeName === grade
+                            );
+                            const primaryBlock =
+                              cellBlocks.length > 0
+                                ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]
+                                : null;
+
+                            return (
+                              <React.Fragment key={`${slot.period}-${grade}`}>
+                                <td className="p-2 bg-slate-50/80 border-r border-slate-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center">
+                                  <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
+                                  <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                                    <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                                    <span className="whitespace-nowrap">{slotTime}</span>
+                                  </div>
+                                </td>
+                                {isHoliday ? (
+                                  <td className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden">
+                                    <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-center p-1.5 select-none space-y-0.5">
+                                      <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                        Festivo
+                                      </span>
+                                      <span className="text-[9px] text-gray-400 font-medium leading-tight">
+                                        Sin actividad académica
+                                      </span>
+                                    </div>
+                                  </td>
+                                ) : (
+                                  <td className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden">
+                                    {!primaryBlock ? (
+                                      <MatrixSlotCard timeBlock={null} />
+                                    ) : (
+                                      <div className="h-full max-h-[102px]">
+                                        <MatrixSlotCard key={primaryBlock.id} timeBlock={primaryBlock} />
+                                      </div>
+                                    )}
+                                  </td>
+                                )}
+                              </React.Fragment>
+                            );
+                          })}
+                        </tr>
+                      );
+                    }
+
+                    return (
+                      <React.Fragment key={`slot-group-${slot.period}`}>
+                        {isSupportPlanD && slot.period === 1 && (
+                          <tr className="bg-slate-50 border-y-2 border-slate-300">
+                            <th
+                              style={
+                                isMultiColumnMobile ? { width: `${MOBILE_TIME_COL_WIDTH_PX}px` } : undefined
+                              }
+                              className={`p-2 font-extrabold text-slate-600 uppercase tracking-wider text-xs w-28 sm:w-32 border-r border-slate-200 bg-slate-50 whitespace-nowrap text-center ${
+                                isMultiColumnMobile && mobileZoom === 1
+                                  ? 'sticky left-0 z-10 shadow-[2px_0_6px_rgba(15,23,42,0.06)]'
+                                  : ''
+                              }`}
+                            >
+                              Horario {activeScheduleType}
+                            </th>
+                            {activeGrades.map((g) => (
+                              <th
+                                key={`inline-regular-${g}`}
+                                className="p-1.5 font-bold text-slate-800 text-center border-r border-slate-200 last:border-r-0 bg-slate-50 truncate"
+                              >
+                                <span className="inline-block px-2 py-0.5 rounded-md bg-blue-50 text-blue-900 border border-blue-200/60 font-extrabold text-[11px] truncate max-w-full">
+                                  {g}
+                                </span>
+                                {REGULAR_GRADE_CLASSROOMS[g] && (
+                                  <div className="text-[10px] font-medium text-slate-500 mt-0.5 truncate">
+                                    {REGULAR_GRADE_CLASSROOMS[g]}
+                                  </div>
+                                )}
+                              </th>
+                            ))}
+                          </tr>
+                        )}
+                        <tr className="hover:bg-slate-50/50 transition">
+                          {/* Columna Horaria Fija */}
+                          <td
+                            style={
+                              isMultiColumnMobile ? { width: `${MOBILE_TIME_COL_WIDTH_PX}px` } : undefined
+                            }
+                            className={`p-2 bg-slate-50 border-r border-slate-200 w-28 sm:w-32 whitespace-nowrap align-middle text-center ${
+                              isMultiColumnMobile && mobileZoom === 1
+                                ? 'sticky left-0 z-10 shadow-[2px_0_6px_rgba(15,23,42,0.06)]'
+                                : ''
+                            }`}
+                          >
+                            <div className="font-extrabold text-[#0c4da2] text-sm sm:text-[15px] whitespace-nowrap leading-tight">{slot.label}</div>
+                            <div className="text-xs sm:text-[13px] font-mono font-bold text-slate-700 flex items-center justify-center gap-1 mt-1 whitespace-nowrap">
+                              <Clock className="w-3 h-3 text-slate-500 shrink-0" />
+                              <span className="whitespace-nowrap">{slot.time}</span>
+                            </div>
+                          </td>
+
+                          {/* Celdas por Grado */}
+                          {activeGrades.map((grade) => {
+                            if (isHoliday) {
+                              return (
+                                <td
+                                  key={`${slot.period}-${grade}`}
+                                  className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden"
+                                >
+                                  <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-center p-1.5 select-none space-y-0.5">
+                                    <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
+                                      Festivo
+                                    </span>
+                                    <span className="text-[9px] text-gray-400 font-medium leading-tight">
+                                      Sin actividad académica
+                                    </span>
+                                  </div>
+                                </td>
+                              );
+                            }
+
+                            const cellBlocks = filteredBlocks.filter(
+                              (b) => b.period === slot.period && b.gradeName === grade
+                            );
+                            const isSeniorHigh = grade.startsWith('10') || grade.startsWith('11');
+                            const isBeyondRegularMorning =
+                              selectedShift === 'morning' && slot.period >= 7 && slot.period <= 11 && !isSeniorHigh;
+                            const primaryBlock =
+                              cellBlocks.length > 0
+                                ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]
+                                : null;
+
                             return (
                               <td
                                 key={`${slot.period}-${grade}`}
                                 className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden"
                               >
-                                <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-gray-100 border border-gray-200 flex flex-col items-center justify-center text-center p-1.5 select-none space-y-0.5">
-                                  <span className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">
-                                    Festivo
-                                  </span>
-                                  <span className="text-[9px] text-gray-400 font-medium leading-tight">
-                                    Sin actividad académica
-                                  </span>
-                                </div>
+                                {!primaryBlock ? (
+                                  isBeyondRegularMorning ? (
+                                    <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-center p-1.5">
+                                      <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
+                                        Fin de jornada
+                                      </span>
+                                    </div>
+                                  ) : (
+                                    <MatrixSlotCard timeBlock={null} />
+                                  )
+                                ) : (
+                                  <div className="h-full max-h-[102px]">
+                                    <MatrixSlotCard key={primaryBlock.id} timeBlock={primaryBlock} />
+                                  </div>
+                                )}
                               </td>
                             );
-                          }
-
-                          const cellBlocks = filteredBlocks.filter(
-                            (b) => b.period === slot.period && b.gradeName === grade
-                          );
-                          const isSeniorHigh = grade.startsWith('10') || grade.startsWith('11');
-                          const isBeyondRegularMorning =
-                            selectedShift === 'morning' && slot.period >= 7 && slot.period <= 11 && !isSeniorHigh;
-                          const primaryBlock =
-                            cellBlocks.length > 0
-                              ? cellBlocks.find((b) => b.block_type === 'novelty' || b.motivo_novedad) || cellBlocks[0]
-                              : null;
-
-                          return (
-                            <td
-                              key={`${slot.period}-${grade}`}
-                              className="p-0.5 border-r border-slate-200 last:border-r-0 align-top h-[104px] max-h-[108px] overflow-hidden"
-                            >
-                              {!primaryBlock ? (
-                                isBeyondRegularMorning ? (
-                                  <div className="h-full min-h-[94px] max-h-[100px] rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-center p-1.5">
-                                    <span className="text-[9px] font-bold uppercase tracking-wider text-slate-400">
-                                      Fin de jornada
-                                    </span>
-                                  </div>
-                                ) : (
-                                  <MatrixSlotCard timeBlock={null} />
-                                )
-                              ) : (
-                                <div className="h-full max-h-[102px]">
-                                  <MatrixSlotCard key={primaryBlock.id} timeBlock={primaryBlock} />
-                                </div>
-                              )}
-                            </td>
-                          );
-                        })}
-                      </tr>
-                    </React.Fragment>
-                  );
-                })}
-              </tbody>
-            </table>
+                          })}
+                        </tr>
+                      </React.Fragment>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
           </div>
         )}
       </div>
