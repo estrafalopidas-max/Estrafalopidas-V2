@@ -59,6 +59,39 @@ export function clearAllWeekContainers(): void {
   } catch {
     // ignore
   }
+  if (typeof window !== 'undefined' && typeof fetch === 'function') {
+    try {
+      void fetch('/api/week-schedules', { method: 'DELETE' }).catch(() => {});
+    } catch {
+      // ignore
+    }
+  }
+}
+
+function persistWeekContainerToServer(
+  mondayIso: string,
+  container: WeekScheduleContainer,
+  syncPublished = false
+): void {
+  if (!mondayIso || typeof window === 'undefined' || typeof fetch !== 'function') return;
+  try {
+    void fetch(`/api/week-schedules/${encodeURIComponent(mondayIso)}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        container,
+        syncPublished,
+      }),
+    })
+      .then((res) => {
+        if (res.ok && syncPublished) {
+          window.dispatchEvent(new Event('public_schedule_snapshot_updated'));
+        }
+      })
+      .catch(() => {});
+  } catch {
+    // ignore network errors
+  }
 }
 
 function createCleanWeekContainer(mondayIso: string): WeekScheduleContainer {
@@ -81,7 +114,7 @@ function createCleanWeekContainer(mondayIso: string): WeekScheduleContainer {
   return container;
 }
 
-function saveCurrentStateToWeekContainer(mondayIso: string): void {
+function saveCurrentStateToWeekContainer(mondayIso: string, syncServer = true): void {
   if (!mondayIso) return;
   try {
     const rawBlocks = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1') || '[]';
@@ -96,6 +129,11 @@ function saveCurrentStateToWeekContainer(mondayIso: string): void {
       updatedAt: Date.now(),
     };
     localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`, JSON.stringify(container));
+    if (syncServer) {
+      const currentWeekIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
+      const isCurrentWeek = mondayIso === currentWeekIso;
+      persistWeekContainerToServer(mondayIso, container, isCurrentWeek);
+    }
   } catch {
     // ignore storage quota errors
   }
@@ -346,6 +384,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
   const activeMondayIso = useMemo(() => getWeekMondayIso(activeAnchorDate), [activeAnchorDate]);
   const activeMondayIsoRef = useRef<string>(activeMondayIso);
   activeMondayIsoRef.current = activeMondayIso;
+  const isSwitchingWeekRef = useRef<boolean>(false);
   const weekInfo = useMemo(() => getCurrentWeekText(activeAnchorDate), [activeAnchorDate]);
 
   const [currentAcademicWeek, setCurrentAcademicWeek] = useState<number>(weekInfo.weekNumber || 9);
@@ -404,6 +443,105 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       }).catch(() => {});
     };
     refreshTeachers();
+
+    // Hidratar docentes y contenedores semanales desde PostgreSQL
+    if (typeof window !== 'undefined' && typeof fetch === 'function') {
+      void fetch(`/api/teachers?_t=${Date.now()}`, { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data && Array.isArray(data.teachers) && data.teachers.length > 0) {
+            localStorage.setItem('ievf_users_v1', JSON.stringify(data.teachers));
+            refreshTeachers();
+          }
+        })
+        .catch(() => {});
+
+      void Promise.all([
+        fetch(`/api/week-schedules?_t=${Date.now()}`, { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+        fetch(`/api/published-schedule?_t=${Date.now()}`, { cache: 'no-store' })
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null),
+      ]).then(([weeksRes, pubRes]) => {
+        const serverWeeks = (weeksRes?.weeks || {}) as Record<string, WeekScheduleContainer>;
+        const pubSnap = pubRes?.snapshot;
+        const currentMondayIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
+
+        // Si el horario publicado existe en PostgreSQL pero no estaba en week_schedules, sincronizar su semana
+        if (pubSnap && Array.isArray(pubSnap.timeBlocks) && pubSnap.timeBlocks.length > 0) {
+          const pubMondayIso = pubSnap.dayConfigs?.anchorMondayIso || currentMondayIso;
+          if (pubMondayIso && !serverWeeks[pubMondayIso]) {
+            const restoredContainer: WeekScheduleContainer = {
+              schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
+              mondayIso: pubMondayIso,
+              timeBlocks: pubSnap.timeBlocks,
+              meetingDays: pubSnap.dayConfigs?.meetingDays || {},
+              scheduleTypes: pubSnap.dayConfigs?.scheduleTypes || {},
+              updatedAt: Number(pubSnap.updatedAtMs || Date.now()),
+            };
+            serverWeeks[pubMondayIso] = restoredContainer;
+            persistWeekContainerToServer(pubMondayIso, restoredContainer, false);
+          }
+        }
+
+        let activeUpdatedContainer: WeekScheduleContainer | null = null;
+        for (const [iso, srvContainer] of Object.entries(serverWeeks)) {
+          if (srvContainer && Array.isArray(srvContainer.timeBlocks)) {
+            const normalizedContainer: WeekScheduleContainer = {
+              schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
+              mondayIso: iso,
+              timeBlocks: srvContainer.timeBlocks,
+              meetingDays: srvContainer.meetingDays || {},
+              scheduleTypes: srvContainer.scheduleTypes || {},
+              updatedAt: Number(srvContainer.updatedAt || Date.now()),
+            };
+            try {
+              localStorage.setItem(
+                `${WEEK_CONTAINER_PREFIX}${iso}`,
+                JSON.stringify(normalizedContainer)
+              );
+            } catch {
+              // ignore
+            }
+            if (iso === activeMondayIsoRef.current) {
+              activeUpdatedContainer = normalizedContainer;
+            }
+          }
+        }
+
+        if (activeUpdatedContainer) {
+          isSwitchingWeekRef.current = true;
+          try {
+            const blocksStr = JSON.stringify(activeUpdatedContainer.timeBlocks);
+            localStorage.setItem('villaFloraMatrix', blocksStr);
+            localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+            localStorage.setItem(
+              'ievf_meeting_days',
+              JSON.stringify(activeUpdatedContainer.meetingDays || {})
+            );
+            localStorage.setItem(
+              'ievf_schedule_types',
+              JSON.stringify(activeUpdatedContainer.scheduleTypes || {})
+            );
+            setMeetingDays(activeUpdatedContainer.meetingDays || {});
+            setScheduleTypes(activeUpdatedContainer.scheduleTypes || {});
+            window.dispatchEvent(
+              new CustomEvent('week_slot_changed', {
+                detail: {
+                  slot: (localStorage.getItem('ievf_active_week_slot') as WeekSlotMode) || 'current',
+                  mondayIso: activeUpdatedContainer.mondayIso,
+                },
+              })
+            );
+            window.dispatchEvent(new Event('schedule_matrix_updated'));
+          } finally {
+            isSwitchingWeekRef.current = false;
+          }
+        }
+      });
+    }
+
     window.addEventListener('users_collection_updated', refreshTeachers);
     window.addEventListener('storage', refreshTeachers);
     return () => {
@@ -560,35 +698,40 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       const targetMondayIso = getWeekMondayIso(targetAnchor);
 
       if (prevMondayIso) {
-        saveCurrentStateToWeekContainer(prevMondayIso);
+        saveCurrentStateToWeekContainer(prevMondayIso, false);
       }
 
       activeMondayIsoRef.current = targetMondayIso;
-
-      const targetContainer =
-        loadWeekContainer(targetMondayIso) || createCleanWeekContainer(targetMondayIso);
+      isSwitchingWeekRef.current = true;
 
       try {
-        localStorage.setItem('ievf_active_week_slot', targetSlot);
-        localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
-        const blocksStr = JSON.stringify(targetContainer.timeBlocks);
-        localStorage.setItem('villaFloraMatrix', blocksStr);
-        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-        localStorage.setItem('ievf_meeting_days', JSON.stringify(targetContainer.meetingDays || {}));
-        localStorage.setItem('ievf_schedule_types', JSON.stringify(targetContainer.scheduleTypes || {}));
-      } catch {
-        // ignore
-      }
+        const targetContainer =
+          loadWeekContainer(targetMondayIso) || createCleanWeekContainer(targetMondayIso);
 
-      setMeetingDays(targetContainer.meetingDays || {});
-      setScheduleTypes(targetContainer.scheduleTypes || {});
-      setActiveWeekSlotState(targetSlot);
-      window.dispatchEvent(
-        new CustomEvent('week_slot_changed', {
-          detail: { slot: targetSlot, mondayIso: targetMondayIso },
-        })
-      );
-      window.dispatchEvent(new Event('schedule_matrix_updated'));
+        try {
+          localStorage.setItem('ievf_active_week_slot', targetSlot);
+          localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
+          const blocksStr = JSON.stringify(targetContainer.timeBlocks);
+          localStorage.setItem('villaFloraMatrix', blocksStr);
+          localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+          localStorage.setItem('ievf_meeting_days', JSON.stringify(targetContainer.meetingDays || {}));
+          localStorage.setItem('ievf_schedule_types', JSON.stringify(targetContainer.scheduleTypes || {}));
+        } catch {
+          // ignore
+        }
+
+        setMeetingDays(targetContainer.meetingDays || {});
+        setScheduleTypes(targetContainer.scheduleTypes || {});
+        setActiveWeekSlotState(targetSlot);
+        window.dispatchEvent(
+          new CustomEvent('week_slot_changed', {
+            detail: { slot: targetSlot, mondayIso: targetMondayIso },
+          })
+        );
+        window.dispatchEvent(new Event('schedule_matrix_updated'));
+      } finally {
+        isSwitchingWeekRef.current = false;
+      }
     },
     [activeWeekSlot]
   );
@@ -709,15 +852,21 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
             `${WEEK_CONTAINER_PREFIX}${nextMondayIso}`,
             JSON.stringify(updatedNextContainer)
           );
+          persistWeekContainerToServer(nextMondayIso, updatedNextContainer, false);
           if (activeWeekSlot === 'next') {
-            const blocksStr = JSON.stringify(mergedBlocks);
-            localStorage.setItem('villaFloraMatrix', blocksStr);
-            localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-            localStorage.setItem('ievf_meeting_days', JSON.stringify(nextMeetingDays));
-            localStorage.setItem('ievf_schedule_types', JSON.stringify(nextScheduleTypes));
-            setMeetingDays(nextMeetingDays);
-            setScheduleTypes(nextScheduleTypes);
-            window.dispatchEvent(new Event('schedule_matrix_updated'));
+            isSwitchingWeekRef.current = true;
+            try {
+              const blocksStr = JSON.stringify(mergedBlocks);
+              localStorage.setItem('villaFloraMatrix', blocksStr);
+              localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+              localStorage.setItem('ievf_meeting_days', JSON.stringify(nextMeetingDays));
+              localStorage.setItem('ievf_schedule_types', JSON.stringify(nextScheduleTypes));
+              setMeetingDays(nextMeetingDays);
+              setScheduleTypes(nextScheduleTypes);
+              window.dispatchEvent(new Event('schedule_matrix_updated'));
+            } finally {
+              isSwitchingWeekRef.current = false;
+            }
           }
         } catch {
           // ignore
@@ -735,15 +884,21 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       };
       try {
         localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${nextMondayIso}`, JSON.stringify(cloned));
+        persistWeekContainerToServer(nextMondayIso, cloned, false);
         if (activeWeekSlot === 'next') {
-          const blocksStr = JSON.stringify(cloned.timeBlocks);
-          localStorage.setItem('villaFloraMatrix', blocksStr);
-          localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-          localStorage.setItem('ievf_meeting_days', JSON.stringify(cloned.meetingDays || {}));
-          localStorage.setItem('ievf_schedule_types', JSON.stringify(cloned.scheduleTypes || {}));
-          setMeetingDays(cloned.meetingDays || {});
-          setScheduleTypes(cloned.scheduleTypes || {});
-          window.dispatchEvent(new Event('schedule_matrix_updated'));
+          isSwitchingWeekRef.current = true;
+          try {
+            const blocksStr = JSON.stringify(cloned.timeBlocks);
+            localStorage.setItem('villaFloraMatrix', blocksStr);
+            localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+            localStorage.setItem('ievf_meeting_days', JSON.stringify(cloned.meetingDays || {}));
+            localStorage.setItem('ievf_schedule_types', JSON.stringify(cloned.scheduleTypes || {}));
+            setMeetingDays(cloned.meetingDays || {});
+            setScheduleTypes(cloned.scheduleTypes || {});
+            window.dispatchEvent(new Event('schedule_matrix_updated'));
+          } finally {
+            isSwitchingWeekRef.current = false;
+          }
         }
       } catch {
         // ignore
@@ -754,10 +909,11 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
 
   useEffect(() => {
     const handleSyncActiveWeekContainer = () => {
+      if (isSwitchingWeekRef.current) return;
       const currentIso =
         activeMondayIsoRef.current || localStorage.getItem('ievf_active_monday_iso');
       if (currentIso) {
-        saveCurrentStateToWeekContainer(currentIso);
+        saveCurrentStateToWeekContainer(currentIso, true);
       }
     };
     window.addEventListener('schedule_matrix_updated', handleSyncActiveWeekContainer);

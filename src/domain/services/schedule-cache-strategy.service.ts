@@ -64,57 +64,22 @@ export function selectMostRecentSnapshot<T extends CachedScheduleCandidate>(
   return bestCandidate;
 }
 
-export async function readSnapshotFromCacheStorage(): Promise<CachedScheduleCandidate | null> {
-  if (typeof window === 'undefined' || !('caches' in window)) return null;
+export async function purgeLegacyScheduleCacheStorage(): Promise<void> {
+  if (typeof window === 'undefined' || !('caches' in window)) return;
   try {
-    const cache = await window.caches.open(SCHEDULE_CACHE_NAME);
-    const cachedResponse = await cache.match(SCHEDULE_CACHE_ENDPOINT, { ignoreSearch: true });
-    if (!cachedResponse || !cachedResponse.ok) return null;
-
-    const payload = await cachedResponse.json();
-    const candidate = payload?.snapshot ?? payload;
-    if (isValidScheduleSnapshot(candidate)) {
-      return candidate;
-    }
+    await window.caches.delete(SCHEDULE_CACHE_NAME);
   } catch {
-    // Ignore Cache Storage read errors
+    // Ignore Cache Storage delete errors
   }
+}
+
+export async function readSnapshotFromCacheStorage(): Promise<CachedScheduleCandidate | null> {
+  await purgeLegacyScheduleCacheStorage();
   return null;
 }
 
 export async function writeSnapshotToCacheStorage(
-  snapshot: CachedScheduleCandidate
+  _snapshot: CachedScheduleCandidate
 ): Promise<void> {
-  if (typeof window === 'undefined' || !('caches' in window)) return;
-  if (!isValidScheduleSnapshot(snapshot)) return;
-
-  try {
-    const cache = await window.caches.open(SCHEDULE_CACHE_NAME);
-    const updatedAtMs = extractSnapshotTimestamp(snapshot) || Date.now();
-    const normalizedPayload = {
-      ok: true,
-      cachedAtMs: Date.now(),
-      snapshot: {
-        ...snapshot,
-        updatedAtMs,
-        metadata: {
-          ...snapshot.metadata,
-          updatedAtMs,
-        },
-      },
-    };
-
-    const response = new Response(JSON.stringify(normalizedPayload), {
-      status: 200,
-      headers: {
-        'Content-Type': 'application/json; charset=utf-8',
-        'X-Cache-Strategy': 'Cache-First',
-        'X-Schedule-Updated-At': String(updatedAtMs),
-      },
-    });
-
-    await cache.put(SCHEDULE_CACHE_ENDPOINT, response);
-  } catch {
-    // Ignore Cache Storage write errors
-  }
+  await purgeLegacyScheduleCacheStorage();
 }

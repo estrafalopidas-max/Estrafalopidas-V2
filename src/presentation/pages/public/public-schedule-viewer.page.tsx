@@ -43,6 +43,7 @@ import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed'
 import {
   getTeacherExcelIdentity,
   sortTeachersWithLowPriorityLast,
+  updateTeacherDictionaryProfile,
 } from '../../../domain/services/teacher-normalization.service';
 import { getFullTeacherName } from '../../../domain/services/teacher-visual-identity.service';
 
@@ -267,14 +268,12 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
   // Initial local snapshot or fallback
   const initialSnapshot = useMemo<PublicScheduleSnapshot | null>(() => {
-    const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
     const snap = getPublicScheduleSnapshot();
 
-    if (snap) {
+    if (snap && Array.isArray(snap.timeBlocks)) {
       const snapIsBlank =
-        isBlankMode ||
         Boolean(snap.metadata?.blankMatrixMode ?? snap.dayConfigs?.blankMatrixMode) ||
-        (Array.isArray(snap.timeBlocks) && snap.timeBlocks.length === 0);
+        snap.timeBlocks.length === 0;
 
       if (snapIsBlank) {
         return {
@@ -288,27 +287,33 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
         };
       }
 
-      const savedBlocksRaw = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
-      if (savedBlocksRaw) {
-        try {
-          const liveBlocks = JSON.parse(savedBlocksRaw);
-          if (Array.isArray(liveBlocks)) {
-            return {
-              ...snap,
-              timeBlocks: liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [],
-            };
+      if (isEmbeddedModal) {
+        const savedBlocksRaw =
+          localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
+        if (savedBlocksRaw) {
+          try {
+            const liveBlocks = JSON.parse(savedBlocksRaw);
+            if (Array.isArray(liveBlocks)) {
+              return {
+                ...snap,
+                timeBlocks: liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [],
+              };
+            }
+          } catch {
+            // ignore
           }
-        } catch {
-          // ignore
         }
       }
-      if (Array.isArray(snap.timeBlocks)) {
-        return snap;
-      }
+
+      return {
+        ...snap,
+        timeBlocks: normalizeTimeBlocksGrades(snap.timeBlocks),
+      };
     }
 
     ensureSeedDataLoaded();
     try {
+      const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
       const savedBlocks = localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       const savedUsers = localStorage.getItem('ievf_users_v1');
       const blocks: TimeBlockEntity[] = isBlankMode ? [] : (savedBlocks ? JSON.parse(savedBlocks) : []);
@@ -338,7 +343,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     } catch {
       return null;
     }
-  }, []);
+  }, [isEmbeddedModal]);
 
   const [snapshot, setSnapshot] = useState<PublicScheduleSnapshot | null>(initialSnapshot);
 
@@ -423,11 +428,22 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
   const teachers = useMemo(() => {
     const rawList = Array.isArray(liveTeachers) && liveTeachers.length > 0 ? liveTeachers : snapshot?.teachers || [];
     const mapped = rawList.map((t: any) => {
+      const customColor = t.color_hex || t.color;
+      if (t.id && (t.userEdited || customColor)) {
+        updateTeacherDictionaryProfile(t.id, {
+          fullName: t.displayName,
+          shortName: t.shortName,
+          colorHex: customColor,
+          groupDirection: t.groupDirection,
+        });
+      }
       const identity = getTeacherExcelIdentity(t.id, t.displayName);
       return {
         ...t,
-        displayName: getFullTeacherName(t.id, t.displayName || 'Docente'),
-        color: identity.color_hex || t.color_hex || t.color || '#007DC5',
+        displayName: t.userEdited
+          ? t.displayName || 'Docente'
+          : getFullTeacherName(t.id, t.displayName || 'Docente'),
+        color: customColor || identity.color_hex || '#007DC5',
       };
     });
     return sortTeachersWithLowPriorityLast(mapped);

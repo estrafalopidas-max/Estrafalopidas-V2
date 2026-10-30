@@ -1,14 +1,34 @@
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: horarios-villa-flora-db
+    restart: unless-stopped
+    environment:
+      - POSTGRES_USER=villaflora
+      - POSTGRES_PASSWORD=villaflora2026
+      - POSTGRES_DB=horarios_villa_flora
+    volumes:
+      - /mnt/Estrafalopio/apps/horarios-villa-flora/postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U villaflora -d horarios_villa_flora"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   horarios-villa-flora:
     build: .
     container_name: horarios-villa-flora
     restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
       - NODE_ENV=production
       - PORT=3000
       - DATA_DIR=/app/data
+      - DATABASE_URL=postgresql://villaflora:villaflora2026@postgres:5432/horarios_villa_flora
       - PRIMARY_ADMIN_EMAIL=estrafalopidas@gmail.com
       - GEMINI_API_KEY=${GEMINI_API_KEY:-}
     volumes:

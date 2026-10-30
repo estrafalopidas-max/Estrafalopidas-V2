@@ -15,12 +15,14 @@
   "dependencies": {
     "@google/genai": "^2.30.0",
     "@hello-pangea/dnd": "^18.0.1",
+    "@types/pg": "^8.23.1",
     "clsx": "^2.1.1",
     "date-fns": "^3.6.0",
     "dotenv": "^17.2.3",
     "express": "^4.21.2",
     "firebase": "^13.0.0",
     "lucide-react": "^0.453.0",
+    "pg": "^8.23.1",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^7.18.4",
@@ -42,4 +44,3 @@
     "vite-plugin-pwa": "^2.0.0"
   }
 }
-

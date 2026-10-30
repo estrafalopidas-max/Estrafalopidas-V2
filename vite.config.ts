@@ -213,20 +213,8 @@ export default defineConfig({
         navigateFallbackDenylist: [/^\/api\//],
         runtimeCaching: [
           {
-            urlPattern: ({ url }) =>
-              url.pathname === '/api/published-schedule' && !url.searchParams.has('sync'),
-            handler: 'NetworkFirst',
-            options: {
-              cacheName: 'ievf-published-schedule-cache-v1',
-              networkTimeoutSeconds: 3,
-              cacheableResponse: {
-                statuses: [0, 200],
-              },
-              expiration: {
-                maxEntries: 5,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
-              },
-            },
+            urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
+            handler: 'NetworkOnly',
           },
           {
             urlPattern: ({ request, url }) =>

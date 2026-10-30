@@ -3,6 +3,9 @@ import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI } from '@google/genai';
 import path from 'path';
 import fs from 'fs';
+import pg from 'pg';
+
+const { Pool } = pg;
 
 interface AgentChatRequest {
   message: string;
@@ -247,7 +250,14 @@ async function startServer() {
   });
 
   // JSON parser para las demás rutas API
-  app.use('/api', express.json({ limit: '5mb' }));
+  app.use('/api', express.json({ limit: '10mb' }));
+
+  const setNoCacheHeaders = (res: express.Response) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+    res.setHeader('Surrogate-Control', 'no-store');
+  };
 
   // Directorio persistente para TrueNAS / Docker (volumen montado en /app/data)
   const DATA_DIR = process.env.DATA_DIR || path.resolve(process.cwd(), 'data');
@@ -269,59 +279,19 @@ async function startServer() {
   };
 
   const PUBLISHED_SCHEDULE_FILE = resolvePersistentFile('ievf_published_schedule.json');
-  let latestPublishedSchedule: Record<string, unknown> | null = (() => {
-    try {
-      if (fs.existsSync(PUBLISHED_SCHEDULE_FILE)) {
-        return JSON.parse(fs.readFileSync(PUBLISHED_SCHEDULE_FILE, 'utf-8'));
-      }
-    } catch {
-      // ignore
-    }
-    return null;
-  })();
-
-  app.get('/api/published-schedule', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
-    res.status(200).json({ snapshot: latestPublishedSchedule });
-  });
-
-  app.post('/api/published-schedule', (req, res) => {
-    const incoming = req.body?.snapshot || req.body;
-    if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.timeBlocks)) {
-      res.status(400).json({ error: 'Formato de horario publicado inválido.' });
-      return;
-    }
-    const nowMs = Date.now();
-    const isBlank = Boolean(incoming.blankMatrixMode ?? incoming.dayConfigs?.blankMatrixMode ?? incoming.timeBlocks.length === 0);
-    const normalized = {
-      ...incoming,
-      blankMatrixMode: isBlank,
-      updatedAtMs: Number(incoming.updatedAtMs || incoming.dayConfigs?.updatedAtMs || nowMs),
-      timeBlocks: isBlank ? [] : incoming.timeBlocks,
-      dayConfigs: {
-        ...(incoming.dayConfigs || {}),
-        blankMatrixMode: isBlank,
-        updatedAtMs: Number(incoming.updatedAtMs || incoming.dayConfigs?.updatedAtMs || nowMs),
-      },
-      metadata: {
-        ...(incoming.metadata || {}),
-        blankMatrixMode: isBlank,
-        updatedAtMs: Number(incoming.updatedAtMs || incoming.dayConfigs?.updatedAtMs || nowMs),
-        totalBlocks: isBlank ? 0 : incoming.timeBlocks.length,
-      },
-    };
-    latestPublishedSchedule = normalized;
-    try {
-      fs.writeFileSync(PUBLISHED_SCHEDULE_FILE, JSON.stringify(normalized), 'utf-8');
-    } catch {
-      // ignore
-    }
-    res.status(200).json({ ok: true, blankMatrixMode: isBlank, updatedAtMs: normalized.updatedAtMs });
-  });
-
-  // Endpoints de Control de Acceso y Delegación de Edición
+  const WEEK_SCHEDULES_FILE = resolvePersistentFile('ievf_week_schedules.json');
   const ACCESS_CONTROL_FILE = resolvePersistentFile('ievf_access_control.json');
+  const TEACHERS_FILE = resolvePersistentFile('ievf_teachers.json');
   const PRIMARY_ADMIN_EMAIL = process.env.PRIMARY_ADMIN_EMAIL || 'estrafalopidas@gmail.com';
+
+  interface ServerWeekContainer {
+    schemaVersion?: number;
+    mondayIso: string;
+    timeBlocks: unknown[];
+    meetingDays: Record<string, boolean>;
+    scheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'>;
+    updatedAt: number;
+  }
 
   interface ServerAuthorizedEditor {
     email: string;
@@ -342,6 +312,41 @@ async function startServer() {
     editors: ServerAuthorizedEditor[];
     updatedAtMs: number;
   }
+
+  let latestPublishedSchedule: Record<string, any> | null = (() => {
+    try {
+      if (fs.existsSync(PUBLISHED_SCHEDULE_FILE)) {
+        return JSON.parse(fs.readFileSync(PUBLISHED_SCHEDULE_FILE, 'utf-8'));
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  })();
+
+  let weekSchedulesMap: Record<string, ServerWeekContainer> = (() => {
+    try {
+      if (fs.existsSync(WEEK_SCHEDULES_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(WEEK_SCHEDULES_FILE, 'utf-8'));
+        if (parsed && typeof parsed === 'object') return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return {};
+  })();
+
+  let teachersList: unknown[] | null = (() => {
+    try {
+      if (fs.existsSync(TEACHERS_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(TEACHERS_FILE, 'utf-8'));
+        if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  })();
 
   let accessControlState: ServerAccessControlConfig = (() => {
     try {
@@ -379,12 +384,433 @@ async function startServer() {
     };
   })();
 
-  app.get('/api/access-control', (_req, res) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+  // Inicialización de PostgreSQL (cuando DATABASE_URL está configurado en TrueNAS / Docker)
+  const databaseUrl = process.env.DATABASE_URL?.trim();
+  const pgPool = databaseUrl
+    ? new Pool({
+        connectionString: databaseUrl,
+        max: 10,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 5000,
+      })
+    : null;
+
+  let isPgReady = false;
+
+  if (pgPool) {
+    pgPool.on('error', (err) => {
+      console.error('[PostgreSQL] Pool error:', err.message);
+    });
+
+    try {
+      await pgPool.query(`
+        CREATE TABLE IF NOT EXISTS published_schedule (
+          id TEXT PRIMARY KEY,
+          snapshot JSONB NOT NULL,
+          updated_at_ms BIGINT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS week_schedules (
+          monday_iso TEXT PRIMARY KEY,
+          container JSONB NOT NULL,
+          updated_at_ms BIGINT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS app_kv_store (
+          key TEXT PRIMARY KEY,
+          value JSONB NOT NULL,
+          updated_at_ms BIGINT NOT NULL
+        );
+      `);
+      isPgReady = true;
+      console.log('[PostgreSQL] Conectado y tablas verificadas correctamente.');
+
+      // 1. Hidratar o migrar published_schedule
+      const pubRes = await pgPool.query(
+        `SELECT snapshot FROM published_schedule WHERE id = 'active' LIMIT 1`
+      );
+      if (pubRes.rows.length > 0 && pubRes.rows[0].snapshot) {
+        latestPublishedSchedule = pubRes.rows[0].snapshot;
+      } else if (latestPublishedSchedule) {
+        const ts = Number(latestPublishedSchedule.updatedAtMs || Date.now());
+        await pgPool.query(
+          `INSERT INTO published_schedule (id, snapshot, updated_at_ms)
+           VALUES ('active', $1::jsonb, $2)
+           ON CONFLICT (id) DO UPDATE SET snapshot = EXCLUDED.snapshot, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(latestPublishedSchedule), ts]
+        );
+      }
+
+      // 2. Hidratar o migrar week_schedules
+      const weeksRes = await pgPool.query(`SELECT monday_iso, container FROM week_schedules`);
+      if (weeksRes.rows.length > 0) {
+        const loadedMap: Record<string, ServerWeekContainer> = {};
+        for (const row of weeksRes.rows) {
+          if (row.monday_iso && row.container) {
+            loadedMap[row.monday_iso] = row.container;
+          }
+        }
+        weekSchedulesMap = loadedMap;
+      } else if (Object.keys(weekSchedulesMap).length > 0) {
+        for (const [iso, container] of Object.entries(weekSchedulesMap)) {
+          await pgPool.query(
+            `INSERT INTO week_schedules (monday_iso, container, updated_at_ms)
+             VALUES ($1, $2::jsonb, $3)
+             ON CONFLICT (monday_iso) DO UPDATE SET container = EXCLUDED.container, updated_at_ms = EXCLUDED.updated_at_ms`,
+            [iso, JSON.stringify(container), Number(container.updatedAt || Date.now())]
+          );
+        }
+      }
+
+      // 3. Hidratar o migrar access_control
+      const acRes = await pgPool.query(
+        `SELECT value FROM app_kv_store WHERE key = 'access_control' LIMIT 1`
+      );
+      if (acRes.rows.length > 0 && acRes.rows[0].value) {
+        accessControlState = acRes.rows[0].value;
+      } else {
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('access_control', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(accessControlState), accessControlState.updatedAtMs]
+        );
+      }
+
+      // 4. Hidratar o migrar teachers
+      const teachersRes = await pgPool.query(
+        `SELECT value FROM app_kv_store WHERE key = 'teachers' LIMIT 1`
+      );
+      if (teachersRes.rows.length > 0 && Array.isArray(teachersRes.rows[0].value)) {
+        teachersList = teachersRes.rows[0].value;
+      } else if (Array.isArray(teachersList) && teachersList.length > 0) {
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('teachers', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(teachersList), Date.now()]
+        );
+      }
+    } catch (err) {
+      console.error('[PostgreSQL] Error inicializando esquema, operando con respaldo en disco:', err);
+    }
+  }
+
+  const persistPublishedSchedule = async (normalized: Record<string, any>) => {
+    latestPublishedSchedule = normalized;
+    try {
+      fs.writeFileSync(PUBLISHED_SCHEDULE_FILE, JSON.stringify(normalized), 'utf-8');
+    } catch {
+      // ignore
+    }
+    if (pgPool && isPgReady) {
+      try {
+        await pgPool.query(
+          `INSERT INTO published_schedule (id, snapshot, updated_at_ms)
+           VALUES ('active', $1::jsonb, $2)
+           ON CONFLICT (id) DO UPDATE SET snapshot = EXCLUDED.snapshot, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(normalized), Number(normalized.updatedAtMs || Date.now())]
+        );
+      } catch (err) {
+        console.error('[PostgreSQL] Error guardando published_schedule:', err);
+      }
+    }
+  };
+
+  const persistWeekSchedule = async (mondayIso: string, container: ServerWeekContainer) => {
+    weekSchedulesMap[mondayIso] = container;
+    try {
+      fs.writeFileSync(WEEK_SCHEDULES_FILE, JSON.stringify(weekSchedulesMap), 'utf-8');
+    } catch {
+      // ignore
+    }
+    if (pgPool && isPgReady) {
+      try {
+        await pgPool.query(
+          `INSERT INTO week_schedules (monday_iso, container, updated_at_ms)
+           VALUES ($1, $2::jsonb, $3)
+           ON CONFLICT (monday_iso) DO UPDATE SET container = EXCLUDED.container, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [mondayIso, JSON.stringify(container), Number(container.updatedAt || Date.now())]
+        );
+      } catch (err) {
+        console.error('[PostgreSQL] Error guardando week_schedules:', err);
+      }
+    }
+  };
+
+  app.get('/api/published-schedule', async (_req, res) => {
+    setNoCacheHeaders(res);
+    if (pgPool && isPgReady) {
+      try {
+        const dbRes = await pgPool.query(
+          `SELECT snapshot FROM published_schedule WHERE id = 'active' LIMIT 1`
+        );
+        if (dbRes.rows.length > 0 && dbRes.rows[0].snapshot) {
+          latestPublishedSchedule = dbRes.rows[0].snapshot;
+        }
+      } catch {
+        // Fallback a memoria/disco
+      }
+    }
+    res.status(200).json({ snapshot: latestPublishedSchedule });
+  });
+
+  app.post('/api/published-schedule', async (req, res) => {
+    setNoCacheHeaders(res);
+    const incoming = req.body?.snapshot || req.body;
+    if (!incoming || typeof incoming !== 'object' || !Array.isArray(incoming.timeBlocks)) {
+      res.status(400).json({ error: 'Formato de horario publicado inválido.' });
+      return;
+    }
+    const nowMs = Date.now();
+    const isBlank = Boolean(
+      incoming.blankMatrixMode ?? incoming.dayConfigs?.blankMatrixMode ?? incoming.timeBlocks.length === 0
+    );
+    const normalized: Record<string, any> = {
+      ...incoming,
+      blankMatrixMode: isBlank,
+      updatedAtMs: nowMs,
+      timeBlocks: isBlank ? [] : incoming.timeBlocks,
+      dayConfigs: {
+        ...(incoming.dayConfigs || {}),
+        blankMatrixMode: isBlank,
+        updatedAtMs: nowMs,
+      },
+      metadata: {
+        ...(incoming.metadata || {}),
+        blankMatrixMode: isBlank,
+        updatedAtMs: nowMs,
+        totalBlocks: isBlank ? 0 : incoming.timeBlocks.length,
+        lastUpdated: new Date().toLocaleString('es-CO', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        }),
+      },
+    };
+
+    await persistPublishedSchedule(normalized);
+
+    const anchorMondayIso = normalized.dayConfigs?.anchorMondayIso;
+    if (anchorMondayIso && typeof anchorMondayIso === 'string' && !isBlank) {
+      await persistWeekSchedule(anchorMondayIso, {
+        schemaVersion: 4,
+        mondayIso: anchorMondayIso,
+        timeBlocks: normalized.timeBlocks,
+        meetingDays: normalized.dayConfigs?.meetingDays || {},
+        scheduleTypes: normalized.dayConfigs?.scheduleTypes || {},
+        updatedAt: nowMs,
+      });
+    }
+
+    res.status(200).json({ ok: true, blankMatrixMode: isBlank, updatedAtMs: normalized.updatedAtMs });
+  });
+
+  // Endpoints de contenedores semanales en PostgreSQL
+  app.get('/api/week-schedules', async (_req, res) => {
+    setNoCacheHeaders(res);
+    if (pgPool && isPgReady) {
+      try {
+        const dbRes = await pgPool.query(`SELECT monday_iso, container FROM week_schedules`);
+        const loadedMap: Record<string, ServerWeekContainer> = {};
+        for (const row of dbRes.rows) {
+          if (row.monday_iso && row.container) {
+            loadedMap[row.monday_iso] = row.container;
+          }
+        }
+        weekSchedulesMap = loadedMap;
+      } catch {
+        // Fallback a memoria
+      }
+    }
+    res.status(200).json({ weeks: weekSchedulesMap });
+  });
+
+  app.get('/api/week-schedules/:mondayIso', async (req, res) => {
+    setNoCacheHeaders(res);
+    const { mondayIso } = req.params;
+    if (pgPool && isPgReady) {
+      try {
+        const dbRes = await pgPool.query(
+          `SELECT container FROM week_schedules WHERE monday_iso = $1 LIMIT 1`,
+          [mondayIso]
+        );
+        if (dbRes.rows.length > 0 && dbRes.rows[0].container) {
+          weekSchedulesMap[mondayIso] = dbRes.rows[0].container;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    res.status(200).json({ container: weekSchedulesMap[mondayIso] || null });
+  });
+
+  app.post('/api/week-schedules/:mondayIso', async (req, res) => {
+    setNoCacheHeaders(res);
+    const { mondayIso } = req.params;
+    const body = req.body || {};
+    const incomingContainer = body.container || body;
+    if (!mondayIso || !incomingContainer || !Array.isArray(incomingContainer.timeBlocks)) {
+      res.status(400).json({ error: 'Contenedor semanal inválido.' });
+      return;
+    }
+
+    const nowMs = Date.now();
+    const container: ServerWeekContainer = {
+      schemaVersion: 4,
+      mondayIso,
+      timeBlocks: incomingContainer.timeBlocks,
+      meetingDays: incomingContainer.meetingDays || {},
+      scheduleTypes: incomingContainer.scheduleTypes || {},
+      updatedAt: nowMs,
+    };
+
+    await persistWeekSchedule(mondayIso, container);
+
+    // Si la semana editada corresponde a la semana publicada vigente (o si se solicita sincronizar), actualizar automáticamente el horario público en PostgreSQL
+    const publishedMondayIso = latestPublishedSchedule?.dayConfigs?.anchorMondayIso;
+    const shouldAutoSyncPublished =
+      Boolean(body.syncPublished) ||
+      (latestPublishedSchedule && (!publishedMondayIso || publishedMondayIso === mondayIso));
+
+    if (shouldAutoSyncPublished && latestPublishedSchedule) {
+      const updatedPublished: Record<string, any> = {
+        ...latestPublishedSchedule,
+        updatedAtMs: nowMs,
+        timeBlocks: container.timeBlocks,
+        dayConfigs: {
+          ...(latestPublishedSchedule.dayConfigs || {}),
+          anchorMondayIso: mondayIso,
+          meetingDays: container.meetingDays,
+          scheduleTypes: container.scheduleTypes,
+          updatedAtMs: nowMs,
+        },
+        metadata: {
+          ...(latestPublishedSchedule.metadata || {}),
+          totalBlocks: container.timeBlocks.length,
+          updatedAtMs: nowMs,
+          lastUpdated: new Date().toLocaleString('es-CO', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+          }),
+        },
+      };
+      await persistPublishedSchedule(updatedPublished);
+    }
+
+    res.status(200).json({ ok: true, mondayIso, updatedAt: nowMs });
+  });
+
+  app.delete('/api/week-schedules', async (_req, res) => {
+    setNoCacheHeaders(res);
+    weekSchedulesMap = {};
+    try {
+      if (fs.existsSync(WEEK_SCHEDULES_FILE)) {
+        fs.unlinkSync(WEEK_SCHEDULES_FILE);
+      }
+    } catch {
+      // ignore
+    }
+    if (pgPool && isPgReady) {
+      try {
+        await pgPool.query(`DELETE FROM week_schedules`);
+      } catch (err) {
+        console.error('[PostgreSQL] Error limpiando week_schedules:', err);
+      }
+    }
+    res.status(200).json({ ok: true });
+  });
+
+  // Endpoints de Docentes en PostgreSQL
+  app.get('/api/teachers', async (_req, res) => {
+    setNoCacheHeaders(res);
+    if (pgPool && isPgReady) {
+      try {
+        const dbRes = await pgPool.query(
+          `SELECT value FROM app_kv_store WHERE key = 'teachers' LIMIT 1`
+        );
+        if (dbRes.rows.length > 0 && Array.isArray(dbRes.rows[0].value)) {
+          teachersList = dbRes.rows[0].value;
+        }
+      } catch {
+        // Fallback
+      }
+    }
+    res.status(200).json({ teachers: teachersList });
+  });
+
+  app.post('/api/teachers', async (req, res) => {
+    setNoCacheHeaders(res);
+    const incoming = req.body?.teachers || req.body;
+    if (!Array.isArray(incoming)) {
+      res.status(400).json({ error: 'Lista de docentes inválida.' });
+      return;
+    }
+    const nowMs = Date.now();
+    teachersList = incoming;
+    try {
+      fs.writeFileSync(TEACHERS_FILE, JSON.stringify(teachersList), 'utf-8');
+    } catch {
+      // ignore
+    }
+    if (pgPool && isPgReady) {
+      try {
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('teachers', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(teachersList), nowMs]
+        );
+      } catch (err) {
+        console.error('[PostgreSQL] Error guardando teachers:', err);
+      }
+    }
+
+    if (latestPublishedSchedule) {
+      const publicTeachers = incoming
+        .filter((u: any) => u && (!u.role || u.role === 'teacher') && u.isActive !== false)
+        .map((u: any) => ({
+          id: u.id,
+          displayName: u.displayName || u.shortName || 'Docente',
+          shortName: u.shortName || u.displayName || 'Docente',
+          color: u.color_hex || u.color || '#007DC5',
+          color_hex: u.color_hex || u.color || '#007DC5',
+          groupDirection: u.groupDirection,
+          userEdited: Boolean(u.userEdited),
+        }));
+
+      const updatedPublished: Record<string, any> = {
+        ...latestPublishedSchedule,
+        updatedAtMs: nowMs,
+        teachers: publicTeachers,
+        metadata: {
+          ...(latestPublishedSchedule.metadata || {}),
+          totalTeachers: publicTeachers.length,
+          updatedAtMs: nowMs,
+        },
+      };
+      await persistPublishedSchedule(updatedPublished);
+    }
+
+    res.status(200).json({ ok: true, count: teachersList.length });
+  });
+
+  app.get('/api/access-control', async (_req, res) => {
+    setNoCacheHeaders(res);
+    if (pgPool && isPgReady) {
+      try {
+        const dbRes = await pgPool.query(
+          `SELECT value FROM app_kv_store WHERE key = 'access_control' LIMIT 1`
+        );
+        if (dbRes.rows.length > 0 && dbRes.rows[0].value) {
+          accessControlState = dbRes.rows[0].value;
+        }
+      } catch {
+        // Fallback
+      }
+    }
     res.status(200).json(accessControlState);
   });
 
-  app.post('/api/access-control', (req, res) => {
+  app.post('/api/access-control', async (req, res) => {
+    setNoCacheHeaders(res);
     const body = req.body || {};
     const nextRequireAuth =
       typeof body.requireAuth === 'boolean' ? body.requireAuth : accessControlState.requireAuth;
@@ -432,6 +858,19 @@ async function startServer() {
       fs.writeFileSync(ACCESS_CONTROL_FILE, JSON.stringify(accessControlState), 'utf-8');
     } catch {
       // ignore
+    }
+
+    if (pgPool && isPgReady) {
+      try {
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('access_control', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(accessControlState), accessControlState.updatedAtMs]
+        );
+      } catch (err) {
+        console.error('[PostgreSQL] Error guardando access_control:', err);
+      }
     }
 
     res.status(200).json(accessControlState);

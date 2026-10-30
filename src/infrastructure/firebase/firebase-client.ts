@@ -229,30 +229,14 @@ export function subscribeToPublishedSchedule(
   onUpdate: (data: CloudPublishedScheduleData) => void,
   _forceRefresh = false
 ): () => void {
-  let lastAppliedUpdatedAtMs = (() => {
-    try {
-      return Number(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || '0');
-    } catch {
-      return 0;
-    }
-  })();
+  let lastServerSignature = '';
 
-  const applyPublishedData = (parsed: CloudPublishedScheduleData, updatedAtMs?: number) => {
-    let localTs = 0;
-    try {
-      localTs = Number(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || '0');
-    } catch {
-      localTs = 0;
-    }
-    const effectiveBaselineTs = Math.max(lastAppliedUpdatedAtMs, localTs);
-    const incomingTs = Number(
-      updatedAtMs || extractSnapshotTimestamp(parsed) || 0
-    );
-    if (effectiveBaselineTs > 0 && (incomingTs === 0 || incomingTs < effectiveBaselineTs)) {
-      return;
-    }
-    const resolvedTs = incomingTs > 0 ? incomingTs : Date.now();
-    lastAppliedUpdatedAtMs = resolvedTs;
+  const buildFinalData = (
+    parsed: CloudPublishedScheduleData,
+    updatedAtMs?: number
+  ): CloudPublishedScheduleData => {
+    const resolvedTs =
+      Number(updatedAtMs || extractSnapshotTimestamp(parsed) || 0) || Date.now();
 
     const isBlank =
       Boolean(parsed.metadata?.blankMatrixMode ?? parsed.dayConfigs?.blankMatrixMode) ||
@@ -262,7 +246,12 @@ export function subscribeToPublishedSchedule(
       ? []
       : normalizeTimeBlocksGrades(Array.isArray(parsed.timeBlocks) ? parsed.timeBlocks : []);
 
-    const finalData: CloudPublishedScheduleData = {
+    const baseDayConfigs = parsed.dayConfigs || resolveEffectiveDayConfigs();
+    const weekHeaders = baseDayConfigs.anchorMondayIso
+      ? undefined
+      : resolveEffectiveDayConfigs(baseDayConfigs);
+
+    return {
       ...parsed,
       updatedAtMs: resolvedTs,
       timeBlocks: normalizedBlocks,
@@ -272,44 +261,24 @@ export function subscribeToPublishedSchedule(
         blankMatrixMode: isBlank,
         updatedAtMs: resolvedTs,
       },
-      dayConfigs: resolveEffectiveDayConfigs({
-        ...parsed.dayConfigs,
+      dayConfigs: {
+        ...(weekHeaders || baseDayConfigs),
+        ...baseDayConfigs,
         blankMatrixMode: isBlank,
         updatedAtMs: resolvedTs,
-      }),
+      },
     };
+  };
+
+  const applyServerSnapshot = (parsed: CloudPublishedScheduleData, updatedAtMs?: number) => {
+    const finalData = buildFinalData(parsed, updatedAtMs);
+    const sig = `${finalData.updatedAtMs}_${finalData.timeBlocks.length}_${finalData.dayConfigs?.anchorMondayIso || ''}`;
+    lastServerSignature = sig;
 
     try {
-      const activeMondayIso = localStorage.getItem('ievf_active_monday_iso');
-      const incomingMondayIso = finalData.dayConfigs?.anchorMondayIso;
-      const isSameActiveWeek =
-        !activeMondayIso || !incomingMondayIso || activeMondayIso === incomingMondayIso;
-
-      if (isSameActiveWeek) {
-        if (isBlank) {
-          localStorage.setItem('ievf_blank_matrix_mode', '1');
-          localStorage.setItem('villaFloraMatrix', '[]');
-          localStorage.setItem('ievf_time_blocks_v1', '[]');
-        } else {
-          localStorage.removeItem('ievf_blank_matrix_mode');
-          localStorage.setItem('villaFloraMatrix', JSON.stringify(normalizedBlocks));
-          localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(normalizedBlocks));
-        }
-        if (finalData.dayConfigs) {
-          if (finalData.dayConfigs.meetingDays) {
-            localStorage.setItem('ievf_meeting_days', JSON.stringify(finalData.dayConfigs.meetingDays));
-          }
-          if (finalData.dayConfigs.eventDays) {
-            localStorage.setItem('ievf_event_days', JSON.stringify(finalData.dayConfigs.eventDays));
-          }
-          if (Array.isArray(finalData.dayConfigs.customHolidays)) {
-            localStorage.setItem('ievf_custom_holidays', JSON.stringify(finalData.dayConfigs.customHolidays));
-          }
-        }
-      }
       localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(finalData));
       localStorage.setItem(LAST_FETCH_KEY, String(Date.now()));
-      localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(resolvedTs));
+      localStorage.setItem(LOCAL_UPDATED_AT_KEY, String(finalData.updatedAtMs || Date.now()));
       if (finalData.metadata?.lastUpdated) {
         localStorage.setItem('ievf_last_published_at', finalData.metadata.lastUpdated);
       }
@@ -321,125 +290,34 @@ export function subscribeToPublishedSchedule(
       // ignore storage errors
     }
 
-    void writeSnapshotToCacheStorage(finalData);
     onUpdate(finalData);
   };
 
-  const readLocalStorageCandidate = (): CloudPublishedScheduleData | null => {
+  const loadFallbackSnapshotIfNoServer = () => {
+    if (lastServerSignature) return;
     try {
-      const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
-      const localUpdatedTs = Number(localStorage.getItem(LOCAL_UPDATED_AT_KEY) || '0');
-      const liveBlocksRaw =
-        localStorage.getItem('villaFloraMatrix') || localStorage.getItem('ievf_time_blocks_v1');
       const cachedRaw = localStorage.getItem('ievf_public_schedule_snapshot');
-
-      if (!cachedRaw) return null;
+      if (!cachedRaw) return;
       const cachedData = JSON.parse(cachedRaw) as CloudPublishedScheduleData;
-      if (!cachedData || typeof cachedData !== 'object') return null;
-
-      const snapshotTs = extractSnapshotTimestamp(cachedData);
-      const effectiveTs = Math.max(snapshotTs, localUpdatedTs);
-
-      const snapIsBlank =
-        isBlankMode ||
-        Boolean(cachedData.metadata?.blankMatrixMode ?? cachedData.dayConfigs?.blankMatrixMode) ||
-        (Array.isArray(cachedData.timeBlocks) && cachedData.timeBlocks.length === 0);
-
-      if (snapIsBlank) {
-        return {
-          ...cachedData,
-          updatedAtMs: effectiveTs,
-          timeBlocks: [],
-          metadata: {
-            ...cachedData.metadata,
-            totalBlocks: 0,
-            blankMatrixMode: true,
-            updatedAtMs: effectiveTs,
-          },
-        };
-      }
-
-      if (liveBlocksRaw && localUpdatedTs >= snapshotTs) {
-        try {
-          const liveBlocks = JSON.parse(liveBlocksRaw);
-          if (Array.isArray(liveBlocks)) {
-            cachedData.timeBlocks =
-              liveBlocks.length > 0 ? normalizeTimeBlocksGrades(liveBlocks) : [];
-          }
-        } catch {
-          // ignore
-        }
-      }
-
-      if (Array.isArray(cachedData.timeBlocks)) {
-        return {
-          ...cachedData,
-          updatedAtMs: effectiveTs,
-          metadata: {
-            ...cachedData.metadata,
-            updatedAtMs: effectiveTs,
-          },
-        };
+      if (cachedData && typeof cachedData === 'object' && Array.isArray(cachedData.timeBlocks)) {
+        onUpdate(buildFinalData(cachedData, extractSnapshotTimestamp(cachedData)));
       }
     } catch {
-      // Ignorar error de lectura de caché local
-    }
-    return null;
-  };
-
-  const loadFromLocalCache = (): boolean => {
-    const localCandidate = readLocalStorageCandidate();
-    if (localCandidate) {
-      const ts = extractSnapshotTimestamp(localCandidate);
-      if (ts > lastAppliedUpdatedAtMs) {
-        lastAppliedUpdatedAtMs = ts;
-      }
-      onUpdate(localCandidate);
-      return true;
-    }
-    return false;
-  };
-
-  const hydrateCacheFirst = async (): Promise<void> => {
-    const localCandidate = readLocalStorageCandidate();
-    const swCacheCandidate = await readSnapshotFromCacheStorage();
-
-    let swFetchCandidate: CloudPublishedScheduleData | null = null;
-    if (!swCacheCandidate && typeof window !== 'undefined' && typeof fetch === 'function') {
-      try {
-        const cachedRes = await fetch('/api/published-schedule', { cache: 'default' });
-        if (cachedRes.ok) {
-          const cachedJson = await cachedRes.json();
-          if (cachedJson?.snapshot && Array.isArray(cachedJson.snapshot.timeBlocks)) {
-            swFetchCandidate = cachedJson.snapshot as CloudPublishedScheduleData;
-          }
-        }
-      } catch {
-        // Offline or cache miss
-      }
-    }
-
-    const newestCached = selectMostRecentSnapshot<CloudPublishedScheduleData>([
-      swCacheCandidate as CloudPublishedScheduleData | null,
-      swFetchCandidate,
-      localCandidate,
-    ]);
-
-    if (newestCached) {
-      applyPublishedData(newestCached, extractSnapshotTimestamp(newestCached));
+      // ignore
     }
   };
-
-  loadFromLocalCache();
-  void hydrateCacheFirst();
 
   const fetchServerSnapshot = async (): Promise<boolean> => {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return false;
     try {
       const controller = new AbortController();
-      const timeoutId = window.setTimeout(() => controller.abort(), 3500);
-      const res = await fetch(`/api/published-schedule?sync=${Date.now()}`, {
+      const timeoutId = window.setTimeout(() => controller.abort(), 4500);
+      const res = await fetch(`/api/published-schedule?_t=${Date.now()}`, {
         cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          Pragma: 'no-cache',
+        },
         signal: controller.signal,
       });
       window.clearTimeout(timeoutId);
@@ -449,24 +327,25 @@ export function subscribeToPublishedSchedule(
       const serverSnap = data?.snapshot as CloudPublishedScheduleData | undefined;
       if (serverSnap && Array.isArray(serverSnap.timeBlocks)) {
         const incomingTs = extractSnapshotTimestamp(serverSnap) || Date.now();
-        applyPublishedData(serverSnap, incomingTs);
+        applyServerSnapshot(serverSnap, incomingTs);
         return true;
       }
     } catch {
-      // Sin conexión o sin VPN: se mantiene intacta la versión más reciente de la caché (Cache-First)
+      // Si el servidor no responde temporalmente, usar el último snapshot público conocido
     }
+    loadFallbackSnapshotIfNoServer();
     return false;
   };
 
-  const handleLocalStorageUpdate = () => {
-    loadFromLocalCache();
+  void writeSnapshotToCacheStorage({} as CloudPublishedScheduleData);
+  void fetchServerSnapshot();
+
+  const handlePublicSnapshotUpdated = () => {
+    void fetchServerSnapshot();
   };
-  window.addEventListener('storage', handleLocalStorageUpdate);
-  window.addEventListener('schedule_matrix_updated', handleLocalStorageUpdate);
-  window.addEventListener('public_schedule_snapshot_updated', handleLocalStorageUpdate);
+  window.addEventListener('public_schedule_snapshot_updated', handlePublicSnapshotUpdated);
 
   const handleVisibilityOrFocus = () => {
-    void hydrateCacheFirst();
     void fetchServerSnapshot();
   };
   window.addEventListener('focus', handleVisibilityOrFocus);
@@ -476,13 +355,9 @@ export function subscribeToPublishedSchedule(
     void fetchServerSnapshot();
   }, 2500);
 
-  void fetchServerSnapshot();
-
   return () => {
     window.clearInterval(pollInterval);
-    window.removeEventListener('storage', handleLocalStorageUpdate);
-    window.removeEventListener('schedule_matrix_updated', handleLocalStorageUpdate);
-    window.removeEventListener('public_schedule_snapshot_updated', handleLocalStorageUpdate);
+    window.removeEventListener('public_schedule_snapshot_updated', handlePublicSnapshotUpdated);
     window.removeEventListener('focus', handleVisibilityOrFocus);
     document.removeEventListener('visibilitychange', handleVisibilityOrFocus);
   };
