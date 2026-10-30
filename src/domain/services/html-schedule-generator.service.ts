@@ -3,6 +3,7 @@ import { calculateLuminanceContrast } from './teacher-color.service';
 import { toTitleCase, getShortTeacherName, getFullTeacherName } from './teacher-visual-identity.service';
 import {
   getTeacherExcelIdentity,
+  OFFICIAL_TEACHERS_ROSTER,
   resolveOfficialTeacherEntry,
   sortTeachersWithLowPriorityLast,
 } from './teacher-normalization.service';
@@ -20,6 +21,11 @@ import {
   normalizeTimeBlocksGrades,
   resolveEffectiveClassroomForBlock,
 } from './grade-normalization.service';
+import {
+  BreakSupervisionScheduleMap,
+  loadBreakSupervisionSchedule,
+  normalizeBreakSupervisionSchedule,
+} from './break-supervision.service';
 
 export { DEFAULT_LOGO_BASE64 };
 
@@ -29,6 +35,7 @@ export interface PublicDayConfigs {
   holidayDays: Record<string, boolean>;
   customHolidays: string[];
   scheduleTypes?: Record<string, 'A' | 'B' | 'C' | 'D'>;
+  breakSupervision?: BreakSupervisionScheduleMap;
   blankMatrixMode?: boolean;
   updatedAtMs?: number;
   activeWeekSlot?: WeekSlotMode;
@@ -110,12 +117,17 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     }
   })();
 
+  const breakSupervision = custom?.breakSupervision
+    ? normalizeBreakSupervisionSchedule(custom.breakSupervision)
+    : loadBreakSupervisionSchedule();
+
   return {
     meetingDays,
     eventDays,
     holidayDays,
     customHolidays,
     scheduleTypes,
+    breakSupervision,
     blankMatrixMode: custom?.blankMatrixMode !== undefined ? custom.blankMatrixMode : isLocalBlank,
     updatedAtMs: custom?.updatedAtMs,
     activeWeekSlot,
@@ -360,14 +372,46 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
   );
 
   const jsonSerialized = JSON.stringify(scheduleData).replace(/</g, '\\u003c');
+  const customColorById = new Map<string, string>();
+  activeTeachers.forEach((t) => {
+    const c = t.color_hex || t.color;
+    if (t.id && c) customColorById.set(t.id, c);
+  });
+
+  const teacherDirectoryEntries = OFFICIAL_TEACHERS_ROSTER.map((entry) => {
+    const colorHex = customColorById.get(entry.id) || entry.colorHex || '#034EA2';
+    const textColor = calculateLuminanceContrast(colorHex) === 'text-white' ? '#ffffff' : '#111827';
+    return {
+      id: entry.id,
+      name: entry.shortName,
+      fullName: entry.fullName,
+      initials: getFirstAndLastNameInitials(entry.shortName),
+      color: colorHex,
+      textColor,
+      aliases: entry.aliases || [],
+    };
+  });
+
   const teachersSerialized = JSON.stringify(
-    activeTeachers.map((t) => ({
-      id: t.id,
-      name: getShortTeacherName(t.id, t.displayName || ''),
-      fullName: getFullTeacherName(t.id, t.displayName || ''),
-      color: t.color_hex || t.color || '#007DC5',
-    }))
+    activeTeachers.length > 0
+      ? activeTeachers.map((t) => {
+          const shortName = getShortTeacherName(t.id, t.displayName || '');
+          const fullName = getFullTeacherName(t.id, t.displayName || '');
+          const identity = getTeacherExcelIdentity(t.id, t.displayName || '');
+          const colorHex = t.color_hex || t.color || identity.color_hex || '#007DC5';
+          const textColor = calculateLuminanceContrast(colorHex) === 'text-white' ? '#ffffff' : '#111827';
+          return {
+            id: t.id,
+            name: shortName,
+            fullName,
+            initials: getFirstAndLastNameInitials(shortName),
+            color: colorHex,
+            textColor,
+          };
+        })
+      : teacherDirectoryEntries
   ).replace(/</g, '\\u003c');
+  const officialDirectorySerialized = JSON.stringify(teacherDirectoryEntries).replace(/</g, '\\u003c');
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -1137,6 +1181,127 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       border-top: 2px solid #fcd34d !important;
       border-bottom: 2px solid #fcd34d !important;
       height: auto !important;
+      transition: background-color 0.15s ease;
+    }
+    .btn-break-zones {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 36px;
+      padding: 0 14px;
+      border-radius: 10px;
+      background-color: #0c4da2;
+      color: #ffffff;
+      font-size: 0.78rem;
+      font-weight: 800;
+      border: 1px solid #007DC5;
+      cursor: pointer;
+      white-space: nowrap;
+      box-shadow: 0 2px 4px rgba(12, 77, 162, 0.22);
+      transition: all 0.15s ease;
+    }
+    .btn-break-zones:hover {
+      background-color: #022b5c;
+      transform: translateY(-1px);
+    }
+    .break-modal-backdrop {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      background-color: rgba(15, 23, 42, 0.65);
+      backdrop-filter: blur(3px);
+      align-items: center;
+      justify-content: center;
+      padding: 16px;
+    }
+    .break-modal-backdrop.open {
+      display: flex;
+    }
+    .break-modal-card {
+      background: #ffffff;
+      border-radius: 20px;
+      width: 100%;
+      max-width: 1120px;
+      max-height: 92vh;
+      display: flex;
+      flex-direction: column;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.35);
+      border: 1px solid #cbd5e1;
+    }
+    .break-modal-header {
+      background-color: #0c4da2;
+      color: #ffffff;
+      padding: 18px 24px;
+      border-bottom: 4px solid #fbbf24;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .break-modal-toolbar {
+      background-color: #f8fafc;
+      border-bottom: 1px solid #e2e8f0;
+      padding: 12px 24px;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+    .break-modal-body {
+      padding: 20px 24px;
+      overflow-y: auto;
+      flex: 1;
+    }
+    .break-zones-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-size: 12px;
+    }
+    .break-zones-table th, .break-zones-table td {
+      border: 1px solid #cbd5e1;
+      padding: 8px 10px;
+    }
+    .break-zones-table th {
+      background-color: #f1f5f9;
+      color: #1e293b;
+      font-weight: 800;
+    }
+    .zone-teacher-pill {
+      display: flex;
+      align-items: center;
+      border-radius: 6px;
+      overflow: hidden;
+      min-height: 26px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+      margin-bottom: 4px;
+    }
+    .zone-teacher-pill:last-child {
+      margin-bottom: 0;
+    }
+    .zone-teacher-initials {
+      width: 24px;
+      align-self: stretch;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      background-color: rgba(0, 0, 0, 0.22);
+      color: #ffffff;
+      font-size: 9px;
+      font-weight: 800;
+      flex-shrink: 0;
+      letter-spacing: -0.03em;
+    }
+    .zone-teacher-label {
+      flex: 1;
+      padding: 3px 6px;
+      font-size: 11px;
+      font-weight: 700;
+      text-align: center;
+      line-height: 1.15;
     }
     .transition-row {
       background-color: #e2e8f0;
@@ -1246,6 +1411,10 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
             <input type="text" id="searchInput" class="form-control" placeholder="Buscar asignatura o aula..." oninput="handleSearchInput()" style="width: 210px; padding-right: 28px; cursor: text;">
             <button type="button" id="clearSearchBtn" class="search-clear-btn" onclick="clearSearchInput()" title="Limpiar búsqueda" aria-label="Limpiar búsqueda">&#10005;</button>
           </div>
+
+          <button type="button" class="btn-break-zones" onclick="openBreakZonesModal()" title="Ver cuadro de Zonas de acompañamiento">
+            🛡️ Zonas de acompañamiento
+          </button>
         </div>
       </div>
 
@@ -1272,6 +1441,29 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       <!-- Dynamic table rendered here -->
     </div>
 
+    <!-- Modal Popup de Zonas de Acompañamiento -->
+    <div id="breakZonesModal" class="break-modal-backdrop" onclick="if(event.target===this)closeBreakZonesModal()">
+      <div class="break-modal-card">
+        <div class="break-modal-header">
+          <div>
+            <div style="font-size: 1.15rem; font-weight: 800; letter-spacing: -0.01em;">Institución Educativa Villa Flora</div>
+            <div style="font-size: 0.82rem; color: #bae6fd; font-weight: 600;">Ciencia &amp; Libertad • Zonas de acompañamiento</div>
+          </div>
+          <button type="button" onclick="closeBreakZonesModal()" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 10px; padding: 6px 12px; font-weight: 800; cursor: pointer;">&#10005; Cerrar</button>
+        </div>
+        <div class="break-modal-toolbar">
+          <div style="font-weight: 800; color: #0f172a; font-size: 0.95rem;" id="breakModalTitle">Asignación semanal • Bachillerato (Mañana)</div>
+          <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+            <select id="breakModalTeacherSelect" class="form-control" onchange="renderBreakZonesModalTable()" style="height: 34px; font-size: 12px;">
+              <option value="ALL">Todos los docentes (Ver cuadro completo)</option>
+            </select>
+            <input type="text" id="breakModalSearchInput" class="form-control" placeholder="Buscar zona o docente..." oninput="renderBreakZonesModalTable()" style="height: 34px; font-size: 12px; width: 200px; cursor: text;">
+          </div>
+        </div>
+        <div class="break-modal-body" id="breakModalBody"></div>
+      </div>
+    </div>
+
     <div class="footer-note">
       <p>Actualizado: <strong>${lastUpdated}</strong> — Sistema de Agendamiento Escolar • Horarios, actividades y jornadas académicas</p>
       <p style="margin-top: 4px; font-weight: 700; color: #475569;">Desarrollado y diseñado por Reakta Group</p>
@@ -1281,12 +1473,14 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
   <script>
     const ALL_BLOCKS = ${jsonSerialized};
     const ALL_TEACHERS = ${teachersSerialized};
+    const OFFICIAL_TEACHER_DIRECTORY = ${officialDirectorySerialized};
     const DAY_CONFIGS = ${dayConfigsSerialized};
     const INITIAL_WEEK_HEADERS = ${weekHeadersSerialized};
     const MEETING_DAYS = (DAY_CONFIGS && DAY_CONFIGS.meetingDays) || {};
     const EVENT_DAYS = (DAY_CONFIGS && DAY_CONFIGS.eventDays) || {};
     const HOLIDAY_DAYS = (DAY_CONFIGS && DAY_CONFIGS.holidayDays) || {};
     const SCHEDULE_TYPES = (DAY_CONFIGS && DAY_CONFIGS.scheduleTypes) || {};
+    const BREAK_SUPERVISION = (DAY_CONFIGS && DAY_CONFIGS.breakSupervision) || {};
 
     const SHIFT_GRADES = {
       'morning': ['6°1', '6°2', '7°1', '7°2', '8°1', '8°2', '9°1', '9°2', '10°1', '10°2', '11°1', '11°2'],
@@ -1431,6 +1625,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
 
     const gradeSelect = document.getElementById('gradeSelect');
     const teacherSelect = document.getElementById('teacherSelect');
+    const breakModalTeacherSelect = document.getElementById('breakModalTeacherSelect');
 
     ALL_TEACHERS.forEach(t => {
       if (!t.name && !t.fullName) return;
@@ -1438,7 +1633,171 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       opt.value = t.name || t.fullName;
       opt.textContent = t.fullName || t.name;
       teacherSelect.appendChild(opt);
+      if (breakModalTeacherSelect) {
+        const opt2 = document.createElement('option');
+        opt2.value = t.fullName || t.name;
+        opt2.textContent = t.fullName || t.name;
+        breakModalTeacherSelect.appendChild(opt2);
+      }
     });
+
+    function normalizeZoneToken(val) {
+      return String(val || '')
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/\./g, '')
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    }
+
+    const ALIAS_GROUPS = [
+      ['MARIA ISABEL', 'Mª ISABEL GIRALDO', 'MARIA ISABEL G', 'MARIA ISABEL GIRALDO ROJAS'],
+      ['CLAUDIA', 'CLAUDIA CASTANEDA', 'CLAUDIA CECILIA CASTANEDA CEBALLOS'],
+      ['DIANA', 'DIANA SILVA', 'DIANA S', 'DIANA YASMIN SILVA GRANDA'],
+      ['ELIANA', 'ELIANA OSORIO', 'ELIANA O', 'ELIANA MARIA OSORIO ZAPATA'],
+      ['LINDA', 'LINDA MONTOYA', 'LINDA PATRICIA MONTOYA VEGA'],
+      ['DIEGO', 'DIEGO CASTANO', 'DIEGO ALEXANDER CASTANO ARISTIZABAL'],
+      ['KATIA', 'KATIA AGUALIMPIA', 'KATIA DANESA AGUALIMPIA PUERTA'],
+      ['BETTY', 'BETTY V', 'BETTY VASQUEZ', 'MARIA BETTY VASQUEZ VELEZ'],
+      ['ALEJANDRA', 'MARIA ALEJANDRA', 'ALEJANDRA PEREZ', 'MARIA ALEJANDRA PEREZ PINO'],
+      ['LORENA LOPERA', 'LIZHET LOPERA', 'LIZHET LORENA LOPERA MAZO'],
+      ['LAURA', 'LAURA GALLEGO', 'LAURA GALLEGO CORTES'],
+      ['OMAR', 'OMAR MOSQUERA', 'GLEYSHER OMAR MOSQUERA PEREA'],
+      ['JAIRO', 'JAIRO ANDRES', 'JAIRO MURCIA', 'JAIRO ANDRES MURCIA VELASCO'],
+      ['LISCY', 'LISCY PALACIOS', 'LORENA MENA', 'LISCY VANESSA PALACIOS IBARGUEN'],
+      ['SARA', 'SARA CASAFUS'],
+      ['PAOLA', 'PAULA'],
+      ['ALEXANDER', 'ALEXANDER URIBE', 'ALEXANDER URIBE MONTALVO']
+    ];
+
+    function matchesTeacherInZoneCell(cellText, teacherQuery) {
+      if (!cellText || !teacherQuery || teacherQuery === 'ALL') return false;
+      const q = normalizeZoneToken(teacherQuery);
+      if (!q) return false;
+      const qGroup = ALIAS_GROUPS.find(grp => grp.some(a => q === a || q.indexOf(a) !== -1 || a.indexOf(q) !== -1));
+      const segments = String(cellText).split(/[\/,]+/).map(s => normalizeZoneToken(s)).filter(Boolean);
+      for (let i = 0; i < segments.length; i++) {
+        const seg = segments[i];
+        if (seg === q || seg.indexOf(q) !== -1 || q.indexOf(seg) !== -1) return true;
+        if (qGroup && qGroup.some(a => seg === a)) return true;
+      }
+      return false;
+    }
+
+    function openBreakZonesModal() {
+      const modal = document.getElementById('breakZonesModal');
+      if (!modal) return;
+      if (breakModalTeacherSelect && teacherSelect && teacherSelect.value !== 'ALL') {
+        const matchedOpt = Array.from(breakModalTeacherSelect.options).find(o =>
+          matchesTeacherInZoneCell(o.value, teacherSelect.value)
+        );
+        if (matchedOpt) breakModalTeacherSelect.value = matchedOpt.value;
+      }
+      renderBreakZonesModalTable();
+      modal.classList.add('open');
+    }
+
+    function closeBreakZonesModal() {
+      const modal = document.getElementById('breakZonesModal');
+      if (modal) modal.classList.remove('open');
+    }
+
+    function resolveZoneTeacherBadges(cellText) {
+      if (!cellText) return [];
+      const segments = String(cellText).split(/[\/,]+/).map(s => s.trim()).filter(Boolean);
+      return segments.map(seg => {
+        const cleanSeg = normalizeZoneToken(seg);
+        if (cleanSeg === 'SIN ASIGNAR') {
+          return { shortName: 'Sin asignar', fullName: 'Sin asignar', initials: '--', color: '#64748B', textColor: '#ffffff' };
+        }
+        const matchedOfficial = (OFFICIAL_TEACHER_DIRECTORY || []).find(entry => {
+          if (normalizeZoneToken(entry.name) === cleanSeg || normalizeZoneToken(entry.fullName) === cleanSeg) return true;
+          return Array.isArray(entry.aliases) && entry.aliases.some(a => normalizeZoneToken(a) === cleanSeg);
+        });
+        const matchedCustom = (ALL_TEACHERS || []).find(t =>
+          (matchedOfficial && t.id === matchedOfficial.id) ||
+          normalizeZoneToken(t.name) === cleanSeg ||
+          normalizeZoneToken(t.fullName) === cleanSeg
+        );
+        if (matchedCustom || matchedOfficial) {
+          const base = matchedOfficial || matchedCustom;
+          const color = (matchedCustom && matchedCustom.color) || (matchedOfficial && matchedOfficial.color) || '#034EA2';
+          const textColor = (matchedCustom && matchedCustom.textColor) || (matchedOfficial && matchedOfficial.textColor) || '#ffffff';
+          const shortName = (matchedOfficial && matchedOfficial.name) || (matchedCustom && matchedCustom.name) || seg;
+          const fullName = (matchedOfficial && matchedOfficial.fullName) || (matchedCustom && matchedCustom.fullName) || shortName;
+          const initials = (matchedOfficial && matchedOfficial.initials) || (matchedCustom && matchedCustom.initials) || shortName.slice(0, 2).toUpperCase();
+          return { shortName, fullName, initials, color, textColor };
+        }
+        return { shortName: seg, fullName: seg, initials: seg.slice(0, 2).toUpperCase(), color: '#034EA2', textColor: '#ffffff' };
+      });
+    }
+
+    function renderBreakZonesModalTable() {
+      const body = document.getElementById('breakModalBody');
+      if (!body) return;
+      const zones = Array.isArray(BREAK_SUPERVISION[currentShift]) ? BREAK_SUPERVISION[currentShift] : (Array.isArray(BREAK_SUPERVISION['morning']) ? BREAK_SUPERVISION['morning'] : []);
+      const tFilter = breakModalTeacherSelect ? breakModalTeacherSelect.value : 'ALL';
+      const searchInp = document.getElementById('breakModalSearchInput');
+      const sQuery = normalizeZoneToken(searchInp ? searchInp.value : '');
+      const daysList = [
+        { key: 'lunes', label: 'Lunes' },
+        { key: 'martes', label: 'Martes' },
+        { key: 'miercoles', label: 'Miércoles' },
+        { key: 'jueves', label: 'Jueves' },
+        { key: 'viernes', label: 'Viernes' }
+      ];
+      const filteredZones = zones.filter(z => {
+        if (tFilter !== 'ALL') {
+          const hasTurn = daysList.some(d => matchesTeacherInZoneCell(z.days && z.days[d.key], tFilter));
+          if (!hasTurn) return false;
+        }
+        if (sQuery) {
+          const hay = normalizeZoneToken([z.zoneName, z.subLabel || '', z.days.lunes, z.days.martes, z.days.miercoles, z.days.jueves, z.days.viernes].join(' '));
+          if (hay.indexOf(sQuery) === -1) return false;
+        }
+        return true;
+      });
+      if (filteredZones.length === 0) {
+        body.innerHTML = '<div class="empty-state"><h3>No se encontraron turnos para el filtro seleccionado</h3></div>';
+        return;
+      }
+      let h = '<div style="overflow-x:auto;"><table class="break-zones-table"><thead><tr><th style="text-align:left;min-width:210px;">Zona de acompañamiento</th>';
+      daysList.forEach(d => {
+        const isCur = d.key === currentDay;
+        h += '<th style="text-align:center;min-width:140px;' + (isCur ? 'background-color:#e0f2fe;color:#022047;' : '') + '">' + d.label + (isCur ? ' <span style="display:block;font-size:9px;background:#0c4da2;color:#fff;border-radius:4px;padding:1px 4px;margin-top:2px;">Día activo</span>' : '') + '</th>';
+      });
+      h += '</tr></thead><tbody>';
+      filteredZones.forEach(z => {
+        const isHigh = Boolean(z.isHighlighted);
+        const isMT = Boolean(z.isMediaTecnica);
+        const rowStyle = isHigh ? 'background-color:#fffbeb;border-top:2px solid #f59e0b;border-bottom:2px solid #f59e0b;' : (isMT ? 'background-color:#f1f5f9;font-weight:800;' : '');
+        h += '<tr style="' + rowStyle + '">';
+        h += '<td style="font-weight:800;' + (isHigh ? 'color:#92400e;' : 'color:#0f172a;') + '"><div>' + z.zoneName + '</div>' + (z.subLabel ? '<div style="font-size:10.5px;margin-top:2px;font-style:italic;color:#64748b;">' + z.subLabel + '</div>' : '') + '</td>';
+        daysList.forEach(d => {
+          const val = (z.days && z.days[d.key]) || '';
+          const isMatch = tFilter !== 'ALL' && matchesTeacherInZoneCell(val, tFilter);
+          const isCur = d.key === currentDay;
+          const cellBg = isMatch ? 'background-color:#e0f2fe;box-shadow:inset 0 0 0 2px #0c4da2;' : (isHigh ? 'background-color:#fffbeb;' : (isCur ? 'background-color:#f0f9ff;' : ''));
+          const badges = resolveZoneTeacherBadges(val);
+          let badgesHtml = '';
+          if (badges.length === 0) {
+            badgesHtml = '<span style="color:#94a3b8;">—</span>';
+          } else {
+            badges.forEach(b => {
+              badgesHtml += '<div class="zone-teacher-pill" style="background-color:' + b.color + ';" title="' + b.fullName + '">';
+              badgesHtml += '<span class="zone-teacher-initials">' + b.initials + '</span>';
+              badgesHtml += '<span class="zone-teacher-label" style="color:' + b.textColor + ';">' + b.shortName + '</span>';
+              badgesHtml += '</div>';
+            });
+          }
+          h += '<td style="text-align:center;vertical-align:middle;' + cellBg + '">' + badgesHtml + '</td>';
+        });
+        h += '</tr>';
+      });
+      h += '</tbody></table></div>';
+      body.innerHTML = h;
+    }
 
     function computeDynamicFullDayLabel(dayKey, fallbackLabel) {
       try {
@@ -1759,11 +2118,34 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
             html += '</tr>';
             return;
           }
-          html += '<tr><td colspan="' + totalCols + '" class="break-row">☕ ' + slot.label + ' &bull; (' + slot.time + ')</td></tr>';
+          const shiftZones = Array.isArray(BREAK_SUPERVISION[currentShift]) ? BREAK_SUPERVISION[currentShift] : [];
+          const teacherTurns = selectedTeacher !== 'ALL'
+            ? shiftZones.filter(z => matchesTeacherInZoneCell(z.days && z.days[currentDay], selectedTeacher))
+            : [];
+          html += '<tr><td colspan="' + totalCols + '" class="break-row">';
+          html += '<div style="display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:10px;">';
+          html += '<span>☕ ' + slot.label + ' &bull; (' + slot.time + ')</span>';
+          html += '</div>';
+          if (teacherTurns.length > 0) {
+            html += '<div style="margin-top:6px;display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:6px;">';
+            teacherTurns.forEach(tZone => {
+              html += '<span style="background-color:#0c4da2;color:#ffffff;padding:4px 12px;border-radius:8px;font-size:11.5px;font-weight:800;box-shadow:0 1px 3px rgba(0,0,0,0.15);">📍 Tu turno hoy: ' + tZone.zoneName + ' (' + (tZone.days[currentDay] || '') + ')</span>';
+            });
+            html += '</div>';
+          }
+          html += '</td></tr>';
           return;
         }
         if (slot.isTransition) {
-          html += '<tr><td colspan="' + totalCols + '" class="transition-row">🎓 ' + slot.label + ' &bull; (' + slot.time + ')</td></tr>';
+          const shiftZones = Array.isArray(BREAK_SUPERVISION[currentShift]) ? BREAK_SUPERVISION[currentShift] : [];
+          const mtZone = shiftZones.find(z => z.isMediaTecnica);
+          const mtText = mtZone && mtZone.days ? mtZone.days[currentDay] : '';
+          html += '<tr><td colspan="' + totalCols + '" class="transition-row">';
+          html += '<div>🎓 ' + slot.label + ' &bull; (' + slot.time + ')</div>';
+          if (mtText) {
+            html += '<div style="margin-top:4px;font-size:11px;color:#022047;font-weight:800;text-transform:none;">Acompañamiento descansos Media Técnica: ' + mtText + '</div>';
+          }
+          html += '</td></tr>';
           return;
         }
 

@@ -19,6 +19,34 @@
   </head>
   <body class="bg-slate-50 text-villa-dark font-sans antialiased min-h-screen">
     <div id="root"></div>
+    <script>
+      (function () {
+        try {
+          var CACHE_PURGE_KEY = 'ievf_sw_cache_purged_v3';
+          if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.getRegistrations().then(function (regs) {
+              var hadRegs = regs && regs.length > 0;
+              Promise.all(regs.map(function (r) { return r.unregister(); })).then(function () {
+                if ('caches' in window) {
+                  caches.keys().then(function (keys) {
+                    return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+                  }).then(function () {
+                    if (hadRegs && !sessionStorage.getItem(CACHE_PURGE_KEY)) {
+                      sessionStorage.setItem(CACHE_PURGE_KEY, '1');
+                      window.location.reload();
+                    }
+                  });
+                }
+              });
+            });
+          } else if ('caches' in window) {
+            caches.keys().then(function (keys) {
+              keys.forEach(function (k) { caches.delete(k); });
+            });
+          }
+        } catch (e) {}
+      })();
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

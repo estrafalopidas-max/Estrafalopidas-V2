@@ -221,7 +221,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Giraldo Rojas Maria Isabel',
     groupDirection: '06-01',
     colorHex: '#818CF8',
-    aliases: ['M ISABEL', 'Mª ISABEL GIRALDO', 'MARIA ISABEL', 'ISABEL GIRALDO', 'MARIA GIRALDO'],
+    aliases: ['M ISABEL', 'Mª ISABEL GIRALDO', 'MARIA ISABEL', 'MARIA ISABEL G', 'MARIA ISABEL G.', 'ISABEL GIRALDO', 'MARIA GIRALDO'],
   },
   {
     id: 't-claudia',
@@ -239,7 +239,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Silva Granda Diana Yasmin',
     groupDirection: '07-01',
     colorHex: '#7C2D12',
-    aliases: ['DIANA', 'DIANA SILVA', 'DIANA YASMIN'],
+    aliases: ['DIANA', 'DIANA SILVA', 'DIANA S', 'DIANA S.', 'DIANA YASMIN'],
   },
   {
     id: 't-eliana',
@@ -248,7 +248,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Osorio Zapata Eliana Maria',
     groupDirection: '07-02',
     colorHex: '#FB923C',
-    aliases: ['ELIANA', 'ELIANA OSORIO', 'ELIANA MARIA'],
+    aliases: ['ELIANA', 'ELIANA OSORIO', 'ELIANA O', 'ELIANA O.', 'ELIANA MARIA'],
   },
   {
     id: 't-linda',
@@ -284,7 +284,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Vasquez Velez Maria Betty',
     groupDirection: '09-02',
     colorHex: '#C084FC',
-    aliases: ['BETTY', 'MARIA BETTY', 'BETTY VASQUEZ', 'MARIA VASQUEZ'],
+    aliases: ['BETTY', 'BETTY V', 'BETTY V.', 'MARIA BETTY', 'BETTY VASQUEZ', 'MARIA VASQUEZ'],
   },
   {
     id: 't-alejandra',
@@ -293,7 +293,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Perez Pino Maria Alejandra',
     groupDirection: '10-01',
     colorHex: '#134E4A',
-    aliases: ['ALEJANDRA', 'MARIA ALEJANDRA', 'ALEJANDRA PEREZ', 'MARIA PEREZ'],
+    aliases: ['ALEJANDRA', 'MARIA ALEJANDRA', 'MARÍA ALEJANDRA', 'ALEJANDRA PEREZ', 'MARIA PEREZ'],
   },
   {
     id: 't-lorena-l',
@@ -345,7 +345,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Murcia Velasco Jairo Andres',
     groupDirection: 'Sin asignación',
     colorHex: '#EA580C',
-    aliases: ['JAIRO', 'JAIRO ANDRES', 'JAIRO MURCIA', 't-jairo'],
+    aliases: ['JAIRO', 'JAIRO ANDRES', 'JAIRO ANDRÉS', 'JAIRO MURCIA', 't-jairo'],
   },
   {
     id: 't-liscy',
@@ -354,7 +354,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Palacios Ibarguen Liscy Vanessa',
     groupDirection: 'Sin asignación',
     colorHex: '#94A3B8',
-    aliases: ['LISCY', 'LISCY PALACIOS', 'LORENA M', 't-lorena-m'],
+    aliases: ['LISCY', 'LISCY PALACIOS', 'LORENA M', 'LORENA MENA', 't-lorena-m'],
   },
   {
     id: 't-alejandro',
@@ -390,7 +390,7 @@ export const OFFICIAL_TEACHERS_ROSTER: OfficialTeacherDef[] = [
     pdfName: 'Paola',
     groupDirection: 'Sin asignación',
     colorHex: '#A3E635',
-    aliases: ['PAOLA', 't-paola'],
+    aliases: ['PAOLA', 'PAULA', 't-paola'],
   },
   {
     id: 't-alexander',

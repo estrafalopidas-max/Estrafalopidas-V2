@@ -16,6 +16,8 @@ import {
   ZoomOut,
   Maximize2,
   RotateCcw,
+  Shield,
+  MapPin,
 } from 'lucide-react';
 import {
   clampZoomScale,
@@ -46,6 +48,12 @@ import {
   updateTeacherDictionaryProfile,
 } from '../../../domain/services/teacher-normalization.service';
 import { getFullTeacherName } from '../../../domain/services/teacher-visual-identity.service';
+import {
+  getTeacherSupervisionForDay,
+  loadBreakSupervisionSchedule,
+  normalizeBreakSupervisionSchedule,
+} from '../../../domain/services/break-supervision.service';
+import { BreakSupervisionModal } from '../../components/matrix/BreakSupervisionModal';
 
 const DAYS: { key: DayOfWeek; label: string }[] = [
   { key: 'lunes', label: 'Lunes' },
@@ -391,6 +399,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
   const gradeMenuRef = useRef<HTMLDivElement>(null);
   const [isTeacherMenuOpen, setIsTeacherMenuOpen] = useState(false);
   const teacherMenuRef = useRef<HTMLDivElement>(null);
+  const [isBreakModalOpen, setIsBreakModalOpen] = useState(false);
 
   useEffect(() => {
     if (!isGradeMenuOpen && !isTeacherMenuOpen) return;
@@ -475,6 +484,26 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     () => generateWeekHeaders(dayConfigs.anchorMondayIso || new Date(), dayConfigs.customHolidays),
     [dayConfigs.anchorMondayIso, dayConfigs.customHolidays]
   );
+
+  const breakSupervisionMap = useMemo(() => {
+    if (dayConfigs.breakSupervision) {
+      return normalizeBreakSupervisionSchedule(dayConfigs.breakSupervision);
+    }
+    return loadBreakSupervisionSchedule();
+  }, [dayConfigs.breakSupervision]);
+
+  const activeShiftSupervisionZones = useMemo(() => {
+    return breakSupervisionMap[selectedShift] || [];
+  }, [breakSupervisionMap, selectedShift]);
+
+  const selectedTeacherTodaySupervision = useMemo(() => {
+    return getTeacherSupervisionForDay(activeShiftSupervisionZones, selectedDay, selectedTeacher);
+  }, [activeShiftSupervisionZones, selectedDay, selectedTeacher]);
+
+  const mediaTecnicaDaySupervision = useMemo(() => {
+    const mtZone = activeShiftSupervisionZones.find((z) => z.isMediaTecnica);
+    return mtZone?.days?.[selectedDay] || '';
+  }, [activeShiftSupervisionZones, selectedDay]);
 
   const isHoliday = Boolean(dayConfigs.holidayDays?.[selectedDay]);
   const isMeetingDay = Boolean(
@@ -830,7 +859,8 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
           </div>
 
           {/* Derecha: Acciones (Descargar PDF e Imprimir) */}
-          <div className="flex items-center justify-end gap-2.5 shrink-0 print:hidden">
+          <div className="flex flex-wrap items-center justify-end gap-2.5 shrink-0 print:hidden">
+
             <button
               type="button"
               onClick={handleDownloadPdf}
@@ -858,7 +888,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
       {/* Barra de Filtros y Controles Interactivos */}
       <div className="bg-white rounded-2xl border border-slate-200 p-4 sm:p-5 shadow-xs space-y-4 print:hidden">
         {/* Fila Superior: Selector de Jornada + Grado, Docente y Barra de Búsqueda en la misma línea */}
-        <div className="flex flex-wrap xl:flex-nowrap gap-3 items-center justify-between">
+        <div className="flex flex-wrap gap-3 items-center justify-between">
           {/* Selector de Jornada */}
           <div className="flex flex-wrap items-center gap-2.5 shrink-0">
             <span className="text-xs font-extrabold text-slate-500 uppercase tracking-wider">Jornada:</span>
@@ -1100,6 +1130,17 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                 </button>
               )}
             </div>
+
+            {/* Botón Rápido Popup de Zonas de acompañamiento */}
+            <button
+              type="button"
+              onClick={() => setIsBreakModalOpen(true)}
+              className="h-8 inline-flex items-center gap-1.5 px-3.5 rounded-xl bg-villa-blue hover:bg-villa-blue-dark text-white border border-villa-blue-light/40 text-xs font-extrabold shadow-xs transition cursor-pointer whitespace-nowrap"
+              title="Ver cuadro de Zonas de acompañamiento"
+            >
+              <Shield className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+              <span>Zonas de acompañamiento</span>
+            </button>
           </div>
         </div>
 
@@ -1515,7 +1556,11 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                     if (slot.isBreak) {
                       if (selectedShift === 'transicion-1') {
                         return (
-                          <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
+                          <tr
+                            key={`break-${slot.period}`}
+                            onClick={() => setIsBreakModalOpen(true)}
+                            className="bg-amber-100/90 hover:bg-amber-200/80 border-y-2 border-amber-300 cursor-pointer transition-colors"
+                          >
                             {activeGrades.map((g) => {
                               const isT2 = g === 'Transición 2';
                               const slotTime = isT2 && slot.secondaryTime ? slot.secondaryTime : slot.time;
@@ -1538,16 +1583,44 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                         );
                       }
                       return (
-                        <tr key={`break-${slot.period}`} className="bg-amber-100/90 border-y-2 border-amber-300">
+                        <tr
+                          key={`break-${slot.period}`}
+                          onClick={() => setIsBreakModalOpen(true)}
+                          title="Haz clic para ver el cuadro de Zonas de Acompañamiento"
+                          className="bg-amber-100/90 hover:bg-amber-200/80 border-y-2 border-amber-300 cursor-pointer transition-colors"
+                        >
                           <td
                             colSpan={activeGrades.length + 1}
                             className={`py-3 px-4 font-extrabold text-amber-950 text-xs sm:text-[13px] tracking-wide ${
                               isMultiColumnMobile && mobileZoom === 1 ? 'text-left' : 'text-center'
                             }`}
                           >
-                            <span className={isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-block' : ''}>
-                              ☕ {slot.label} &bull; ({slot.time})
-                            </span>
+                            <div
+                              className={`flex flex-col items-center justify-center gap-1.5 ${
+                                isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-flex items-start' : ''
+                              }`}
+                            >
+                                <div className="flex flex-wrap items-center justify-center gap-2.5">
+                                <span>
+                                  ☕ {slot.label} &bull; ({slot.time})
+                                </span>
+                              </div>
+                              {selectedTeacherTodaySupervision.length > 0 && (
+                                <div className="flex flex-wrap items-center justify-center gap-2 mt-0.5">
+                                  {selectedTeacherTodaySupervision.map((match) => (
+                                    <span
+                                      key={match.zoneId}
+                                      className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-villa-blue text-white text-xs font-extrabold shadow-xs"
+                                    >
+                                      <MapPin className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                                      <span>
+                                        Tu turno hoy: {match.zoneName} ({match.assignedText})
+                                      </span>
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1555,16 +1628,30 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
                     if (slot.isTransition) {
                       return (
-                        <tr key="transition-mt" className="bg-slate-200/90 border-y-2 border-slate-400">
+                        <tr
+                          key="transition-mt"
+                          className="bg-slate-200/90 border-y-2 border-slate-400 transition-colors"
+                        >
                           <td
                             colSpan={activeGrades.length + 1}
                             className={`py-3 px-4 font-extrabold text-slate-800 text-xs sm:text-[13px] uppercase tracking-wider ${
                               isMultiColumnMobile && mobileZoom === 1 ? 'text-left' : 'text-center'
                             }`}
                           >
-                            <span className={isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-block' : ''}>
-                              🎓 {slot.label} &bull; ({slot.time})
-                            </span>
+                            <div
+                              className={`flex flex-col items-center justify-center gap-1 ${
+                                isMultiColumnMobile && mobileZoom === 1 ? 'sticky left-3 inline-flex items-start' : ''
+                              }`}
+                            >
+                              <span>
+                                🎓 {slot.label} &bull; ({slot.time})
+                              </span>
+                              {mediaTecnicaDaySupervision && (
+                                <span className="text-[11px] font-extrabold text-villa-blue-dark normal-case tracking-normal">
+                                  Acompañamiento descansos Media Técnica: {mediaTecnicaDaySupervision}
+                                </span>
+                              )}
+                            </div>
                           </td>
                         </tr>
                       );
@@ -1780,6 +1867,18 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
           Desarrollado y diseñado por Reakta Group
         </p>
       </div>
+
+      {/* Popup Modal Rápido de Zonas de Acompañamiento */}
+      <BreakSupervisionModal
+        isOpen={isBreakModalOpen}
+        onClose={() => setIsBreakModalOpen(false)}
+        editable={false}
+        initialShift={selectedShift}
+        activeDay={selectedDay}
+        initialTeacherFilter={selectedTeacher}
+        teachers={teachers}
+        scheduleData={breakSupervisionMap}
+      />
     </div>
   );
 };

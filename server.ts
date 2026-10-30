@@ -928,10 +928,47 @@ async function startServer() {
     }
   });
 
+  // Purgar cualquier Service Worker previo que haya cacheado bundles antiguos con CacheFirst
+  app.get(['/sw.js', '/dev-sw.js', '/registerSW.js'], (_req, res) => {
+    setNoCacheHeaders(res);
+    res.setHeader('Content-Type', 'application/javascript; charset=utf-8');
+    res.status(200).send(`
+      self.addEventListener('install', () => {
+        self.skipWaiting();
+      });
+      self.addEventListener('activate', (event) => {
+        event.waitUntil(
+          caches.keys()
+            .then((keys) => Promise.all(keys.map((k) => caches.delete(k))))
+            .then(() => self.registration.unregister())
+            .then(() => self.clients.matchAll({ type: 'window' }))
+            .then((clients) => {
+              clients.forEach((client) => {
+                if ('navigate' in client) {
+                  client.navigate(client.url);
+                }
+              });
+            })
+        );
+      });
+    `);
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
+    });
+    app.use((req, res, next) => {
+      if (
+        req.path === '/' ||
+        req.path.endsWith('.html') ||
+        req.path.startsWith('/src/') ||
+        req.path.startsWith('/@')
+      ) {
+        setNoCacheHeaders(res);
+      }
+      next();
     });
     app.use(vite.middlewares);
   } else {

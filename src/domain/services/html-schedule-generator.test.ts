@@ -270,3 +270,70 @@ test('generateStandaloneScheduleHtml renders grouped classrooms header and inter
   assert.ok(html.includes('if (isSupportPlanD && slot.period === 1)'), 'Must render intermediate regular rooms header before 1st period in Horario D');
 });
 
+test('Zonas de acompañamiento uses a single button with project palette, teacher colors, and proper orthographic names without sustained uppercase', async () => {
+  const { generateStandaloneScheduleHtml } = await import('./html-schedule-generator.service.ts');
+  const {
+    normalizeBreakSupervisionSchedule,
+    resolveSupervisionCellTeachers,
+    DEFAULT_BACHILLERATO_BREAK_ZONES,
+  } = await import('./break-supervision.service.ts');
+
+  // Verify default zones use proper orthographic case and official teacher shortNames
+  assert.equal(DEFAULT_BACHILLERATO_BREAK_ZONES[0].zoneName, '1. Primer piso');
+  assert.equal(DEFAULT_BACHILLERATO_BREAK_ZONES[0].days.lunes, 'Alejandra Pérez');
+  assert.equal(DEFAULT_BACHILLERATO_BREAK_ZONES[1].days.lunes, 'Betty Vásquez');
+  assert.equal(DEFAULT_BACHILLERATO_BREAK_ZONES[2].days.lunes, 'Liscy Palacios');
+  assert.equal(DEFAULT_BACHILLERATO_BREAK_ZONES[3].days.lunes, 'Mª Isabel Giraldo');
+  assert.equal(
+    DEFAULT_BACHILLERATO_BREAK_ZONES[DEFAULT_BACHILLERATO_BREAK_ZONES.length - 1].days.lunes,
+    'Omar Mosquera / Sara Casafus / Paola'
+  );
+
+  // Verify legacy ALL-CAPS input is normalized to proper orthographic case
+  const normalized = normalizeBreakSupervisionSchedule({
+    morning: [
+      {
+        id: 'zone-1',
+        zoneName: '1. PRIMER PISO',
+        days: {
+          lunes: 'MARIA ALEJANDRA',
+          martes: 'BETTY V.',
+          miercoles: 'JAIRO ANDRES',
+          jueves: 'DIANA S.',
+          viernes: 'OMAR / SARA / PAULA',
+        },
+      },
+    ],
+  });
+  assert.equal(normalized.morning[0].zoneName, '1. Primer piso');
+  assert.equal(normalized.morning[0].days.lunes, 'Alejandra Pérez');
+  assert.equal(normalized.morning[0].days.martes, 'Betty Vásquez');
+  assert.equal(normalized.morning[0].days.miercoles, 'Jairo Murcia');
+  assert.equal(normalized.morning[0].days.jueves, 'Diana Silva');
+  assert.equal(normalized.morning[0].days.viernes, 'Omar Mosquera / Sara Casafus / Paola');
+
+  // Verify teacher visual badges resolve schedule matrix colors and initials
+  const badges = resolveSupervisionCellTeachers('Alejandra Pérez / Betty Vásquez');
+  assert.equal(badges.length, 2);
+  assert.equal(badges[0].shortName, 'Alejandra Pérez');
+  assert.equal(badges[0].initials, 'AP');
+  assert.equal(badges[0].colorHex, '#134E4A');
+  assert.equal(badges[1].shortName, 'Betty Vásquez');
+  assert.equal(badges[1].initials, 'BV');
+  assert.equal(badges[1].colorHex, '#C084FC');
+
+  // Verify standalone HTML has only ONE Zonas de acompañamiento button and uses project palette
+  const html = generateStandaloneScheduleHtml({
+    timeBlocks: [],
+    teachers: [],
+    academicPeriod: '3er Periodo',
+    academicWeek: 9,
+  });
+
+  const openModalOccurrences = (html.match(/onclick="openBreakZonesModal\(\)"/g) || []).length;
+  assert.equal(openModalOccurrences, 1, 'Must render exactly ONE button that opens the Zonas de acompañamiento modal');
+  assert.ok(!html.includes('#0e6b50'), 'Must not use legacy #0e6b50 green color');
+  assert.ok(html.includes('zone-teacher-pill'), 'Must include teacher color pill styling in standalone HTML');
+});
+
+

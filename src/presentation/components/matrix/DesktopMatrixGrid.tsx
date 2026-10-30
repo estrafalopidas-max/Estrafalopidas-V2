@@ -386,6 +386,9 @@ export interface DesktopMatrixGridProps {
   onEmptyClick?: (grade: GradeEntity, period: number, block: TimeBlockEntity | null, slotId: string) => void;
   onToggleSelect?: (cellId: string, blockId?: string) => void;
   onQuickChangeClassroom?: (block: TimeBlockEntity, newClassroom: string) => void;
+  onOpenBreakSupervision?: () => void;
+  breakSupervisionCount?: number;
+  mediaTecnicaSupervisionText?: string;
 }
 
 export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
@@ -410,6 +413,9 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
   onEmptyClick,
   onToggleSelect,
   onQuickChangeClassroom,
+  onOpenBreakSupervision,
+  breakSupervisionCount = 0,
+  mediaTecnicaSupervisionText,
 }) => {
   const isMorning = shift === 'morning';
   const { periods, breakTime, secondaryBreakTime, breakLabel, preJornada } = useMemo(
@@ -1257,7 +1263,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
                   )}
                 </div>
                 <div
-                  className={`py-2.5 px-4 border-r border-b-2 flex items-center justify-center text-xs font-semibold tracking-wide transition-colors ${
+                  className={`py-2.5 px-4 border-r border-b-2 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold tracking-wide transition-colors ${
                     activeBreak
                       ? 'bg-yellow-100/90 border-amber-400 text-amber-950 shadow-inner font-bold'
                       : 'bg-amber-50/80 border-amber-200 text-amber-900'
@@ -1300,7 +1306,7 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
             {/* Break Description Spanning Across All Columns */}
             <div
               style={{ gridColumn: `span ${grades.length}` }}
-              className={`py-2.5 px-4 border-b-2 flex items-center justify-center text-xs font-semibold tracking-wide transition-colors ${
+              className={`py-2.5 px-4 border-b-2 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold tracking-wide transition-colors ${
                 isBreakActive
                   ? 'bg-yellow-100/90 border-amber-400 text-amber-950 shadow-inner font-bold'
                   : 'bg-amber-50/80 border-amber-200 text-amber-900'
@@ -1375,13 +1381,18 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
                   </div>
                   <div
                     style={{ gridColumn: `span ${grades.length}` }}
-                    className="py-2 px-4 bg-slate-100 border-b-2 border-slate-300 flex items-center justify-center text-xs font-semibold text-slate-700 tracking-wide select-none"
+                    className="py-2 px-4 bg-slate-100 border-b-2 border-slate-300 flex flex-wrap items-center justify-center gap-3 text-xs font-semibold text-slate-700 tracking-wide select-none"
                   >
                     <div className="flex items-center justify-center space-x-3">
                       <span className="w-12 h-px bg-slate-300"></span>
                       <span className="uppercase tracking-wider text-[11px] font-bold text-slate-600">Salida general</span>
                       <span className="w-12 h-px bg-slate-300"></span>
                     </div>
+                    {mediaTecnicaSupervisionText && (
+                      <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full bg-sky-50 text-villa-blue-dark border border-sky-200 text-[11px] font-bold">
+                        Acompañamiento descansos Media Técnica: {mediaTecnicaSupervisionText}
+                      </span>
+                    )}
                   </div>
                 </>
               )}

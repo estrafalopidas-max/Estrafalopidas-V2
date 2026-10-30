@@ -24,6 +24,7 @@ import {
   Globe,
   PanelLeftClose,
   PanelLeftOpen,
+  Shield,
   ShieldCheck,
   LogOut,
 } from 'lucide-react';
@@ -35,7 +36,7 @@ import { TrashDropzone } from '../components/matrix/TrashDropzone';
 import { UserEntity } from '../../domain/entities/user.entity';
 import { TimeBlockEntity } from '../../domain/entities/time-block.entity';
 import { FirestoreUserRepository } from '../../infrastructure/repositories/firestore-user.repository';
-import { getCurrentWeekText, getOrdinalSuffix } from '../../domain/services/ChronologyEngine';
+import { getCurrentWeekText, getOrdinalSuffix, getTodayDayOfWeek } from '../../domain/services/ChronologyEngine';
 import { ensureSeedDataLoaded, getCleanBaseScheduleBlocks, SEED_TEACHERS, SEED_GRADES } from '../../infrastructure/seed/initial-seed';
 import { savePublicScheduleSnapshot } from '../../domain/services/html-schedule-generator.service';
 import { publishScheduleToCloud } from '../../infrastructure/firebase/firebase-client';
@@ -44,6 +45,11 @@ import { generateAutomaticScheduleDistribution } from '../../domain/services/aut
 import { PublishScheduleModal } from '../components/export/PublishScheduleModal';
 import { PublicSchedulePreviewModal } from '../components/export/PublicSchedulePreviewModal';
 import { SidebarScheduleAgent } from '../components/agent/SidebarScheduleAgent';
+import { BreakSupervisionModal } from '../components/matrix/BreakSupervisionModal';
+import {
+  BreakSupervisionScheduleMap,
+  loadBreakSupervisionSchedule,
+} from '../../domain/services/break-supervision.service';
 
 export const MainLayout: React.FC = () => {
   const { user: authUser, editors, logout } = useAuth();
@@ -251,6 +257,39 @@ export const MainLayout: React.FC = () => {
   // Estado para el modal de validación de intención positiva (Hard-Confirm Modal)
   const [isResetModalOpen, setIsResetModalOpen] = useState(false);
   const [isLogoutConfirmOpen, setIsLogoutConfirmOpen] = useState(false);
+  const [isLayoutBreakModalOpen, setIsLayoutBreakModalOpen] = useState(false);
+  const [layoutBreakSupervision, setLayoutBreakSupervision] = useState<BreakSupervisionScheduleMap>(() =>
+    loadBreakSupervisionSchedule()
+  );
+
+  const handleOpenBreakSupervision = useCallback(() => {
+    if (location.pathname === '/' || location.pathname === '/coordinator/matrix') {
+      window.dispatchEvent(new Event('open_break_supervision_modal'));
+    } else {
+      setLayoutBreakSupervision(loadBreakSupervisionSchedule());
+      setIsLayoutBreakModalOpen(true);
+    }
+  }, [location.pathname]);
+
+  const handleSaveLayoutBreakSupervision = useCallback(
+    (updated: BreakSupervisionScheduleMap) => {
+      setLayoutBreakSupervision(updated);
+      window.dispatchEvent(new Event('break_supervision_updated'));
+      try {
+        const snapshot = savePublicScheduleSnapshot(
+          getCurrentTimeBlocks(),
+          teachers,
+          contextAcademicPeriod || '3er Periodo',
+          currentAcademicWeek || 9,
+          { breakSupervision: updated }
+        );
+        void publishScheduleToCloud(snapshot, undefined, 'vf', true).catch(() => {});
+      } catch {
+        // ignore
+      }
+    },
+    [getCurrentTimeBlocks, teachers, contextAcademicPeriod, currentAcademicWeek]
+  );
 
   // Ejecución protegida de Inicio de Año Escolar (3 opciones: 'blank' | 'auto' | 'template')
   const handleExecuteFactoryReset = useCallback(
@@ -526,13 +565,13 @@ export const MainLayout: React.FC = () => {
           </div>
 
           {/* Right: Filtro de Grados y Botón de Recargar */}
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 shrink-0">
             {/* 1. Filtro de Grados (Jornadas / Niveles) */}
             <div className="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 shadow-2xs h-10 shrink-0">
               <button
                 type="button"
                 onClick={() => setSelectedShift('morning')}
-                className={`h-full flex items-center space-x-1.5 px-3 rounded-lg text-xs transition-all ${
+                className={`h-full flex items-center space-x-1.5 px-2.5 rounded-lg text-xs transition-all ${
                   selectedShift === 'morning'
                     ? 'bg-slate-900 text-white font-semibold shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 font-medium'
@@ -550,7 +589,7 @@ export const MainLayout: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedShift('afternoon')}
-                className={`h-full flex items-center space-x-1.5 px-3 rounded-lg text-xs transition-all ${
+                className={`h-full flex items-center space-x-1.5 px-2.5 rounded-lg text-xs transition-all ${
                   selectedShift === 'afternoon'
                     ? 'bg-slate-900 text-white font-semibold shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 font-medium'
@@ -568,7 +607,7 @@ export const MainLayout: React.FC = () => {
               <button
                 type="button"
                 onClick={() => setSelectedShift('transicion-1')}
-                className={`h-full flex items-center space-x-1.5 px-3 rounded-lg text-xs transition-all ${
+                className={`h-full flex items-center space-x-1.5 px-2.5 rounded-lg text-xs transition-all ${
                   selectedShift === 'transicion-1'
                     ? 'bg-slate-900 text-white font-semibold shadow-xs'
                     : 'text-slate-600 hover:text-slate-900 hover:bg-white/70 font-medium'
@@ -592,7 +631,7 @@ export const MainLayout: React.FC = () => {
               type="button"
               onClick={triggerUndo}
               disabled={!isMatrixActive || !canUndo}
-              className="w-10 h-10 rounded-full border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 flex items-center justify-center transition shadow-2xs hover:shadow-xs active:scale-95 focus:outline-none focus:ring-2 focus:ring-slate-400/20 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:hover:bg-gray-100 disabled:text-gray-400 transition-all"
+              className="w-9 h-9 rounded-full border border-slate-300 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 flex items-center justify-center transition shadow-2xs hover:shadow-xs active:scale-95 focus:outline-none focus:ring-2 focus:ring-slate-400/20 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:hover:bg-gray-100 disabled:text-gray-400 transition-all"
               title={
                 !isMatrixActive
                   ? 'Desactivado fuera del lienzo de Parrilla académica'
@@ -610,7 +649,7 @@ export const MainLayout: React.FC = () => {
               type="button"
               onClick={triggerReload}
               disabled={!isMatrixActive}
-              className="w-10 h-10 rounded-full border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 flex items-center justify-center transition shadow-2xs hover:shadow-xs active:scale-95 focus:outline-none focus:ring-2 focus:ring-slate-400/20 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:hover:bg-gray-100 disabled:text-gray-400 transition-all"
+              className="w-9 h-9 rounded-full border border-slate-300 bg-white hover:bg-slate-100 text-slate-600 hover:text-slate-900 flex items-center justify-center transition shadow-2xs hover:shadow-xs active:scale-95 focus:outline-none focus:ring-2 focus:ring-slate-400/20 shrink-0 disabled:opacity-40 disabled:cursor-not-allowed disabled:bg-gray-100 disabled:hover:bg-gray-100 disabled:text-gray-400 transition-all"
               title={
                 !isMatrixActive
                   ? 'Desactivado fuera del lienzo de Parrilla académica'
@@ -625,11 +664,11 @@ export const MainLayout: React.FC = () => {
             <button
               type="button"
               onClick={handlePublishSchedule}
-              className="h-10 px-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-2xs hover:shadow-xs active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 shrink-0 cursor-pointer"
+              className="h-10 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs flex items-center space-x-1.5 transition shadow-2xs hover:shadow-xs active:scale-95 focus:outline-none focus:ring-2 focus:ring-emerald-400/30 shrink-0 cursor-pointer whitespace-nowrap"
               title="Publicar parrilla en Consulta Pública y descargar archivo HTML autónomo"
             >
-              <Share2 className="w-4 h-4 text-white" />
-              <span className="hidden sm:inline">Publicar parrilla</span>
+              <Share2 className="w-3.5 h-3.5 text-white shrink-0" />
+              <span>Publicar parrilla</span>
             </button>
           </div>
         </header>
@@ -736,6 +775,29 @@ export const MainLayout: React.FC = () => {
                 </span>
               )}
             </NavLink>
+
+            {/* 4. Zonas de acompañamiento */}
+            <button
+              type="button"
+              onClick={handleOpenBreakSupervision}
+              className={`w-full flex items-center rounded-xl transition-all cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center p-2.5' : 'px-2.5 py-2 space-x-2'
+              } ${
+                isLayoutBreakModalOpen
+                  ? 'bg-villa-blue-light text-white font-bold shadow-xs'
+                  : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
+              }`}
+              title="Zonas de acompañamiento"
+            >
+              <Shield
+                className={`shrink-0 w-4 h-4 ${
+                  isLayoutBreakModalOpen ? 'text-white' : 'text-villa-blue-light'
+                }`}
+              />
+              {!isSidebarCollapsed && (
+                <span className="text-xs tracking-tight truncate">Zonas de acompañamiento</span>
+              )}
+            </button>
 
             {/* 6. Previsualizar (Modal de Previsualización sobre la parrilla) */}
             <button
@@ -965,6 +1027,18 @@ export const MainLayout: React.FC = () => {
       <AccessManagementModal
         isOpen={isAccessModalOpen}
         onClose={() => setIsAccessModalOpen(false)}
+      />
+
+      {/* Modal de Zonas de acompañamiento cuando se abre desde otra sección fuera de la matriz */}
+      <BreakSupervisionModal
+        isOpen={isLayoutBreakModalOpen}
+        onClose={() => setIsLayoutBreakModalOpen(false)}
+        editable={true}
+        initialShift={selectedShift}
+        activeDay={getTodayDayOfWeek(new Date(), activeWeekSlot)}
+        teachers={teachers}
+        scheduleData={layoutBreakSupervision}
+        onSave={handleSaveLayoutBreakSupervision}
       />
 
       {/* Modal de Confirmación de Cierre de Sesión */}

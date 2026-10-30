@@ -202,15 +202,15 @@ export default defineConfig({
     react(),
     logoUploadPlugin(),
     VitePWA({
+      selfDestroying: true,
       registerType: 'autoUpdate',
       workbox: {
         maximumFileSizeToCacheInBytes: 6 * 1024 * 1024,
         skipWaiting: true,
         clientsClaim: true,
         cleanupOutdatedCaches: true,
-        globPatterns: ['**/*.{js,css,html,ico,png,svg,webp,woff,woff2,json}'],
-        navigateFallback: '/index.html',
-        navigateFallbackDenylist: [/^\/api\//],
+        globPatterns: ['**/*.{ico,png,svg,webp,woff,woff2}'],
+        navigateFallback: null,
         runtimeCaching: [
           {
             urlPattern: ({ url }) => url.pathname.startsWith('/api/'),
@@ -222,15 +222,11 @@ export default defineConfig({
               request.destination === 'style' ||
               request.destination === 'worker' ||
               /\.(?:js|css|mjs)$/i.test(url.pathname),
-            handler: 'CacheFirst',
+            handler: 'NetworkFirst',
             options: {
-              cacheName: 'ievf-static-resources-cache-v1',
+              cacheName: 'ievf-static-resources-cache-v2',
               cacheableResponse: {
                 statuses: [0, 200],
-              },
-              expiration: {
-                maxEntries: 80,
-                maxAgeSeconds: 60 * 60 * 24 * 30,
               },
             },
           },
@@ -241,7 +237,7 @@ export default defineConfig({
               /\.(?:png|jpg|jpeg|svg|gif|webp|ico|woff|woff2|ttf)$/i.test(url.pathname),
             handler: 'CacheFirst',
             options: {
-              cacheName: 'ievf-media-assets-cache-v1',
+              cacheName: 'ievf-media-assets-cache-v2',
               cacheableResponse: {
                 statuses: [0, 200],
               },
@@ -254,7 +250,7 @@ export default defineConfig({
         ],
       },
       devOptions: {
-        enabled: true
+        enabled: false
       },
       manifest: {
         id: '/',

@@ -47,6 +47,13 @@ import { ALL_OFFICIAL_MATERIAS, getSubjectShortName, getSubjectOfficialName } fr
 import { useTeacherLoad, calculateTeacherAssignedHours } from '../../hooks/useTeacherLoad';
 import { TeacherPoolSidebar } from '../../components/matrix/TeacherPoolSidebar';
 import { getTodayDayOfWeek, getSupportPlanModalityLabel } from '../../../domain/services/ChronologyEngine';
+import {
+  BreakSupervisionScheduleMap,
+  loadBreakSupervisionSchedule,
+} from '../../../domain/services/break-supervision.service';
+import { BreakSupervisionModal } from '../../components/matrix/BreakSupervisionModal';
+import { savePublicScheduleSnapshot } from '../../../domain/services/html-schedule-generator.service';
+import { publishScheduleToCloud } from '../../../infrastructure/firebase/firebase-client';
 
 import {
   Calendar,
@@ -59,6 +66,7 @@ import {
   ChevronRight,
   Clock,
   Check,
+  Shield,
 } from 'lucide-react';
 
 const BACHILLERATO_GRADE_LEVELS = ['all', '6°', '7°', '8°', '9°', '10°', '11°'];
@@ -262,6 +270,53 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
   const [activeConflict, setActiveConflict] = useState<CollisionValidationResult | null>(null);
+  const [isBreakModalOpen, setIsBreakModalOpen] = useState(false);
+  const [breakSupervisionMap, setBreakSupervisionMap] = useState<BreakSupervisionScheduleMap>(() =>
+    loadBreakSupervisionSchedule()
+  );
+
+  const activeShiftBreakZones = useMemo(
+    () => breakSupervisionMap[selectedShift] || [],
+    [breakSupervisionMap, selectedShift]
+  );
+
+  const mediaTecnicaSupervisionText = useMemo(() => {
+    const mt = activeShiftBreakZones.find((z) => z.isMediaTecnica);
+    return mt?.days?.[selectedDay] || '';
+  }, [activeShiftBreakZones, selectedDay]);
+
+  useEffect(() => {
+    const handleOpenBreakModal = () => setIsBreakModalOpen(true);
+    const handleBreakSupervisionUpdated = () => {
+      setBreakSupervisionMap(loadBreakSupervisionSchedule());
+    };
+    window.addEventListener('open_break_supervision_modal', handleOpenBreakModal);
+    window.addEventListener('break_supervision_updated', handleBreakSupervisionUpdated);
+    return () => {
+      window.removeEventListener('open_break_supervision_modal', handleOpenBreakModal);
+      window.removeEventListener('break_supervision_updated', handleBreakSupervisionUpdated);
+    };
+  }, []);
+
+  const handleSaveBreakSupervision = useCallback(
+    (updated: BreakSupervisionScheduleMap) => {
+      setBreakSupervisionMap(updated);
+      window.dispatchEvent(new Event('break_supervision_updated'));
+      try {
+        const snapshot = savePublicScheduleSnapshot(
+          timeBlocks,
+          teachers,
+          currentPeriod || '3er Periodo',
+          currentAcademicWeek || 9,
+          { breakSupervision: updated }
+        );
+        void publishScheduleToCloud(snapshot, undefined, 'vf', true).catch(() => {});
+      } catch {
+        // ignore
+      }
+    },
+    [timeBlocks, teachers, currentPeriod, currentAcademicWeek]
+  );
 
   // Novelty Discard Dropzone & Transition Modal States
   const [noveltyPendingBlock, setNoveltyPendingBlock] = useState<TimeBlockEntity | null>(null);
@@ -1774,22 +1829,22 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     <DragDropContext onDragEnd={handleDragEnd}>
       <div className="p-3 sm:p-4 space-y-2 text-villa-dark antialiased">
         {/* Day Selector Ribbon & Unified Header Toolbar: Celda 1 (Filtro Grados + Buscador) + Celdas Días */}
-        <div className="bg-white border border-slate-200 py-1.5 px-3 rounded-2xl shadow-xs flex items-center justify-between gap-3">
+        <div className="bg-white border border-slate-200 py-2 px-3 rounded-2xl shadow-xs flex flex-wrap items-center justify-between gap-2">
           {/* Celda 1: Fija / Esquina Izquierda: Selector de Grados + Input de Búsqueda */}
-          <div className="flex items-center gap-2 shrink-0">
+          <div className="flex items-center gap-1.5 shrink-0">
             {/* Grade Selector Dropdown (Unificado con diseño de Modalidades) */}
-            <div ref={gradeMenuRef} className="relative w-44">
+            <div ref={gradeMenuRef} className="relative w-36">
               <button
                 type="button"
                 onClick={() => setIsGradeMenuOpen((prev) => !prev)}
-                className={`h-8 w-full flex items-center justify-between gap-2 px-3 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs ${
+                className={`h-8 w-full flex items-center justify-between gap-1.5 px-2.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs ${
                   selectedGrade !== 'all'
                     ? 'bg-sky-50 border-sky-300 text-sky-950 ring-1 ring-sky-300/60'
                     : 'bg-white hover:bg-slate-50 border-slate-200 text-slate-800'
                 }`}
                 title="Filtrar por Grado"
               >
-                <span className="flex items-center gap-2 truncate">
+                <span className="flex items-center gap-1.5 truncate">
                   <Layers className="w-3.5 h-3.5 text-villa-blue-light shrink-0" />
                   <span className="font-bold truncate">
                     {selectedGrade === 'all'
@@ -1799,7 +1854,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                       : `Grado ${selectedGrade}`}
                   </span>
                 </span>
-                <span className="flex items-center gap-1.5 shrink-0">
+                <span className="flex items-center gap-1 shrink-0">
                   {selectedGrade !== 'all' && (
                     <span
                       className="w-2 h-2 rounded-full bg-villa-blue-light"
@@ -1865,7 +1920,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
                 placeholder="Buscar..."
-                className="w-32 focus:w-48 h-8 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-villa-blue-light focus:ring-1 focus:ring-villa-blue-light rounded-xl pl-8 pr-7 text-xs text-villa-dark placeholder-slate-400 transition-all font-medium shadow-2xs outline-none"
+                className="w-24 focus:w-36 h-8 bg-slate-50 hover:bg-slate-100/80 focus:bg-white border border-slate-200 focus:border-villa-blue-light focus:ring-1 focus:ring-villa-blue-light rounded-xl pl-7 pr-6 text-xs text-villa-dark placeholder-slate-400 transition-all font-medium shadow-2xs outline-none"
               />
               {searchTerm.length > 0 && (
                 <button
@@ -2149,12 +2204,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
             <div
               ref={modeMenuRef}
-              className="relative w-44"
+              className="relative w-36"
             >
               <button
                 type="button"
                 onClick={() => setIsModeMenuOpen((prev) => !prev)}
-                className={`h-8 w-full flex items-center justify-between gap-2 px-3 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs ${
+                className={`h-8 w-full flex items-center justify-between gap-1.5 px-2.5 rounded-xl border transition-all text-xs font-semibold cursor-pointer select-none shadow-2xs ${
                   activeDayHeader?.isHoliday
                     ? 'bg-red-50 border-red-300 text-red-900 ring-1 ring-red-300/60'
                     : isMeetingDay || isSupportPlanDay
@@ -2163,11 +2218,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                 }`}
                 title="Configurar modalidades del día"
               >
-                <span className="flex items-center gap-2 truncate">
+                <span className="flex items-center gap-1.5 truncate">
                   <Clock className="w-3.5 h-3.5 text-villa-blue-light shrink-0" />
                   <span className="font-bold truncate">Modalidades</span>
                 </span>
-                <span className="flex items-center gap-1.5 shrink-0">
+                <span className="flex items-center gap-1 shrink-0">
                   {activeDayHeader?.isHoliday && (
                     <span
                       className="w-2 h-2 rounded-full bg-red-600"
@@ -2309,6 +2364,9 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             onEmptyClick={handleEmptyClick}
             onToggleSelect={handleToggleSelectCell}
             onQuickChangeClassroom={handleQuickChangeClassroom}
+            onOpenBreakSupervision={() => setIsBreakModalOpen(true)}
+            breakSupervisionCount={activeShiftBreakZones.length}
+            mediaTecnicaSupervisionText={mediaTecnicaSupervisionText}
           />
         </div>
 
@@ -2395,6 +2453,18 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         disableInstitutionalEvents={isSupportPlanDay}
         onAssign={handleQuickAssignConfirm}
         onAssignInstitutionalEvent={handleAssignInstitutionalEvent}
+      />
+
+      {/* Modal de Zonas de Acompañamiento en el Descanso (Editable y Rotable) */}
+      <BreakSupervisionModal
+        isOpen={isBreakModalOpen}
+        onClose={() => setIsBreakModalOpen(false)}
+        editable={true}
+        initialShift={selectedShift}
+        activeDay={selectedDay}
+        teachers={teachers}
+        scheduleData={breakSupervisionMap}
+        onSave={handleSaveBreakSupervision}
       />
 
       {/* Toast Alert: Feedback Visual de Rechazo (Specialty Incompatibility Alert) */}
