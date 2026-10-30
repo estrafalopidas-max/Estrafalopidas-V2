@@ -4,11 +4,10 @@ import { TimeBlockEntity } from '../../../domain/entities/time-block.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
 import {
   generateStandaloneScheduleHtml,
-  savePublicScheduleSnapshot,
+  resolveEffectiveDayConfigs,
   DEFAULT_LOGO_BASE64,
 } from '../../../domain/services/html-schedule-generator.service';
 import {
-  publishScheduleToCloud,
   buildInternalShortUrl,
 } from '../../../infrastructure/firebase/firebase-client';
 import { PublicScheduleViewerPage } from '../../pages/public/public-schedule-viewer.page';
@@ -45,19 +44,6 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [isOpen, onClose]);
 
-  useEffect(() => {
-    if (!isOpen) return;
-    const snapshot = savePublicScheduleSnapshot(
-      timeBlocks,
-      teachers,
-      academicPeriod,
-      academicWeek
-    );
-    publishScheduleToCloud(snapshot, officialUrl, 'vf', false).catch(() => {});
-    // Solo sincronizar al abrir el modal para evitar bucles de renderizado
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isOpen]);
-
   if (!isOpen) return null;
 
   const handleCopyOfficialLink = async () => {
@@ -70,19 +56,14 @@ export const PublicSchedulePreviewModal: React.FC<PublicSchedulePreviewModalProp
 
   const handleDownloadHtml = () => {
     const logo = localStorage.getItem('ievf_logo_data_url') || DEFAULT_LOGO_BASE64;
-    const snapshot = savePublicScheduleSnapshot(
-      timeBlocks,
-      teachers,
-      academicPeriod,
-      academicWeek
-    );
+    const currentDayConfigs = resolveEffectiveDayConfigs();
     const generatedHtml = generateStandaloneScheduleHtml({
       timeBlocks,
       teachers,
       academicPeriod,
       academicWeek,
       logoDataUrl: logo,
-      dayConfigs: snapshot.dayConfigs,
+      dayConfigs: currentDayConfigs,
     });
     if (!generatedHtml) return;
     const blob = new Blob([generatedHtml], { type: 'text/html;charset=utf-8' });

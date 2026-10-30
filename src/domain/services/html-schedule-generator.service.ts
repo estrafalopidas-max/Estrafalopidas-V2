@@ -80,10 +80,10 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     // ignore
   }
 
-  const meetingDays = { ...storedMeeting, ...(custom?.meetingDays || {}) };
-  const eventDays = { ...storedEvent, ...(custom?.eventDays || {}) };
-  const customHolidays = custom?.customHolidays ?? storedCustomHolidays;
-  const scheduleTypes = { ...storedScheduleTypes, ...(custom?.scheduleTypes || {}) };
+  const meetingDays = custom?.meetingDays !== undefined ? custom.meetingDays : storedMeeting;
+  const eventDays = custom?.eventDays !== undefined ? custom.eventDays : storedEvent;
+  const customHolidays = custom?.customHolidays !== undefined ? custom.customHolidays : storedCustomHolidays;
+  const scheduleTypes = custom?.scheduleTypes !== undefined ? custom.scheduleTypes : storedScheduleTypes;
   const activeWeekSlot: WeekSlotMode =
     custom?.activeWeekSlot || storedWeekSlot || getDefaultWeekSlotMode(new Date());
   const effectiveAnchorDate =
@@ -2229,8 +2229,8 @@ export function savePublicScheduleSnapshot(
       const identity = getTeacherExcelIdentity(t.id, t.displayName);
       return {
         id: t.id,
-        displayName: getFullTeacherName(t.id, t.displayName || ''),
-        color: identity.color_hex || t.color_hex || t.color || '#007DC5',
+        displayName: t.userEdited && t.displayName ? t.displayName : getFullTeacherName(t.id, t.displayName || ''),
+        color: t.color_hex || t.color || identity.color_hex || '#007DC5',
       };
     }),
     dayConfigs: effectiveDayConfigs,
@@ -2249,13 +2249,6 @@ export function savePublicScheduleSnapshot(
     localStorage.setItem('ievf_cloud_schedule_fetched_at', nowStr);
     if (typeof window !== 'undefined') {
       window.dispatchEvent(new Event('public_schedule_snapshot_updated'));
-      if (typeof fetch === 'function') {
-        fetch('/api/published-schedule', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ snapshot }),
-        }).catch(() => {});
-      }
     }
   } catch (err) {
     console.warn('[savePublicScheduleSnapshot] Error saving snapshot to localStorage:', err);
@@ -2279,8 +2272,8 @@ export function getPublicScheduleSnapshot(): PublicScheduleSnapshot | null {
             const identity = getTeacherExcelIdentity(t.id, t.displayName);
             return {
               ...t,
-              displayName: getFullTeacherName(t.id, t.displayName || ''),
-              color: identity.color_hex || t.color || '#007DC5',
+              displayName: t.displayName || getFullTeacherName(t.id, ''),
+              color: t.color || identity.color_hex || '#007DC5',
             };
           })
         );

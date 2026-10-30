@@ -6,35 +6,6 @@ import { resolveCanonicalGradeName, resolveCanonicalShift } from '../../domain/s
 const PRIMARY_LS_KEY = 'villaFloraMatrix';
 const BACKUP_LS_KEY = 'ievf_time_blocks_v1';
 
-function syncPublicSnapshotBlocks(allBlocks: TimeBlockEntity[]): void {
-  try {
-    if (allBlocks.length > 0) {
-      localStorage.removeItem('ievf_blank_matrix_mode');
-    }
-    const nowStr = String(Date.now());
-    localStorage.setItem('ievf_local_schedule_updated_at', nowStr);
-    localStorage.setItem('ievf_cloud_schedule_fetched_at', nowStr);
-    const snapRaw = localStorage.getItem('ievf_public_schedule_snapshot');
-    if (snapRaw) {
-      const snap = JSON.parse(snapRaw);
-      if (snap && typeof snap === 'object') {
-        snap.timeBlocks = allBlocks;
-        if (snap.metadata) {
-          snap.metadata.totalBlocks = allBlocks.length;
-          snap.metadata.lastUpdated = new Date().toLocaleString('es-CO', {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-          });
-        }
-        localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(snap));
-        window.dispatchEvent(new Event('public_schedule_snapshot_updated'));
-      }
-    }
-  } catch {
-    // ignore snapshot sync error
-  }
-}
-
 export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
   async getAll(): Promise<TimeBlockEntity[]> {
     const raw = localStorage.getItem(PRIMARY_LS_KEY) || localStorage.getItem(BACKUP_LS_KEY);
@@ -120,7 +91,6 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
 
     localStorage.setItem(PRIMARY_LS_KEY, JSON.stringify(all));
     localStorage.setItem(BACKUP_LS_KEY, JSON.stringify(all));
-    syncPublicSnapshotBlocks(all);
     window.dispatchEvent(new Event('schedule_matrix_updated'));
   }
 
@@ -197,7 +167,6 @@ export class FirestoreTimeBlockRepository implements ITimeBlockRepository {
 
     localStorage.setItem(PRIMARY_LS_KEY, JSON.stringify(all));
     localStorage.setItem(BACKUP_LS_KEY, JSON.stringify(all));
-    syncPublicSnapshotBlocks(all);
     window.dispatchEvent(new Event('schedule_matrix_updated'));
   }
 

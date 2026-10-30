@@ -1254,42 +1254,6 @@ export function ensureSeedDataLoaded() {
     } catch {}
   }
 
-  // Sincronizar colores bloqueados y nombres oficiales en el snapshot público local si existe
-  try {
-    const snapRaw = localStorage.getItem('ievf_public_schedule_snapshot');
-    if (snapRaw) {
-      const snap = JSON.parse(snapRaw);
-      if (snap && Array.isArray(snap.teachers)) {
-        let snapChanged = false;
-        snap.teachers = snap.teachers
-          .filter(
-            (t: any) =>
-              t?.id !== 't-adriana-mier' &&
-              !String(t?.displayName || '').toLowerCase().includes('adriana mier') &&
-              !String(t?.displayName || '').toLowerCase().includes('adriana luc')
-          )
-          .map((t: any) => {
-            const officialEntry = resolveOfficialTeacherEntry(t?.id, t?.displayName);
-            const canonicalId = officialEntry?.id || t?.id;
-            const lockedHex =
-              (canonicalId && lockedColors[canonicalId]) ||
-              officialEntry?.originalExcelHex ||
-              t?.color ||
-              '#007DC5';
-            const fullName = getFullTeacherName(canonicalId, t?.displayName);
-            if (t?.color !== lockedHex || t?.displayName !== fullName) {
-              snapChanged = true;
-              return { ...t, id: canonicalId || t.id, displayName: fullName, color: lockedHex };
-            }
-            return t;
-          });
-        if (snapChanged) {
-          localStorage.setItem('ievf_public_schedule_snapshot', JSON.stringify(snap));
-        }
-      }
-    }
-  } catch {}
-
   if (!isCurrentVersion || !localStorage.getItem('ievf_classrooms_v1')) {
     localStorage.setItem('ievf_classrooms_v1', JSON.stringify(SEED_CLASSROOMS));
   }

@@ -70,8 +70,7 @@ export function clearAllWeekContainers(): void {
 
 function persistWeekContainerToServer(
   mondayIso: string,
-  container: WeekScheduleContainer,
-  syncPublished = false
+  container: WeekScheduleContainer
 ): void {
   if (!mondayIso || typeof window === 'undefined' || typeof fetch !== 'function') return;
   try {
@@ -80,15 +79,8 @@ function persistWeekContainerToServer(
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
         container,
-        syncPublished,
       }),
-    })
-      .then((res) => {
-        if (res.ok && syncPublished) {
-          window.dispatchEvent(new Event('public_schedule_snapshot_updated'));
-        }
-      })
-      .catch(() => {});
+    }).catch(() => {});
   } catch {
     // ignore network errors
   }
@@ -130,9 +122,7 @@ function saveCurrentStateToWeekContainer(mondayIso: string, syncServer = true): 
     };
     localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`, JSON.stringify(container));
     if (syncServer) {
-      const currentWeekIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
-      const isCurrentWeek = mondayIso === currentWeekIso;
-      persistWeekContainerToServer(mondayIso, container, isCurrentWeek);
+      persistWeekContainerToServer(mondayIso, container);
     }
   } catch {
     // ignore storage quota errors
@@ -481,7 +471,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
               updatedAt: Number(pubSnap.updatedAtMs || Date.now()),
             };
             serverWeeks[pubMondayIso] = restoredContainer;
-            persistWeekContainerToServer(pubMondayIso, restoredContainer, false);
+            persistWeekContainerToServer(pubMondayIso, restoredContainer);
           }
         }
 
@@ -852,7 +842,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
             `${WEEK_CONTAINER_PREFIX}${nextMondayIso}`,
             JSON.stringify(updatedNextContainer)
           );
-          persistWeekContainerToServer(nextMondayIso, updatedNextContainer, false);
+          persistWeekContainerToServer(nextMondayIso, updatedNextContainer);
           if (activeWeekSlot === 'next') {
             isSwitchingWeekRef.current = true;
             try {
@@ -884,7 +874,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       };
       try {
         localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${nextMondayIso}`, JSON.stringify(cloned));
-        persistWeekContainerToServer(nextMondayIso, cloned, false);
+        persistWeekContainerToServer(nextMondayIso, cloned);
         if (activeWeekSlot === 'next') {
           isSwitchingWeekRef.current = true;
           try {

@@ -21,6 +21,7 @@ import { UserEntity } from '../../../domain/entities/user.entity';
 import {
   generateStandaloneScheduleHtml,
   savePublicScheduleSnapshot,
+  resolveEffectiveDayConfigs,
   DEFAULT_LOGO_BASE64,
 } from '../../../domain/services/html-schedule-generator.service';
 import {
@@ -69,51 +70,39 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
   useEffect(() => {
     if (!isOpen) return;
 
+    setIsPublished(false);
     const logo = localStorage.getItem('ievf_logo_data_url') || DEFAULT_LOGO_BASE64;
-    const snapshot = savePublicScheduleSnapshot(timeBlocks, teachers, academicPeriod, academicWeek);
+    const currentDayConfigs = resolveEffectiveDayConfigs();
     const html = generateStandaloneScheduleHtml({
       timeBlocks,
       teachers,
       academicPeriod,
       academicWeek,
       logoDataUrl: logo,
-      dayConfigs: snapshot.dayConfigs,
+      dayConfigs: currentDayConfigs,
     });
     setGeneratedHtml(html);
 
     let active = true;
     setIsShortening(true);
-    setIsPublishingCloud(true);
     shortenUrlExternal(cleanShortRouteUrl)
-      .then(async (shortRes) => {
+      .then((shortRes) => {
         const short = typeof shortRes === 'string' ? shortRes : shortRes?.shortUrl || cleanShortRouteUrl;
         if (active) {
           setShortenedUrl(short);
         }
-        await publishScheduleToCloud(snapshot, short, 'vf', true);
-        if (active) {
-          const timestampStr = new Date().toLocaleString('es-CO', {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-          });
-          setLastPublishedAt(timestampStr);
-          setIsPublished(true);
-        }
       })
-      .catch((err) => {
-        console.warn('[PublishScheduleModal] Auto-sync error:', err);
-      })
+      .catch(() => {})
       .finally(() => {
         if (active) {
           setIsShortening(false);
-          setIsPublishingCloud(false);
         }
       });
 
     return () => {
       active = false;
     };
-    // Solo ejecutar una vez al abrir el modal para evitar re-sincronizaciones en cascada
+    // Solo preparar previsualización al abrir el modal sin publicar automáticamente
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isOpen]);
 
@@ -144,14 +133,15 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
   };
 
   const handleDownloadHtmlFile = () => {
-    void handlePublishNow();
     const logo = localStorage.getItem('ievf_logo_data_url') || DEFAULT_LOGO_BASE64;
+    const currentDayConfigs = resolveEffectiveDayConfigs();
     const html = generateStandaloneScheduleHtml({
       timeBlocks,
       teachers,
       academicPeriod,
       academicWeek,
       logoDataUrl: logo,
+      dayConfigs: currentDayConfigs,
     });
     const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
     const url = URL.createObjectURL(blob);
@@ -164,8 +154,7 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
     URL.revokeObjectURL(url);
   };
 
-  const handleOpenPublicViewer = async () => {
-    await handlePublishNow();
+  const handleOpenPublicViewer = () => {
     onClose();
     window.dispatchEvent(new Event('open_public_schedule_preview'));
   };
@@ -190,19 +179,11 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
   };
 
   const handleCopyShortUrl = async () => {
-    // Copy the active short URL immediately during the user gesture to avoid activation expiration
     const urlToCopy = shortenedUrl || cleanShortRouteUrl;
     const success = await copyToClipboard(urlToCopy);
     if (success) {
       setCopiedShortUrl(true);
       setTimeout(() => setCopiedShortUrl(false), 2500);
-    }
-
-    // Trigger cloud publication and refresh in background without delaying clipboard action
-    try {
-      void handlePublishNow();
-    } catch (err) {
-      console.warn('[PublishScheduleModal] Background cloud publish sync error:', err);
     }
   };
 

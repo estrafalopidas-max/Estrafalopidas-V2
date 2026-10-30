@@ -664,37 +664,6 @@ async function startServer() {
 
     await persistWeekSchedule(mondayIso, container);
 
-    // Si la semana editada corresponde a la semana publicada vigente (o si se solicita sincronizar), actualizar automáticamente el horario público en PostgreSQL
-    const publishedMondayIso = latestPublishedSchedule?.dayConfigs?.anchorMondayIso;
-    const shouldAutoSyncPublished =
-      Boolean(body.syncPublished) ||
-      (latestPublishedSchedule && (!publishedMondayIso || publishedMondayIso === mondayIso));
-
-    if (shouldAutoSyncPublished && latestPublishedSchedule) {
-      const updatedPublished: Record<string, any> = {
-        ...latestPublishedSchedule,
-        updatedAtMs: nowMs,
-        timeBlocks: container.timeBlocks,
-        dayConfigs: {
-          ...(latestPublishedSchedule.dayConfigs || {}),
-          anchorMondayIso: mondayIso,
-          meetingDays: container.meetingDays,
-          scheduleTypes: container.scheduleTypes,
-          updatedAtMs: nowMs,
-        },
-        metadata: {
-          ...(latestPublishedSchedule.metadata || {}),
-          totalBlocks: container.timeBlocks.length,
-          updatedAtMs: nowMs,
-          lastUpdated: new Date().toLocaleString('es-CO', {
-            dateStyle: 'medium',
-            timeStyle: 'short',
-          }),
-        },
-      };
-      await persistPublishedSchedule(updatedPublished);
-    }
-
     res.status(200).json({ ok: true, mondayIso, updatedAt: nowMs });
   });
 

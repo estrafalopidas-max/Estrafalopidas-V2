@@ -18,9 +18,7 @@ import {
 import { ReviewAbsenceRequestUseCase } from '../../../application/use-cases/absence/review-absence-request.usecase';
 import { CollisionValidationResult } from '../../../domain/services/constraint-solver.service';
 import { getTeacherVisualIdentity } from '../../../domain/services/teacher-visual-identity.service';
-import { savePublicScheduleSnapshot } from '../../../domain/services/html-schedule-generator.service';
 import { resolveEffectiveClassroomForBlock } from '../../../domain/services/grade-normalization.service';
-import { publishScheduleToCloud } from '../../../infrastructure/firebase/firebase-client';
 
 import { DragDropContext, DropResult } from '@hello-pangea/dnd';
 import { parseSlotDroppableId, createSlotDroppableId } from '../../../domain/services/dnd-slot.helper';
@@ -319,8 +317,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     });
   }, [timeBlocks]);
 
-  // Sincronización Continua (Write-Through Cache + Cloud Sync con Debounce y Deduplicación por Hash):
-  // Guarda instantáneamente en localStorage y mantiene sincronizada la Consulta Pública oficial
+  // Persistencia local del borrador de la semana activa (sin alterar la Consulta Pública publicada)
   useEffect(() => {
     if (loadedMondayIsoRef.current !== activeMondayIso) {
       return;
@@ -333,32 +330,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       localStorage.setItem('villaFloraMatrix', JSON.stringify(timeBlocks));
       localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(timeBlocks));
       window.dispatchEvent(new Event('active_week_blocks_persisted'));
-
-      if (teachers.length > 0) {
-        const snapshot = savePublicScheduleSnapshot(
-          timeBlocks,
-          teachers,
-          currentPeriod || '3° Periodo',
-          currentAcademicWeek || 8,
-          {
-            meetingDays,
-            eventDays,
-            customHolidays,
-            scheduleTypes,
-            activeWeekSlot,
-            anchorMondayIso: activeMondayIso,
-          }
-        );
-
-        const timer = setTimeout(() => {
-          publishScheduleToCloud(snapshot).catch((err) => {
-            console.warn('[CoordinatorMatrix] Error sincronizando cambios en la nube:', err);
-          });
-        }, 1000);
-        return () => clearTimeout(timer);
-      }
     }
-  }, [timeBlocks, teachers, currentPeriod, currentAcademicWeek, meetingDays, eventDays, customHolidays, scheduleTypes, activeWeekSlot, activeMondayIso]);
+  }, [timeBlocks, activeMondayIso]);
 
   // Initialize and load catalogs and time blocks
   useEffect(() => {
@@ -627,18 +600,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         localStorage.removeItem('ievf_blank_matrix_mode');
         localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
-        savePublicScheduleSnapshot(
-          nextBlocks,
-          teachers,
-          currentPeriod || '3° Periodo',
-          currentAcademicWeek || 8,
-          {
-            meetingDays,
-            eventDays,
-            customHolidays,
-            scheduleTypes,
-          }
-        );
         await timeBlockRepo.update(block.id, {
           classroomId: newClassroom,
           classroomName: newClassroom,
@@ -653,13 +614,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     [
       pushSnapshot,
       timeBlocks,
-      teachers,
-      currentPeriod,
-      currentAcademicWeek,
-      meetingDays,
-      eventDays,
-      customHolidays,
-      scheduleTypes,
       timeBlockRepo,
       showToast,
     ]
@@ -1342,18 +1296,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         localStorage.removeItem('ievf_blank_matrix_mode');
         localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
-        savePublicScheduleSnapshot(
-          nextBlocks,
-          teachers,
-          currentPeriod || '3° Periodo',
-          currentAcademicWeek || 8,
-          {
-            meetingDays,
-            eventDays,
-            customHolidays,
-            scheduleTypes,
-          }
-        );
         await timeBlockRepo.updateBatch(
           updatedBlocks.map((b) => ({ id: b.id, data: b }))
         );
@@ -1369,13 +1311,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       selectedShift,
       pushSnapshot,
       handleClearBatchSelection,
-      teachers,
-      currentPeriod,
-      currentAcademicWeek,
-      meetingDays,
-      eventDays,
-      customHolidays,
-      scheduleTypes,
       timeBlockRepo,
     ]
   );
@@ -1403,18 +1338,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         localStorage.removeItem('ievf_blank_matrix_mode');
         localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
-        savePublicScheduleSnapshot(
-          nextBlocks,
-          teachers,
-          currentPeriod || '3° Periodo',
-          currentAcademicWeek || 8,
-          {
-            meetingDays,
-            eventDays,
-            customHolidays,
-            scheduleTypes,
-          }
-        );
         await timeBlockRepo.updateBatch(
           updatedBlocks.map((b) => ({ id: b.id, data: b }))
         );
@@ -1430,13 +1353,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       selectedShift,
       pushSnapshot,
       handleClearBatchSelection,
-      teachers,
-      currentPeriod,
-      currentAcademicWeek,
-      meetingDays,
-      eventDays,
-      customHolidays,
-      scheduleTypes,
       timeBlockRepo,
     ]
   );
@@ -1506,12 +1422,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(updatedList));
         localStorage.setItem('villaFloraMatrix', JSON.stringify(updatedList));
         window.dispatchEvent(new Event('schedule_matrix_updated'));
-        savePublicScheduleSnapshot(
-          updatedList,
-          teachers,
-          currentPeriod,
-          currentAcademicWeek
-        );
         await timeBlockRepo.updateBatch(
           targetBlocks.map((b) => ({
             id: b.id,
@@ -1569,12 +1479,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(updatedList));
         localStorage.setItem('villaFloraMatrix', JSON.stringify(updatedList));
         window.dispatchEvent(new Event('schedule_matrix_updated'));
-        savePublicScheduleSnapshot(
-          updatedList,
-          teachers,
-          currentPeriod,
-          currentAcademicWeek
-        );
         await timeBlockRepo.updateBatch(
           targetBlocks.map((b) => ({
             id: b.id,
@@ -1690,18 +1594,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       localStorage.removeItem('ievf_blank_matrix_mode');
       localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
       localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
-      savePublicScheduleSnapshot(
-        nextBlocks,
-        teachers,
-        currentPeriod || '3° Periodo',
-        currentAcademicWeek || 8,
-        {
-          meetingDays,
-          eventDays,
-          customHolidays,
-          scheduleTypes,
-        }
-      );
       await timeBlockRepo.update(blockId, newBlock);
       window.dispatchEvent(new Event('schedule_matrix_updated'));
     } catch (err) {

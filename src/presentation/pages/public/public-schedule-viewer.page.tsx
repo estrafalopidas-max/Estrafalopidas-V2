@@ -311,6 +311,10 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
       };
     }
 
+    if (!isEmbeddedModal) {
+      return null;
+    }
+
     ensureSeedDataLoaded();
     try {
       const isBlankMode = localStorage.getItem('ievf_blank_matrix_mode') === '1';
@@ -429,7 +433,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     const rawList = Array.isArray(liveTeachers) && liveTeachers.length > 0 ? liveTeachers : snapshot?.teachers || [];
     const mapped = rawList.map((t: any) => {
       const customColor = t.color_hex || t.color;
-      if (t.id && (t.userEdited || customColor)) {
+      if (isEmbeddedModal && t.id && (t.userEdited || customColor)) {
         updateTeacherDictionaryProfile(t.id, {
           fullName: t.displayName,
           shortName: t.shortName,
@@ -440,18 +444,32 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
       const identity = getTeacherExcelIdentity(t.id, t.displayName);
       return {
         ...t,
-        displayName: t.userEdited
-          ? t.displayName || 'Docente'
-          : getFullTeacherName(t.id, t.displayName || 'Docente'),
+        displayName:
+          !isEmbeddedModal && t.displayName
+            ? t.displayName
+            : t.userEdited
+            ? t.displayName || 'Docente'
+            : getFullTeacherName(t.id, t.displayName || 'Docente'),
         color: customColor || identity.color_hex || '#007DC5',
       };
     });
     return sortTeachersWithLowPriorityLast(mapped);
-  }, [liveTeachers, snapshot?.teachers]);
-  const dayConfigs = useMemo(
-    () => resolveEffectiveDayConfigs(snapshot?.dayConfigs),
-    [snapshot?.dayConfigs]
-  );
+  }, [isEmbeddedModal, liveTeachers, snapshot?.teachers]);
+
+  const dayConfigs = useMemo(() => {
+    if (isEmbeddedModal) {
+      return resolveEffectiveDayConfigs();
+    }
+    return resolveEffectiveDayConfigs(
+      snapshot?.dayConfigs || {
+        meetingDays: {},
+        eventDays: {},
+        holidayDays: {},
+        customHolidays: [],
+        scheduleTypes: {},
+      }
+    );
+  }, [isEmbeddedModal, snapshot?.dayConfigs]);
 
   const weekHeaders = useMemo(
     () => generateWeekHeaders(dayConfigs.anchorMondayIso || new Date(), dayConfigs.customHolidays),
