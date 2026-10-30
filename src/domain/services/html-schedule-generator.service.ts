@@ -195,7 +195,11 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     teachers,
     academicPeriod = '3er Periodo',
     academicWeek = 9,
-    lastUpdated = new Date().toLocaleString('es-CO', { dateStyle: 'long', timeStyle: 'short' }),
+    lastUpdated = new Date().toLocaleString('es-CO', {
+      dateStyle: 'long',
+      timeStyle: 'short',
+      timeZone: 'America/Bogota',
+    }),
     dayConfigs,
   } = options;
 
@@ -2192,6 +2196,7 @@ export function savePublicScheduleSnapshot(
   const timestamp = new Date().toLocaleString('es-CO', {
     dateStyle: 'medium',
     timeStyle: 'short',
+    timeZone: 'America/Bogota',
   });
 
   const nowMs = Date.now();

@@ -4,6 +4,8 @@ services:
     container_name: horarios-villa-flora-db
     restart: unless-stopped
     environment:
+      - TZ=America/Bogota
+      - PGTZ=America/Bogota
       - POSTGRES_USER=villaflora
       - POSTGRES_PASSWORD=villaflora2026
       - POSTGRES_DB=horarios_villa_flora
@@ -25,6 +27,7 @@ services:
     ports:
       - "3000:3000"
     environment:
+      - TZ=America/Bogota
       - NODE_ENV=production
       - PORT=3000
       - DATA_DIR=/app/data

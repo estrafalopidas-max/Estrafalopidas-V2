@@ -17,12 +17,12 @@ export interface AcademicRecess {
 
 export type WeekSlotMode = 'current' | 'next';
 
-export const FRIDAY_CUTOFF_HOUR = 12;
-export const FRIDAY_CUTOFF_MINUTE = 10;
+export const FRIDAY_CUTOFF_HOUR = 18;
+export const FRIDAY_CUTOFF_MINUTE = 0;
 
 /**
- * Evalúa si la fecha/hora actual ya superó el corte de los viernes a las 12:10 PM
- * (viernes >= 12:10, sábado o domingo), momento en el que se activa por defecto la próxima semana.
+ * Evalúa si la fecha/hora actual ya superó el corte de los viernes a las 18:00 (6:00 PM)
+ * (viernes >= 18:00, sábado o domingo), momento en el que se activa por defecto la próxima semana.
  */
 export function isPastFridayCutoff(date: Date = new Date()): boolean {
   const d = date instanceof Date && !isNaN(date.getTime()) ? date : new Date();
@@ -44,7 +44,7 @@ export function isPastFridayCutoff(date: Date = new Date()): boolean {
 
 /**
  * Devuelve el contenedor semanal activo por defecto ('current' o 'next')
- * aplicando la regla de corte automático del viernes a las 12:10 PM.
+ * aplicando la regla de corte automático del viernes a las 18:00 (6:00 PM).
  */
 export function getDefaultWeekSlotMode(date: Date = new Date()): WeekSlotMode {
   return isPastFridayCutoff(date) ? 'next' : 'current';

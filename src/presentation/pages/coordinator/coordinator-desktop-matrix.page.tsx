@@ -169,7 +169,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [grades, setGrades] = useState<GradeEntity[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
-  // Filter States: Inicialización Automática en el Día Actual de la Semana (o Lunes si es Próxima Semana / post-viernes 12:10 PM)
+  // Filter States: Inicialización Automática en el Día Actual de la Semana (o Lunes si es Próxima Semana / post-viernes 18:00)
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek(new Date(), activeWeekSlot));
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
 
@@ -1905,7 +1905,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
           {/* Selector Rápido de 2 Semanas + Selector Desplegable de Día y Menú de Modalidades */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Selector Rápido de 2 Semanas (Semana Actual vs. Próxima Semana con Corte Viernes 12:10 PM) */}
+            {/* Selector Rápido de 2 Semanas (Semana Actual vs. Próxima Semana con Corte Viernes 18:00) */}
             <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shadow-2xs h-8 shrink-0">
               <button
                 type="button"
@@ -1929,7 +1929,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                 }`}
                 title={
                   isAutoNextWeekCutoff
-                    ? 'Próxima Semana (Activada automáticamente por corte de viernes 12:10 PM)'
+                    ? 'Próxima Semana (Activada automáticamente por corte de viernes 18:00)'
                     : 'Adelantar o editar el horario de la Próxima Semana'
                 }
               >
@@ -1942,7 +1942,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                         : 'bg-amber-100 text-amber-800 border border-amber-300'
                     }`}
                   >
-                    12:10+
+                    18:00+
                   </span>
                 )}
               </button>

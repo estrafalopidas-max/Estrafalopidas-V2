@@ -436,7 +436,7 @@ export const MainLayout: React.FC = () => {
               className="inline-flex items-center bg-white/90 p-0.5 rounded-lg border border-slate-200 shadow-2xs shrink-0"
               title={
                 isAutoNextWeekCutoff
-                  ? 'Corte viernes 12:10 PM activo: mostrando Próxima Semana por defecto'
+                  ? 'Corte viernes 18:00 activo: mostrando Próxima Semana por defecto'
                   : 'Alternar entre Semana Actual y Próxima Semana'
               }
             >

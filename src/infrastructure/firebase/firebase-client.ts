@@ -251,12 +251,22 @@ export function subscribeToPublishedSchedule(
       ? undefined
       : resolveEffectiveDayConfigs(baseDayConfigs);
 
+    const formattedColombiaTime =
+      resolvedTs > 0
+        ? new Date(resolvedTs).toLocaleString('es-CO', {
+            dateStyle: 'medium',
+            timeStyle: 'short',
+            timeZone: 'America/Bogota',
+          })
+        : parsed.metadata?.lastUpdated;
+
     return {
       ...parsed,
       updatedAtMs: resolvedTs,
       timeBlocks: normalizedBlocks,
       metadata: {
         ...parsed.metadata,
+        lastUpdated: formattedColombiaTime || parsed.metadata?.lastUpdated || 'En tiempo real',
         totalBlocks: normalizedBlocks.length,
         blankMatrixMode: isBlank,
         updatedAtMs: resolvedTs,

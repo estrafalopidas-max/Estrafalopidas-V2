@@ -7,6 +7,17 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
+process.env.TZ = process.env.TZ || 'America/Bogota';
+
+function formatColombiaTimestamp(ms: number = Date.now()): string {
+  const safeMs = Number.isFinite(ms) && ms > 0 ? ms : Date.now();
+  return new Date(safeMs).toLocaleString('es-CO', {
+    dateStyle: 'medium',
+    timeStyle: 'short',
+    timeZone: 'America/Bogota',
+  });
+}
+
 interface AgentChatRequest {
   message: string;
   mode?: 'fast' | 'general';
@@ -550,6 +561,20 @@ async function startServer() {
         // Fallback a memoria/disco
       }
     }
+    if (latestPublishedSchedule && typeof latestPublishedSchedule === 'object') {
+      const ts = Number(
+        latestPublishedSchedule.updatedAtMs || latestPublishedSchedule.metadata?.updatedAtMs || 0
+      );
+      if (ts > 0) {
+        latestPublishedSchedule = {
+          ...latestPublishedSchedule,
+          metadata: {
+            ...(latestPublishedSchedule.metadata || {}),
+            lastUpdated: formatColombiaTimestamp(ts),
+          },
+        };
+      }
+    }
     res.status(200).json({ snapshot: latestPublishedSchedule });
   });
 
@@ -579,10 +604,7 @@ async function startServer() {
         blankMatrixMode: isBlank,
         updatedAtMs: nowMs,
         totalBlocks: isBlank ? 0 : incoming.timeBlocks.length,
-        lastUpdated: new Date().toLocaleString('es-CO', {
-          dateStyle: 'medium',
-          timeStyle: 'short',
-        }),
+        lastUpdated: formatColombiaTimestamp(nowMs),
       },
     };
 
@@ -730,32 +752,6 @@ async function startServer() {
       } catch (err) {
         console.error('[PostgreSQL] Error guardando teachers:', err);
       }
-    }
-
-    if (latestPublishedSchedule) {
-      const publicTeachers = incoming
-        .filter((u: any) => u && (!u.role || u.role === 'teacher') && u.isActive !== false)
-        .map((u: any) => ({
-          id: u.id,
-          displayName: u.displayName || u.shortName || 'Docente',
-          shortName: u.shortName || u.displayName || 'Docente',
-          color: u.color_hex || u.color || '#007DC5',
-          color_hex: u.color_hex || u.color || '#007DC5',
-          groupDirection: u.groupDirection,
-          userEdited: Boolean(u.userEdited),
-        }));
-
-      const updatedPublished: Record<string, any> = {
-        ...latestPublishedSchedule,
-        updatedAtMs: nowMs,
-        teachers: publicTeachers,
-        metadata: {
-          ...(latestPublishedSchedule.metadata || {}),
-          totalTeachers: publicTeachers.length,
-          updatedAtMs: nowMs,
-        },
-      };
-      await persistPublishedSchedule(updatedPublished);
     }
 
     res.status(200).json({ ok: true, count: teachersList.length });

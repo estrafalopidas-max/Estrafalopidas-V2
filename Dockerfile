@@ -13,6 +13,7 @@ RUN npm run build
 # Crear carpeta de datos persistentes para TrueNAS
 RUN mkdir -p /app/data
 
+ENV TZ=America/Bogota
 ENV NODE_ENV=production
 ENV PORT=3000
 ENV DATA_DIR=/app/data

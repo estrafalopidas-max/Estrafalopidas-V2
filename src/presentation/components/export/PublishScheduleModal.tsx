@@ -126,6 +126,7 @@ export const PublishScheduleModal: React.FC<PublishScheduleModalProps> = ({
     const timestampStr = new Date().toLocaleString('es-CO', {
       dateStyle: 'medium',
       timeStyle: 'short',
+      timeZone: 'America/Bogota',
     });
     setLastPublishedAt(timestampStr);
     setIsPublished(true);
