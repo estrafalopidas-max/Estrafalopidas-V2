@@ -334,6 +334,9 @@ test('Zonas de acompañamiento uses a single button with project palette, teache
   assert.equal(openModalOccurrences, 1, 'Must render exactly ONE button that opens the Zonas de acompañamiento modal');
   assert.ok(!html.includes('#0e6b50'), 'Must not use legacy #0e6b50 green color');
   assert.ok(html.includes('zone-teacher-pill'), 'Must include teacher color pill styling in standalone HTML');
+  assert.ok(html.includes('custom-dropdown-wrap'), 'Must include unified custom dropdown wrapper in standalone HTML');
+  assert.ok(html.includes('breakModalTeacherDropdownWrap'), 'Must use custom dropdown design for the Zonas de acompañamiento modal teacher filter');
 });
+
 
 

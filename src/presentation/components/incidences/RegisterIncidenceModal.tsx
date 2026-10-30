@@ -14,6 +14,8 @@ import {
 } from 'lucide-react';
 import { IncidenceType, IncidenceEntity } from '../../../domain/entities/incidence.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
+import { getTeacherExcelIdentity } from '../../../domain/services/teacher-normalization.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 
 interface RegisterIncidenceModalProps {
   isOpen: boolean;
@@ -273,18 +275,23 @@ export const RegisterIncidenceModal: React.FC<RegisterIncidenceModalProps> = ({
 
             {targetType === 'Docente' && (
               <div className="mt-2">
-                <select
+                <CustomSelectDropdown
                   value={selectedTeacherId}
-                  onChange={(e) => setSelectedTeacherId(e.target.value)}
-                  className="w-full text-xs rounded-xl border border-slate-300 p-2.5 bg-white text-slate-800 focus:ring-2 focus:ring-slate-800 focus:border-slate-800 outline-none transition"
-                >
-                  {teachers.map((t) => (
-                    <option key={t.id} value={t.id}>
-                      {t.displayName} {t.documentId ? `(CC: ${t.documentId})` : ''} -{' '}
-                      {t.subjects?.[0] || 'Docente'}
-                    </option>
-                  ))}
-                </select>
+                  onChange={(val) => setSelectedTeacherId(val)}
+                  size="md"
+                  icon={<User className="w-3.5 h-3.5 text-[#0c4da2]" />}
+                  title="Seleccionar docente destinatario"
+                  options={teachers.map((t) => {
+                    const identity = getTeacherExcelIdentity(t.id, t.displayName);
+                    return {
+                      value: t.id,
+                      label: `${t.displayName} ${t.documentId ? `(CC: ${t.documentId})` : ''} - ${
+                        t.subjects?.[0] || 'Docente'
+                      }`,
+                      colorHex: t.color_hex || t.color || identity.color_hex || '#007DC5',
+                    };
+                  })}
+                />
               </div>
             )}
           </div>

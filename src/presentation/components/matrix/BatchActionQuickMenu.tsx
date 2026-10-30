@@ -12,6 +12,7 @@ import {
   isLowPriorityListingTeacher,
 } from '../../../domain/services/teacher-visual-identity.service';
 import { resolveTeacherDefaultSubject } from '../../../domain/services/batch-cell-assignment.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 import {
   CheckSquare,
   UserPlus,
@@ -193,20 +194,23 @@ export const BatchActionQuickMenu: React.FC<BatchActionQuickMenuProps> = ({
               >
                 Materia:
               </label>
-              <select
+              <CustomSelectDropdown
                 id="batch-teacher-subject-select"
-                aria-label="Materia para asignar junto al docente"
+                ariaLabel="Materia para asignar junto al docente"
                 value={customSubjectForTeacher}
-                onChange={(e) => setCustomSubjectForTeacher(e.target.value)}
-                className="flex-1 h-7 px-2 text-xs font-semibold bg-white border border-slate-200 rounded-lg text-slate-800 focus:outline-hidden focus:ring-1 focus:ring-sky-500"
-              >
-                <option value="">Automática (especialidad del docente)</option>
-                {ALL_OFFICIAL_MATERIAS.map((m) => (
-                  <option key={m.id} value={m.officialName}>
-                    {m.shortName}
-                  </option>
-                ))}
-              </select>
+                onChange={(val) => setCustomSubjectForTeacher(val)}
+                defaultAllValue=""
+                icon={<BookOpen className="w-3.5 h-3.5 text-[#0c4da2]" />}
+                className="flex-1"
+                options={[
+                  { value: '', label: 'Automática (especialidad del docente)' },
+                  ...ALL_OFFICIAL_MATERIAS.map((m) => ({
+                    value: m.officialName,
+                    label: m.shortName,
+                    subLabel: m.officialName !== m.shortName ? m.officialName : undefined,
+                  })),
+                ]}
+              />
             </div>
 
             {!customSubjectForTeacher && (

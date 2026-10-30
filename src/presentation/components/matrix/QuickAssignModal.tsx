@@ -19,6 +19,7 @@ import {
   getSuggestedClassroomsForSlot,
   SPECIAL_SCHOOL_SPACES,
 } from '../../../domain/services/grade-normalization.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 import {
   X,
   Search,
@@ -611,27 +612,30 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
                         {item.room} Libre
                       </button>
                     ))}
-                    <select
+                    <CustomSelectDropdown
                       value={selectedClassroom}
-                      onChange={(e) => setSelectedClassroom(e.target.value)}
-                      className="px-2.5 py-1 rounded-lg border border-amber-300 bg-white text-slate-800 font-semibold text-xs focus:outline-none focus:border-blue-500"
-                    >
-                      <option value="">Aula (ROTACIÓN) - Definir luego</option>
-                      <optgroup label="Aulas del colegio">
-                        {classroomSuggestions.allFixed.map((item) => (
-                          <option key={item.room} value={item.room}>
-                            {item.room} ({item.isSuggestedFree ? `Libre: ${item.reason}` : `Base ${item.ownerGrade}`})
-                          </option>
-                        ))}
-                      </optgroup>
-                      <optgroup label="Espacios especiales">
-                        {SPECIAL_SCHOOL_SPACES.map((sp) => (
-                          <option key={sp} value={sp}>
-                            {sp}
-                          </option>
-                        ))}
-                      </optgroup>
-                    </select>
+                      onChange={(val) => setSelectedClassroom(val)}
+                      defaultAllValue=""
+                      icon={<MapPin className="w-3.5 h-3.5 text-[#0c4da2]" />}
+                      title="Seleccionar aula en rotación"
+                      className="w-60"
+                      options={[
+                        { value: '', label: 'Aula (ROTACIÓN) - Definir luego' },
+                        ...classroomSuggestions.allFixed.map((item) => ({
+                          value: item.room,
+                          label: item.room,
+                          subLabel: item.isSuggestedFree
+                            ? `Libre: ${item.reason}`
+                            : `Base ${item.ownerGrade}`,
+                          group: 'Aulas del colegio',
+                        })),
+                        ...SPECIAL_SCHOOL_SPACES.map((sp) => ({
+                          value: sp,
+                          label: sp,
+                          group: 'Espacios especiales',
+                        })),
+                      ]}
+                    />
                   </div>
                 </div>
               )}
@@ -773,21 +777,21 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
                     </span>
                     <span className="text-[10px] text-slate-400 font-normal">Catálogo Único MEN</span>
                   </label>
-                  <select
+                  <CustomSelectDropdown
                     value={selectedSubject}
-                    onChange={(e) => setSelectedSubject(e.target.value)}
-                    className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-slate-800"
-                  >
-                    {asignaturasOficiales.map((area) => (
-                      <optgroup key={area.area} label={area.area}>
-                        {area.materias.map((m) => (
-                          <option key={m.id} value={m.officialName}>
-                            {m.officialName} ({m.shortName})
-                          </option>
-                        ))}
-                      </optgroup>
-                    ))}
-                  </select>
+                    onChange={(val) => setSelectedSubject(val)}
+                    size="md"
+                    icon={<BookOpen className="w-3.5 h-3.5 text-[#0c4da2]" />}
+                    title="Seleccionar materia oficial a asignar"
+                    menuClassName="bottom-full mb-1.5 mt-0"
+                    options={asignaturasOficiales.flatMap((area) =>
+                      area.materias.map((m) => ({
+                        value: m.officialName,
+                        label: `${m.officialName} (${m.shortName})`,
+                        group: area.area,
+                      }))
+                    )}
+                  />
                 </div>
 
                 <div className="flex items-center gap-2 w-full sm:w-auto justify-end pt-2 sm:pt-4">

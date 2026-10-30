@@ -4,6 +4,8 @@ import { AbsenceRequestEntity } from '../../../domain/entities/absence-request.e
 import { UserEntity } from '../../../domain/entities/user.entity';
 import { TimeBlockEntity } from '../../../domain/entities/time-block.entity';
 import { setGlobalActiveDraggedBlock } from '../matrix/MatrixCell';
+import { getTeacherExcelIdentity } from '../../../domain/services/teacher-normalization.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 import {
   X,
   CheckCircle,
@@ -273,22 +275,34 @@ export const AbsenceReviewPanel: React.FC<AbsenceReviewPanelProps> = ({
                         <UserCheck className="w-3.5 h-3.5 mr-1 text-emerald-600" />
                         Asignar Docente de Reemplazo (Opcional):
                       </label>
-                      <select
+                      <CustomSelectDropdown
                         value={repValue}
-                        onChange={(e) =>
-                          setSelectedReplacementMap((prev) => ({ ...prev, [req.id]: e.target.value }))
+                        onChange={(val) =>
+                          setSelectedReplacementMap((prev) => ({ ...prev, [req.id]: val }))
                         }
-                        className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs text-slate-900 focus:outline-none focus:border-brand-500 transition shadow-2xs"
-                      >
-                        <option value="">Sin reemplazo asignado (marcar ausente)</option>
-                        {teachers
-                          .filter((t) => t.id !== req.teacher_id)
-                          .map((t) => (
-                            <option key={t.id} value={t.id}>
-                              {t.displayName} ({t.subjects?.join(', ') || t.assignedSubject || t.specialty?.join(', ') || 'Docente'})
-                            </option>
-                          ))}
-                      </select>
+                        defaultAllValue=""
+                        size="md"
+                        icon={<UserCheck className="w-3.5 h-3.5 text-[#0c4da2]" />}
+                        title="Seleccionar docente de reemplazo"
+                        options={[
+                          { value: '', label: 'Sin reemplazo asignado (marcar ausente)' },
+                          ...teachers
+                            .filter((t) => t.id !== req.teacher_id)
+                            .map((t) => {
+                              const identity = getTeacherExcelIdentity(t.id, t.displayName);
+                              const subLabel =
+                                t.subjects?.join(', ') ||
+                                t.assignedSubject ||
+                                t.specialty?.join(', ') ||
+                                'Docente';
+                              return {
+                                value: t.id,
+                                label: `${t.displayName} (${subLabel})`,
+                                colorHex: t.color_hex || t.color || identity.color_hex || '#007DC5',
+                              };
+                            }),
+                        ]}
+                      />
                     </div>
 
                     {/* Review Notes */}

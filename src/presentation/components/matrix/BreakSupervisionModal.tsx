@@ -29,6 +29,7 @@ import {
 } from '../../../domain/services/break-supervision.service';
 import { getShortTeacherName, getFullTeacherName } from '../../../domain/services/teacher-visual-identity.service';
 import { getTeacherExcelIdentity } from '../../../domain/services/teacher-normalization.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 
 const DAYS: { key: DayOfWeek; label: string }[] = [
   { key: 'lunes', label: 'Lunes' },
@@ -455,27 +456,23 @@ export const BreakSupervisionModal: React.FC<BreakSupervisionModalProps> = ({
           </div>
 
           <div className="flex flex-wrap items-center gap-2.5">
-            {/* Selector de Docente para resaltar sus turnos */}
-            <div className="relative flex items-center">
-              <User className="w-3.5 h-3.5 text-villa-blue absolute left-3 pointer-events-none" />
-              <select
-                value={teacherFilter}
-                onChange={(e) => setTeacherFilter(e.target.value)}
-                className={`h-8 pl-8 pr-7 rounded-xl border text-xs font-bold outline-none transition cursor-pointer ${
-                  teacherFilter !== 'ALL'
-                    ? 'bg-sky-50 border-sky-400 text-sky-950 ring-1 ring-sky-400/50'
-                    : 'bg-white border-slate-200 text-slate-800 hover:bg-slate-50'
-                }`}
-                title="Filtrar o resaltar turnos de un docente"
-              >
-                <option value="ALL">Todos los docentes (Ver cuadro completo)</option>
-                {teacherOptions.map((t) => (
-                  <option key={t.id} value={t.fullName}>
-                    {t.fullName}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {/* Selector de Docente para resaltar sus turnos (Diseño unificado del proyecto) */}
+            <CustomSelectDropdown
+              value={teacherFilter}
+              onChange={(val) => setTeacherFilter(val)}
+              defaultAllValue="ALL"
+              icon={<User className="w-3.5 h-3.5 text-[#0c4da2]" />}
+              title="Filtrar o resaltar turnos de un docente"
+              className="w-64 sm:w-72"
+              options={[
+                { value: 'ALL', label: 'Todos los docentes (Ver cuadro completo)' },
+                ...teacherOptions.map((t) => ({
+                  value: t.fullName,
+                  label: t.fullName,
+                  colorHex: t.colorHex,
+                })),
+              ]}
+            />
 
             {/* Buscador rápido por zona o nombre */}
             <div className="relative flex items-center">
@@ -743,15 +740,15 @@ export const BreakSupervisionModal: React.FC<BreakSupervisionModalProps> = ({
                                   </div>
 
                                   {isPickerOpen && (
-                                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1 w-60 max-h-56 overflow-y-auto bg-white rounded-xl shadow-2xl border border-slate-300 z-50 p-1.5 text-left">
-                                      <div className="text-[10px] font-extrabold text-slate-500 px-2 py-1 border-b border-slate-100 flex items-center justify-between">
+                                    <div className="absolute left-1/2 -translate-x-1/2 top-full mt-1.5 w-64 max-h-64 overflow-y-auto bg-white rounded-2xl shadow-xl border border-slate-200 z-50 py-1.5 text-left animate-in fade-in zoom-in-95 duration-150 select-none">
+                                      <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 px-3.5 py-1.5 border-b border-slate-100 flex items-center justify-between">
                                         <span>Asignar docente:</span>
                                         <button
                                           type="button"
                                           onClick={() => setActiveCellPicker(null)}
-                                          className="text-slate-400 hover:text-slate-700"
+                                          className="text-slate-400 hover:text-slate-700 cursor-pointer"
                                         >
-                                          <X className="w-3 h-3" />
+                                          <X className="w-3.5 h-3.5" />
                                         </button>
                                       </div>
                                       {teacherOptions.map((t) => (

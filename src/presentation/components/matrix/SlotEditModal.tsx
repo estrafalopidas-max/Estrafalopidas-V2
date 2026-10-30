@@ -13,6 +13,8 @@ import {
   getSuggestedClassroomsForSlot,
   SPECIAL_SCHOOL_SPACES,
 } from '../../../domain/services/grade-normalization.service';
+import { getTeacherExcelIdentity } from '../../../domain/services/teacher-normalization.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 
 export interface SlotEditModalProps {
   isOpen: boolean;
@@ -176,18 +178,23 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
               <BookOpen className="w-3.5 h-3.5 text-blue-600" />
               <span>Asignatura</span>
             </label>
-            <select
+            <CustomSelectDropdown
               value={subject}
-              onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-            >
-              <option value="">Seleccionar materia...</option>
-              {ALL_OFFICIAL_MATERIAS.map((sub) => (
-                <option key={sub.id} value={sub.shortName}>
-                  {sub.shortName}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => setSubject(val)}
+              defaultAllValue=""
+              size="md"
+              placeholder="Seleccionar materia..."
+              icon={<BookOpen className="w-3.5 h-3.5 text-[#0c4da2]" />}
+              title="Seleccionar asignatura"
+              options={[
+                { value: '', label: 'Seleccionar materia...' },
+                ...ALL_OFFICIAL_MATERIAS.map((sub) => ({
+                  value: sub.shortName,
+                  label: sub.shortName,
+                  subLabel: sub.officialName !== sub.shortName ? sub.officialName : undefined,
+                })),
+              ]}
+            />
           </div>
 
           <div>
@@ -195,18 +202,26 @@ export const SlotEditModal: React.FC<SlotEditModalProps> = ({
               <User className="w-3.5 h-3.5 text-blue-600" />
               <span>Docente Asignado</span>
             </label>
-            <select
+            <CustomSelectDropdown
               value={teacherId}
-              onChange={(e) => handleTeacherChange(e.target.value)}
-              className="w-full px-3 py-2 border border-slate-300 rounded-xl"
-            >
-              <option value="">Seleccionar docente...</option>
-              {sortedTeachers.map((t) => (
-                <option key={t.id} value={t.id}>
-                  {t.displayName}
-                </option>
-              ))}
-            </select>
+              onChange={(val) => handleTeacherChange(val)}
+              defaultAllValue=""
+              size="md"
+              placeholder="Seleccionar docente..."
+              icon={<User className="w-3.5 h-3.5 text-[#0c4da2]" />}
+              title="Seleccionar docente asignado"
+              options={[
+                { value: '', label: 'Seleccionar docente...' },
+                ...sortedTeachers.map((t) => {
+                  const identity = getTeacherExcelIdentity(t.id, t.displayName);
+                  return {
+                    value: t.id,
+                    label: t.displayName,
+                    colorHex: t.color_hex || t.color || identity.color_hex || '#007DC5',
+                  };
+                }),
+              ]}
+            />
           </div>
 
           <div className="space-y-2">

@@ -658,6 +658,95 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       background-color: #ffffff;
       box-shadow: 0 0 0 2px rgba(12, 77, 162, 0.15);
     }
+    .custom-dropdown-wrap {
+      position: relative;
+      display: inline-block;
+      user-select: none;
+    }
+    .custom-dropdown-btn {
+      height: 32px;
+      width: 100%;
+      display: inline-flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 0 12px;
+      border-radius: 12px;
+      border: 1px solid #e2e8f0;
+      background-color: #ffffff;
+      color: #1e293b;
+      font-size: 0.76rem;
+      font-weight: 700;
+      cursor: pointer;
+      box-shadow: 0 1px 2px rgba(0, 0, 0, 0.04);
+      transition: all 0.15s ease;
+    }
+    .custom-dropdown-btn:hover {
+      background-color: #f8fafc;
+    }
+    .custom-dropdown-btn.filtered {
+      background-color: #f0f9ff;
+      border-color: #7dd3fc;
+      color: #082f49;
+      box-shadow: 0 0 0 1px rgba(125, 211, 252, 0.6);
+    }
+    .custom-dropdown-menu {
+      display: none;
+      position: absolute;
+      left: 0;
+      top: calc(100% + 6px);
+      width: 100%;
+      min-width: 230px;
+      max-height: 288px;
+      overflow-y: auto;
+      background-color: #ffffff;
+      border-radius: 16px;
+      border: 1px solid #e2e8f0;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.12), 0 8px 10px -6px rgba(0, 0, 0, 0.08);
+      padding: 6px 0;
+      z-index: 9999;
+    }
+    .custom-dropdown-wrap.open .custom-dropdown-menu {
+      display: block;
+    }
+    .custom-dropdown-item {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 8px;
+      padding: 8px 14px;
+      border: none;
+      background: transparent;
+      color: #334155;
+      font-size: 0.76rem;
+      font-weight: 600;
+      text-align: left;
+      cursor: pointer;
+      transition: background-color 0.12s ease;
+    }
+    .custom-dropdown-item:hover {
+      background-color: #f8fafc;
+    }
+    .custom-dropdown-item.selected {
+      background-color: #f0f9ff;
+      color: #0c4da2;
+      font-weight: 700;
+    }
+    .custom-dropdown-dot {
+      width: 8px;
+      height: 8px;
+      border-radius: 9999px;
+      background-color: #0c4da2;
+      flex-shrink: 0;
+    }
+    .custom-dropdown-color-dot {
+      width: 10px;
+      height: 10px;
+      border-radius: 9999px;
+      border: 1px solid rgba(0, 0, 0, 0.12);
+      flex-shrink: 0;
+    }
     .search-input-wrap {
       position: relative;
       display: inline-flex;
@@ -1399,13 +1488,39 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         </div>
 
         <div class="filter-group">
-          <select id="gradeSelect" class="form-control" onchange="renderSchedule()" title="Filtrar por Grado">
-            <option value="ALL">Todos los grados de la jornada</option>
-          </select>
+          <div class="custom-dropdown-wrap" id="gradeDropdownWrap" style="width: 205px;">
+            <select id="gradeSelect" class="form-control" onchange="syncCustomDropdown('gradeSelect'); renderSchedule()" title="Filtrar por Grado" style="display: none;">
+              <option value="ALL">Todos los grados de la jornada</option>
+            </select>
+            <button type="button" class="custom-dropdown-btn" id="gradeDropdownBtn" onclick="toggleCustomDropdown('gradeDropdownWrap')" title="Filtrar por Grado">
+              <span style="display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                <span style="color:#0c4da2;flex-shrink:0;">🎓</span>
+                <span id="gradeDropdownLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Todos los grados</span>
+              </span>
+              <span style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                <span id="gradeDropdownActiveDot" class="custom-dropdown-dot" style="display:none;"></span>
+                <span style="font-size:10px;color:#64748b;">▼</span>
+              </span>
+            </button>
+            <div class="custom-dropdown-menu" id="gradeDropdownMenu"></div>
+          </div>
 
-          <select id="teacherSelect" class="form-control" onchange="renderSchedule()" title="Filtrar por Docente">
-            <option value="ALL">Todos los docentes</option>
-          </select>
+          <div class="custom-dropdown-wrap" id="teacherDropdownWrap" style="width: 220px;">
+            <select id="teacherSelect" class="form-control" onchange="syncCustomDropdown('teacherSelect'); renderSchedule()" title="Filtrar por Docente" style="display: none;">
+              <option value="ALL">Todos los docentes</option>
+            </select>
+            <button type="button" class="custom-dropdown-btn" id="teacherDropdownBtn" onclick="toggleCustomDropdown('teacherDropdownWrap')" title="Filtrar por Docente">
+              <span style="display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                <span style="color:#0c4da2;flex-shrink:0;">👤</span>
+                <span id="teacherDropdownLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Todos los docentes</span>
+              </span>
+              <span style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                <span id="teacherDropdownActiveDot" class="custom-dropdown-dot" style="display:none;"></span>
+                <span style="font-size:10px;color:#64748b;">▼</span>
+              </span>
+            </button>
+            <div class="custom-dropdown-menu" id="teacherDropdownMenu"></div>
+          </div>
 
           <div class="search-input-wrap">
             <input type="text" id="searchInput" class="form-control" placeholder="Buscar asignatura o aula..." oninput="handleSearchInput()" style="width: 210px; padding-right: 28px; cursor: text;">
@@ -1454,10 +1569,23 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         <div class="break-modal-toolbar">
           <div style="font-weight: 800; color: #0f172a; font-size: 0.95rem;" id="breakModalTitle">Asignación semanal • Bachillerato (Mañana)</div>
           <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
-            <select id="breakModalTeacherSelect" class="form-control" onchange="renderBreakZonesModalTable()" style="height: 34px; font-size: 12px;">
-              <option value="ALL">Todos los docentes (Ver cuadro completo)</option>
-            </select>
-            <input type="text" id="breakModalSearchInput" class="form-control" placeholder="Buscar zona o docente..." oninput="renderBreakZonesModalTable()" style="height: 34px; font-size: 12px; width: 200px; cursor: text;">
+            <div class="custom-dropdown-wrap" id="breakModalTeacherDropdownWrap" style="width: 280px;">
+              <select id="breakModalTeacherSelect" class="form-control" onchange="syncCustomDropdown('breakModalTeacherSelect'); renderBreakZonesModalTable()" style="display: none;">
+                <option value="ALL">Todos los docentes (Ver cuadro completo)</option>
+              </select>
+              <button type="button" class="custom-dropdown-btn" id="breakModalTeacherDropdownBtn" onclick="toggleCustomDropdown('breakModalTeacherDropdownWrap')" title="Filtrar o resaltar turnos de un docente">
+                <span style="display:flex;align-items:center;gap:6px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+                  <span style="color:#0c4da2;flex-shrink:0;">👤</span>
+                  <span id="breakModalTeacherDropdownLabel" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">Todos los docentes (Ver cuadro completo)</span>
+                </span>
+                <span style="display:flex;align-items:center;gap:5px;flex-shrink:0;">
+                  <span id="breakModalTeacherDropdownActiveDot" class="custom-dropdown-dot" style="display:none;"></span>
+                  <span style="font-size:10px;color:#64748b;">▼</span>
+                </span>
+              </button>
+              <div class="custom-dropdown-menu" id="breakModalTeacherDropdownMenu"></div>
+            </div>
+            <input type="text" id="breakModalSearchInput" class="form-control" placeholder="Buscar zona o docente..." oninput="renderBreakZonesModalTable()" style="height: 32px; font-size: 12px; width: 200px; cursor: text;">
           </div>
         </div>
         <div class="break-modal-body" id="breakModalBody"></div>
@@ -1632,14 +1760,116 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       const opt = document.createElement('option');
       opt.value = t.name || t.fullName;
       opt.textContent = t.fullName || t.name;
+      opt.setAttribute('data-color', t.color || '#0c4da2');
       teacherSelect.appendChild(opt);
       if (breakModalTeacherSelect) {
         const opt2 = document.createElement('option');
         opt2.value = t.fullName || t.name;
         opt2.textContent = t.fullName || t.name;
+        opt2.setAttribute('data-color', t.color || '#0c4da2');
         breakModalTeacherSelect.appendChild(opt2);
       }
     });
+
+    const CUSTOM_DROPDOWN_MAP = {
+      gradeSelect: {
+        wrapId: 'gradeDropdownWrap',
+        btnId: 'gradeDropdownBtn',
+        labelId: 'gradeDropdownLabel',
+        dotId: 'gradeDropdownActiveDot',
+        menuId: 'gradeDropdownMenu',
+        formatLabel: (opt) => opt.value === 'ALL' ? opt.textContent : ('Grado ' + opt.textContent)
+      },
+      teacherSelect: {
+        wrapId: 'teacherDropdownWrap',
+        btnId: 'teacherDropdownBtn',
+        labelId: 'teacherDropdownLabel',
+        dotId: 'teacherDropdownActiveDot',
+        menuId: 'teacherDropdownMenu',
+        formatLabel: (opt) => opt.textContent
+      },
+      breakModalTeacherSelect: {
+        wrapId: 'breakModalTeacherDropdownWrap',
+        btnId: 'breakModalTeacherDropdownBtn',
+        labelId: 'breakModalTeacherDropdownLabel',
+        dotId: 'breakModalTeacherDropdownActiveDot',
+        menuId: 'breakModalTeacherDropdownMenu',
+        formatLabel: (opt) => opt.textContent
+      }
+    };
+
+    function toggleCustomDropdown(wrapId) {
+      document.querySelectorAll('.custom-dropdown-wrap').forEach(w => {
+        if (w.id !== wrapId) w.classList.remove('open');
+      });
+      const wrap = document.getElementById(wrapId);
+      if (wrap) wrap.classList.toggle('open');
+    }
+
+    document.addEventListener('mousedown', (e) => {
+      document.querySelectorAll('.custom-dropdown-wrap.open').forEach(w => {
+        if (!w.contains(e.target)) w.classList.remove('open');
+      });
+    });
+
+    function syncCustomDropdown(selectId) {
+      const cfg = CUSTOM_DROPDOWN_MAP[selectId];
+      const sel = document.getElementById(selectId);
+      if (!cfg || !sel) return;
+      const btn = document.getElementById(cfg.btnId);
+      const lbl = document.getElementById(cfg.labelId);
+      const dot = document.getElementById(cfg.dotId);
+      const menu = document.getElementById(cfg.menuId);
+      const selectedOpt = sel.options[sel.selectedIndex] || sel.options[0];
+      if (lbl && selectedOpt) {
+        lbl.textContent = cfg.formatLabel(selectedOpt);
+      }
+      const isFiltered = sel.value !== 'ALL';
+      if (btn) {
+        if (isFiltered) btn.classList.add('filtered');
+        else btn.classList.remove('filtered');
+      }
+      if (dot) {
+        dot.style.display = isFiltered ? 'inline-block' : 'none';
+      }
+      if (menu) {
+        menu.innerHTML = '';
+        Array.from(sel.options).forEach(opt => {
+          const item = document.createElement('button');
+          item.type = 'button';
+          const isSel = opt.value === sel.value;
+          item.className = 'custom-dropdown-item' + (isSel ? ' selected' : '');
+          const colorAttr = opt.getAttribute('data-color');
+          const textSpan = document.createElement('span');
+          textSpan.style.overflow = 'hidden';
+          textSpan.style.textOverflow = 'ellipsis';
+          textSpan.style.whiteSpace = 'nowrap';
+          textSpan.textContent = cfg.formatLabel(opt);
+          item.appendChild(textSpan);
+          if (colorAttr && opt.value !== 'ALL') {
+            const cDot = document.createElement('span');
+            cDot.className = 'custom-dropdown-color-dot';
+            cDot.style.backgroundColor = colorAttr;
+            item.appendChild(cDot);
+          } else if (isSel) {
+            const sDot = document.createElement('span');
+            sDot.className = 'custom-dropdown-dot';
+            item.appendChild(sDot);
+          }
+          item.onclick = () => {
+            sel.value = opt.value;
+            const wrap = document.getElementById(cfg.wrapId);
+            if (wrap) wrap.classList.remove('open');
+            syncCustomDropdown(selectId);
+            if (typeof sel.onchange === 'function') sel.onchange();
+          };
+          menu.appendChild(item);
+        });
+      }
+    }
+
+    syncCustomDropdown('teacherSelect');
+    syncCustomDropdown('breakModalTeacherSelect');
 
     function normalizeZoneToken(val) {
       return String(val || '')
@@ -1694,6 +1924,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         );
         if (matchedOpt) breakModalTeacherSelect.value = matchedOpt.value;
       }
+      syncCustomDropdown('breakModalTeacherSelect');
       renderBreakZonesModalTable();
       modal.classList.add('open');
     }
@@ -1868,6 +2099,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       } else {
         gradeSelect.value = 'ALL';
       }
+      syncCustomDropdown('gradeSelect');
     }
 
     function selectShift(shift) {

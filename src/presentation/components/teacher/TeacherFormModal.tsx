@@ -9,6 +9,7 @@ import {
   computeDefaultShortName,
   getTeacherVisualIdentity,
 } from '../../../domain/services/teacher-visual-identity.service';
+import { CustomSelectDropdown } from '../common/CustomSelectDropdown';
 
 interface TeacherFormModalProps {
   isOpen: boolean;
@@ -211,25 +212,38 @@ export const TeacherFormModal: React.FC<TeacherFormModalProps> = ({
               <label className="font-bold text-slate-700 block mb-1">
                 Seleccionar docente existente para editar (Opcional):
               </label>
-              <select
+              <CustomSelectDropdown
                 value={teacher?.id || ''}
-                onChange={(e) => {
-                  const found = teachers.find((t) => t.id === e.target.value) || null;
+                onChange={(val) => {
+                  const found = teachers.find((t) => t.id === val) || null;
                   onSelectTeacher?.(found);
                 }}
-                className="w-full px-3 py-2 border border-slate-300 rounded-xl bg-slate-50 text-slate-800 font-medium cursor-pointer"
-              >
-                <option value="">-- Nuevo Docente --</option>
-                {teachers.map((t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.displayName}
-                    {t.groupDirection && t.groupDirection !== 'Sin asignación'
-                      ? ` — Dir. ${t.groupDirection}`
-                      : ''}{' '}
-                    ({!t.maxWeeklyHours || t.maxWeeklyHours === 22 ? 24 : t.maxWeeklyHours}h)
-                  </option>
-                ))}
-              </select>
+                defaultAllValue=""
+                size="md"
+                placeholder="-- Nuevo docente --"
+                icon={<UserCog className="w-3.5 h-3.5 text-[#0c4da2]" />}
+                title="Seleccionar docente existente para editar"
+                options={[
+                  { value: '', label: '-- Nuevo docente --' },
+                  ...teachers.map((t) => {
+                    const hex =
+                      t.color_hex ||
+                      t.color ||
+                      getTeacherVisualIdentity(t.id, t.displayName).color_hex ||
+                      '#007DC5';
+                    const hours = !t.maxWeeklyHours || t.maxWeeklyHours === 22 ? 24 : t.maxWeeklyHours;
+                    const dir =
+                      t.groupDirection && t.groupDirection !== 'Sin asignación'
+                        ? ` — Dir. ${t.groupDirection}`
+                        : '';
+                    return {
+                      value: t.id,
+                      label: `${t.displayName}${dir} (${hours}h)`,
+                      colorHex: hex,
+                    };
+                  }),
+                ]}
+              />
             </div>
           )}
 
