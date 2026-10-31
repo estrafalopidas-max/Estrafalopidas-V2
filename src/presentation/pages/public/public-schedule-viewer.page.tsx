@@ -39,7 +39,12 @@ import { MatrixSlotCard } from '../../components/matrix/MatrixSlotCard';
 import { TimeBlockEntity, DayOfWeek } from '../../../domain/entities/time-block.entity';
 import { ShiftType } from '../../../domain/entities/grade.entity';
 import { UserEntity } from '../../../domain/entities/user.entity';
-import { getTodayDayOfWeek, generateWeekHeaders } from '../../../domain/services/ChronologyEngine';
+import {
+  getTodayDayOfWeek,
+  generateWeekHeaders,
+  getCurrentWeekText,
+  getOrdinalSuffix,
+} from '../../../domain/services/ChronologyEngine';
 import { normalizeTimeBlocksGrades, resolveCanonicalShift } from '../../../domain/services/grade-normalization.service';
 import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed';
 import {
@@ -388,9 +393,17 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     };
   }, [isEmbeddedModal]);
 
-  const todayDayKey = useMemo(() => getTodayDayOfWeek(), []);
+  const [clockTick, setClockTick] = useState<number>(() => Date.now());
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      setClockTick(Date.now());
+    }, 30000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const todayDayKey = useMemo(() => getTodayDayOfWeek(new Date()), [clockTick]);
   const [selectedShift, setSelectedShift] = useState<ShiftType>('morning');
-  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek());
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek(new Date()));
   const [selectedGrade, setSelectedGrade] = useState<string>('ALL');
   const [selectedTeacher, setSelectedTeacher] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState<string>('');
@@ -416,12 +429,31 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, [isGradeMenuOpen, isTeacherMenuOpen]);
 
+  const dayConfigs = useMemo(() => {
+    if (isEmbeddedModal) {
+      return resolveEffectiveDayConfigs();
+    }
+    return resolveEffectiveDayConfigs(
+      snapshot?.dayConfigs || {
+        meetingDays: {},
+        eventDays: {},
+        holidayDays: {},
+        customHolidays: [],
+        scheduleTypes: {},
+      }
+    );
+  }, [isEmbeddedModal, snapshot?.dayConfigs, clockTick]);
+
   const rawTimeBlocks = useMemo(() => {
     if (Array.isArray(liveTimeBlocks)) {
       return liveTimeBlocks;
     }
-    return snapshot?.timeBlocks || [];
-  }, [liveTimeBlocks, snapshot?.timeBlocks]);
+    // En modo público o standalone, la fuente autoritativa es siempre el snapshot publicado desde el servidor/base de datos
+    if (snapshot && Array.isArray(snapshot.timeBlocks)) {
+      return snapshot.timeBlocks;
+    }
+    return [];
+  }, [liveTimeBlocks, snapshot]);
 
   const isBlankSchedule = useMemo(() => {
     if (Array.isArray(liveTimeBlocks)) {
@@ -464,21 +496,6 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     });
     return sortTeachersWithLowPriorityLast(mapped);
   }, [isEmbeddedModal, liveTeachers, snapshot?.teachers]);
-
-  const dayConfigs = useMemo(() => {
-    if (isEmbeddedModal) {
-      return resolveEffectiveDayConfigs();
-    }
-    return resolveEffectiveDayConfigs(
-      snapshot?.dayConfigs || {
-        meetingDays: {},
-        eventDays: {},
-        holidayDays: {},
-        customHolidays: [],
-        scheduleTypes: {},
-      }
-    );
-  }, [isEmbeddedModal, snapshot?.dayConfigs]);
 
   const weekHeaders = useMemo(
     () => generateWeekHeaders(dayConfigs.anchorMondayIso || new Date(), dayConfigs.customHolidays),
@@ -523,20 +540,31 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
       ? 'B'
       : 'A';
 
+  const activeWeekChronology = useMemo(
+    () => getCurrentWeekText(dayConfigs.anchorMondayIso || new Date()),
+    [dayConfigs.anchorMondayIso]
+  );
+
   const displayAcademicPeriod = useMemo(() => {
-    const raw = liveAcademicPeriod || snapshot?.metadata.academicPeriod;
+    const computedFromWeek = activeWeekChronology.periodNumber
+      ? `${activeWeekChronology.periodNumber}${getOrdinalSuffix(activeWeekChronology.periodNumber)} Periodo`
+      : '';
+    const raw = computedFromWeek || liveAcademicPeriod || snapshot?.metadata.academicPeriod;
     const base = !raw || raw === '3° Periodo' ? '3er Periodo' : raw;
     if (base.toLowerCase().includes('académico') || base.toLowerCase().includes('academico')) {
       return base;
     }
     return `${base} académico`;
-  }, [liveAcademicPeriod, snapshot?.metadata.academicPeriod]);
+  }, [activeWeekChronology.periodNumber, liveAcademicPeriod, snapshot?.metadata.academicPeriod]);
 
   const displayAcademicWeek = useMemo(() => {
+    if (activeWeekChronology.weekNumber) return activeWeekChronology.weekNumber;
     const raw = liveAcademicWeek ?? snapshot?.metadata.academicWeek;
     if (!raw || raw === 8) return 9;
     return raw;
-  }, [liveAcademicWeek, snapshot?.metadata.academicWeek]);
+  }, [activeWeekChronology.weekNumber, liveAcademicWeek, snapshot?.metadata.academicWeek]);
+
+  const displayTotalWeeksInPeriod = activeWeekChronology.totalWeeksInPeriod || 14;
 
   // Extract unique grades for the active shift
   const shiftGrades = useMemo(() => {
@@ -1146,19 +1174,32 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
 
         {/* Fila Inferior: Días de la Semana (Más grandes y con mayor contraste) + Datos de Periodo y Semana */}
         <div className="flex flex-wrap items-center justify-between gap-4 pt-3.5 border-t border-slate-200">
-          {/* Pestañas de Días de la Semana con Fecha Completa */}
-          <div className="flex flex-nowrap lg:flex-wrap items-center gap-2 bg-brand-50/70 p-1.5 rounded-2xl border border-brand-100 overflow-x-auto w-full lg:w-auto">
+          {/* Pestañas de Días de la Semana con Fecha Completa e Insignias de Días Especiales */}
+          <div className="flex flex-wrap items-center gap-2 bg-brand-50/70 p-1.5 rounded-2xl border border-brand-100 w-full lg:w-auto">
             {DAYS.map((d) => {
               const dayIsHoliday = Boolean(dayConfigs.holidayDays?.[d.key]);
               const isSelected = selectedDay === d.key;
               const isToday = d.key === todayDayKey;
-              const fullDateLabel = weekHeaders.find((w) => w.id === d.key)?.label || d.label;
+              const headerObj = weekHeaders.find((w) => w.id === d.key);
+              const fullDateLabel = headerObj?.label || d.label;
+              const daySpecialBadges =
+                dayConfigs.dayBadges?.[d.key] && dayConfigs.dayBadges[d.key].length > 0
+                  ? dayConfigs.dayBadges[d.key]
+                  : (headerObj?.institutionalEvents || []).map((ev) => ({
+                      id: ev.id,
+                      title: ev.title,
+                      badgeLabel: ev.badgeLabel || ev.title.slice(0, 22),
+                      description: ev.description || ev.title,
+                      date: ev.date,
+                      endDate: ev.endDate,
+                      modality: ev.modality,
+                    }));
               return (
                 <button
                   key={d.key}
                   type="button"
                   onClick={() => setSelectedDay(d.key)}
-                  className={`px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
+                  className={`relative px-4 sm:px-5 py-2.5 rounded-xl text-xs sm:text-sm font-extrabold transition-all whitespace-nowrap cursor-pointer flex items-center gap-2 ${
                     isSelected
                       ? dayIsHoliday
                         ? 'bg-red-600 text-white shadow-md ring-2 ring-red-600/25'
@@ -1191,6 +1232,37 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                       Festivo
                     </span>
                   )}
+                  {daySpecialBadges.map((ev) => (
+                    <span
+                      key={ev.id}
+                      className={`group/special relative inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[10px] font-black tracking-wide leading-tight cursor-help transition-transform hover:-translate-y-0.5 ${
+                        isSelected
+                          ? 'bg-amber-400 text-slate-900 border border-amber-200 shadow-xs'
+                          : 'bg-amber-100 text-amber-900 border border-amber-300'
+                      }`}
+                    >
+                      <Sparkles className="w-3 h-3 shrink-0 text-amber-700" />
+                      <span>{ev.badgeLabel || ev.title}</span>
+                      <span className="pointer-events-none invisible opacity-0 group-hover/special:visible group-hover/special:opacity-100 transition-all duration-150 absolute bottom-full left-1/2 -translate-x-1/2 mb-2.5 w-72 sm:w-80 p-3.5 rounded-2xl bg-slate-900 text-white text-left whitespace-normal shadow-2xl border border-slate-700 z-50">
+                        <span className="flex items-center justify-between gap-2 text-[10px] font-black uppercase tracking-wider text-amber-400 mb-1">
+                          <span className="inline-flex items-center gap-1">
+                            <Sparkles className="w-3 h-3" />
+                            Día de trabajo especial
+                          </span>
+                          <span className="text-slate-400 font-bold">
+                            {ev.endDate && ev.endDate !== ev.date ? `${ev.date} al ${ev.endDate}` : ev.date}
+                          </span>
+                        </span>
+                        <span className="block text-xs font-extrabold text-white leading-snug mb-1">
+                          {ev.title}
+                        </span>
+                        <span className="block text-[11px] font-medium text-slate-300 leading-relaxed">
+                          {ev.description || ev.title}
+                        </span>
+                        <span className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-slate-900" />
+                      </span>
+                    </span>
+                  ))}
                 </button>
               );
             })}
@@ -1209,7 +1281,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                 {displayAcademicPeriod}
               </div>
               <div className="text-xs font-bold text-slate-600">
-                Semana académica {displayAcademicWeek} de 14
+                Semana académica {displayAcademicWeek} de {displayTotalWeeksInPeriod}
               </div>
             </div>
           </div>

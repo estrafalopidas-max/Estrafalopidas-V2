@@ -18,6 +18,7 @@ import {
   selectMostRecentSnapshot,
   writeSnapshotToCacheStorage,
 } from '../../domain/services/schedule-cache-strategy.service';
+import { getCurrentWeekText, getOrdinalSuffix } from '../../domain/services/ChronologyEngine';
 
 // Silenciar logs internos del SDK de Firestore para evitar ruido por cuota gratuita agotada
 try {
@@ -246,10 +247,15 @@ export function subscribeToPublishedSchedule(
       ? []
       : normalizeTimeBlocksGrades(Array.isArray(parsed.timeBlocks) ? parsed.timeBlocks : []);
 
-    const baseDayConfigs = parsed.dayConfigs || resolveEffectiveDayConfigs();
-    const weekHeaders = baseDayConfigs.anchorMondayIso
-      ? undefined
-      : resolveEffectiveDayConfigs(baseDayConfigs);
+    const resolvedDayConfigs = resolveEffectiveDayConfigs(parsed.dayConfigs);
+    const targetMondayIso = resolvedDayConfigs.anchorMondayIso;
+    const effectiveBlocks = normalizedBlocks;
+
+    const weekData = getCurrentWeekText(targetMondayIso || new Date());
+    const computedPeriod = weekData.periodNumber
+      ? `${weekData.periodNumber}${getOrdinalSuffix(weekData.periodNumber)} Periodo`
+      : parsed.metadata?.academicPeriod || '3er Periodo';
+    const computedWeek = weekData.weekNumber || parsed.metadata?.academicWeek || 9;
 
     const formattedColombiaTime =
       resolvedTs > 0
@@ -263,17 +269,18 @@ export function subscribeToPublishedSchedule(
     return {
       ...parsed,
       updatedAtMs: resolvedTs,
-      timeBlocks: normalizedBlocks,
+      timeBlocks: effectiveBlocks,
       metadata: {
         ...parsed.metadata,
+        academicPeriod: computedPeriod,
+        academicWeek: computedWeek,
         lastUpdated: formattedColombiaTime || parsed.metadata?.lastUpdated || 'En tiempo real',
-        totalBlocks: normalizedBlocks.length,
+        totalBlocks: effectiveBlocks.length,
         blankMatrixMode: isBlank,
         updatedAtMs: resolvedTs,
       },
       dayConfigs: {
-        ...(weekHeaders || baseDayConfigs),
-        ...baseDayConfigs,
+        ...resolvedDayConfigs,
         blankMatrixMode: isBlank,
         updatedAtMs: resolvedTs,
       },

@@ -119,6 +119,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     currentAcademicWeek,
     activeWeekSlot,
     setActiveWeekSlot,
+    customWeekMondayIso,
+    setCustomWeekMondayIso,
     isAutoNextWeekCutoff,
     activeAnchorDate,
     activeMondayIso,
@@ -1960,17 +1962,17 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
           {/* Selector Rápido de 2 Semanas + Selector Desplegable de Día y Menú de Modalidades */}
           <div className="flex items-center gap-2 flex-wrap">
-            {/* Selector Rápido de 2 Semanas (Semana Actual vs. Próxima Semana con Corte Viernes 18:00) */}
+            {/* Selector Rápido de 2 Semanas + Indicador de Semana Planificada */}
             <div className="inline-flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-200 shadow-2xs h-8 shrink-0">
               <button
                 type="button"
                 onClick={() => setActiveWeekSlot('current')}
                 className={`h-full px-2.5 rounded-lg text-[11px] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1 ${
-                  activeWeekSlot === 'current'
+                  !customWeekMondayIso && activeWeekSlot === 'current'
                     ? 'bg-villa-blue text-white font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900 font-semibold'
                 }`}
-                title="Ver y editar la Semana Actual en curso"
+                title="Ver y editar la Semana Actual en curso (se actualiza automáticamente los viernes a las 18:00)"
               >
                 <span>Semana Actual</span>
               </button>
@@ -1978,29 +1980,34 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
                 type="button"
                 onClick={() => setActiveWeekSlot('next')}
                 className={`h-full px-2.5 rounded-lg text-[11px] transition-all cursor-pointer whitespace-nowrap flex items-center gap-1.5 ${
-                  activeWeekSlot === 'next'
+                  !customWeekMondayIso && activeWeekSlot === 'next'
                     ? 'bg-indigo-600 text-white font-bold shadow-2xs'
                     : 'text-slate-600 hover:text-slate-900 font-semibold'
                 }`}
-                title={
-                  isAutoNextWeekCutoff
-                    ? 'Próxima Semana (Activada automáticamente por corte de viernes 18:00)'
-                    : 'Adelantar o editar el horario de la Próxima Semana'
-                }
+                title="Adelantar o editar el horario de la Próxima Semana"
               >
                 <span>Próxima Semana</span>
-                {isAutoNextWeekCutoff && (
-                  <span
-                    className={`px-1 py-0.2 rounded text-[9px] font-extrabold uppercase leading-none ${
-                      activeWeekSlot === 'next'
-                        ? 'bg-amber-300 text-slate-950'
-                        : 'bg-amber-100 text-amber-800 border border-amber-300'
-                    }`}
-                  >
-                    18:00+
-                  </span>
-                )}
               </button>
+              {customWeekMondayIso && (
+                <button
+                  type="button"
+                  onClick={() => window.dispatchEvent(new Event('open_school_year_planner'))}
+                  className="h-full px-2.5 rounded-lg text-[11px] bg-amber-600 text-white font-bold shadow-2xs flex items-center gap-1.5 cursor-pointer"
+                  title="Semana seleccionada desde el Planificador de Año Escolar (clic para abrir el planificador)"
+                >
+                  <span>Planificador: {customWeekMondayIso}</span>
+                  <span
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCustomWeekMondayIso(null);
+                    }}
+                    className="ml-0.5 px-1 rounded bg-amber-700 hover:bg-amber-800 text-[9px] font-black"
+                    title="Volver a la semana actual"
+                  >
+                    ✕
+                  </span>
+                </button>
+              )}
             </div>
 
             {activeWeekSlot === 'next' && (

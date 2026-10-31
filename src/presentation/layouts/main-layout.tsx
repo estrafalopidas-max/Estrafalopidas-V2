@@ -28,7 +28,11 @@ import {
   ShieldCheck,
   LogOut,
 } from 'lucide-react';
-import { useCoordinatorMatrix, clearAllWeekContainers } from '../context/CoordinatorMatrixContext';
+import {
+  useCoordinatorMatrix,
+  clearAllWeekContainers,
+  saveBlocksToWeekContainer,
+} from '../context/CoordinatorMatrixContext';
 import { useAuth } from '../context/AuthContext';
 import { AccessManagementModal } from '../components/auth/AccessManagementModal';
 import { TeacherFormModal } from '../components/teacher/TeacherFormModal';
@@ -69,6 +73,8 @@ export const MainLayout: React.FC = () => {
     setCurrentPeriod: setContextAcademicPeriod,
     activeWeekSlot,
     setActiveWeekSlot,
+    customWeekMondayIso,
+    activeMondayIso,
     isAutoNextWeekCutoff,
     weekInfo,
     teachers,
@@ -240,11 +246,16 @@ export const MainLayout: React.FC = () => {
     const handleMatrixSync = () => {
       setMatrixRevision((r) => r + 1);
     };
+    const handleOpenPlanner = () => {
+      setIsResetModalOpen(true);
+    };
     window.addEventListener('open_public_schedule_preview', handleOpenPublicPreview);
+    window.addEventListener('open_school_year_planner', handleOpenPlanner);
     window.addEventListener('schedule_matrix_updated', handleMatrixSync);
     window.addEventListener('storage', handleMatrixSync);
     return () => {
       window.removeEventListener('open_public_schedule_preview', handleOpenPublicPreview);
+      window.removeEventListener('open_school_year_planner', handleOpenPlanner);
       window.removeEventListener('schedule_matrix_updated', handleMatrixSync);
       window.removeEventListener('storage', handleMatrixSync);
     };
@@ -326,7 +337,8 @@ export const MainLayout: React.FC = () => {
 
       let targetBlocks: TimeBlockEntity[] = [];
 
-      clearAllWeekContainers();
+      // Limpiar únicamente desde la semana activa hacia adelante, conservando el historial de semanas finalizadas
+      clearAllWeekContainers(activeMondayIso);
 
       if (mode === 'blank') {
         // Opción 1: Reiniciar desde cero (Parrilla en blanco) conservando docentes y asignaturas
@@ -363,6 +375,10 @@ export const MainLayout: React.FC = () => {
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(targetBlocks));
       }
 
+      if (activeMondayIso) {
+        saveBlocksToWeekContainer(activeMondayIso, targetBlocks);
+      }
+
       // Notificar inmediatamente a los suscriptores locales antes de la escritura asíncrona en la nube
       const snapshot = savePublicScheduleSnapshot(
         targetBlocks,
@@ -381,7 +397,7 @@ export const MainLayout: React.FC = () => {
 
       setIsResetModalOpen(false);
     },
-    [contextAcademicPeriod, currentAcademicWeek, teachers]
+    [activeMondayIso, contextAcademicPeriod, currentAcademicWeek, teachers]
   );
 
   // Gestión de Instalación PWA (Zero-Privilege Native Simulation)
@@ -438,79 +454,71 @@ export const MainLayout: React.FC = () => {
         {/* Cabecera del menú lateral: Fija con el menú abierto o cerrado */}
         <div
           className={`w-52 sm:w-56 h-full border-r border-slate-200 px-3 py-1.5 flex flex-col justify-center shrink-0 select-none transition-colors ${
-            activeWeekSlot === 'next'
+            customWeekMondayIso
+              ? 'bg-amber-50/70 border-l-4 border-amber-500'
+              : activeWeekSlot === 'next'
               ? 'bg-indigo-50/70 border-l-4 border-indigo-600'
               : 'bg-slate-50 border-l-4 border-blue-600'
           }`}
         >
-          {/* Nivel 1: Indicador de Periodo + Selector Rápido de 2 Semanas */}
-          <div className="flex items-center justify-between gap-1 leading-none">
-            <div className="flex items-center gap-1 leading-none min-w-0">
-              <svg
-                className={`w-4 h-4 shrink-0 ${activeWeekSlot === 'next' ? 'text-indigo-600' : 'text-blue-600'}`}
-                fill="none"
-                stroke="currentColor"
-                viewBox="0 0 24 24"
-                xmlns="http://www.w3.org/2000/svg"
-              >
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
-              </svg>
-              <span
-                className={`text-[14px] font-bold uppercase tracking-wide flex items-baseline truncate ${
-                  activeWeekSlot === 'next' ? 'text-indigo-900' : 'text-blue-800'
-                }`}
-              >
-                <span>
-                  {periodNumber}
-                  <span className="text-[0.68em] relative -top-[0.25em] ml-[1px] lowercase font-semibold">
-                    {getOrdinalSuffix(periodNumber)}
-                  </span>
-                </span>
-                <span className="ml-1">Periodo</span>
-              </span>
-            </div>
-
-            {/* Selector 2 Semanas (Actual / Próxima) */}
-            <div
-              className="inline-flex items-center bg-white/90 p-0.5 rounded-lg border border-slate-200 shadow-2xs shrink-0"
-              title={
-                isAutoNextWeekCutoff
-                  ? 'Corte viernes 18:00 activo: mostrando Próxima Semana por defecto'
-                  : 'Alternar entre Semana Actual y Próxima Semana'
-              }
+          {/* Nivel 1: Indicador de Periodo */}
+          <div
+            onClick={() => setIsResetModalOpen(true)}
+            className="flex items-center gap-1.5 leading-none min-w-0 cursor-pointer hover:opacity-80 transition"
+            title="Abrir Planificador de Año Escolar (2026 / 2027+)"
+          >
+            <svg
+              className={`w-4 h-4 shrink-0 ${
+                customWeekMondayIso
+                  ? 'text-amber-600'
+                  : activeWeekSlot === 'next'
+                  ? 'text-indigo-600'
+                  : 'text-blue-600'
+              }`}
+              fill="none"
+              stroke="currentColor"
+              viewBox="0 0 24 24"
+              xmlns="http://www.w3.org/2000/svg"
             >
-              <button
-                type="button"
-                onClick={() => setActiveWeekSlot('current')}
-                className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer ${
-                  activeWeekSlot === 'current'
-                    ? 'bg-blue-600 text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                Actual
-              </button>
-              <button
-                type="button"
-                onClick={() => setActiveWeekSlot('next')}
-                className={`px-1.5 py-0.5 rounded-md text-[9.5px] font-bold transition-all cursor-pointer flex items-center gap-0.5 ${
-                  activeWeekSlot === 'next'
-                    ? 'bg-indigo-600 text-white shadow-2xs'
-                    : 'text-slate-600 hover:text-slate-900'
-                }`}
-              >
-                <span>Próx.</span>
-                {isAutoNextWeekCutoff && (
-                  <span className="w-1.5 h-1.5 rounded-full bg-amber-300 animate-pulse" />
-                )}
-              </button>
-            </div>
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+            </svg>
+            <span
+              className={`text-[14px] font-bold uppercase tracking-wide flex items-baseline truncate ${
+                customWeekMondayIso
+                  ? 'text-amber-900'
+                  : activeWeekSlot === 'next'
+                  ? 'text-indigo-900'
+                  : 'text-blue-800'
+              }`}
+            >
+              <span>
+                {periodNumber}
+                <span className="text-[0.68em] relative -top-[0.25em] ml-[1px] lowercase font-semibold">
+                  {getOrdinalSuffix(periodNumber)}
+                </span>
+              </span>
+              <span className="ml-1">
+                {weekInfo.year && weekInfo.year !== 2026 ? `Periodo ${weekInfo.year}` : 'Periodo'}
+              </span>
+            </span>
           </div>
 
-          {/* Nivel 2: Rango de Fechas a 2 Líneas con Mes Completo y punto final */}
+          {/* Nivel 2: Rango de Fechas con formato inteligente según un mes o dos meses */}
           <h2 className="text-xs font-bold text-slate-900 leading-[1.2] mt-1">
-            <span className="block truncate">Semana del {lunesFormat}</span>
-            <span className="block truncate text-slate-800">al {viernesFormat}.</span>
+            {lunesFormat.includes(' de ') ? (
+              <>
+                <span className="block truncate">Semana del {lunesFormat}</span>
+                <span className="block truncate text-slate-800">
+                  al {viernesFormat}
+                  {weekInfo.year && weekInfo.year !== 2026 ? ` (${weekInfo.year})` : ''}.
+                </span>
+              </>
+            ) : (
+              <span className="block leading-snug">
+                Semana del {lunesFormat} al {viernesFormat}
+                {weekInfo.year && weekInfo.year !== 2026 ? ` (${weekInfo.year})` : ''}.
+              </span>
+            )}
           </h2>
 
           {/* Nivel 3: Conteo Académico con punto final */}
@@ -833,7 +841,31 @@ export const MainLayout: React.FC = () => {
               )}
             </button>
 
-            {/* 7. Accesos y Gestión de Permisos */}
+            {/* 7. Inicio de año escolar (Planificador anual y reinicio) */}
+            <button
+              type="button"
+              onClick={() => setIsResetModalOpen(true)}
+              className={`w-full flex items-center rounded-xl transition-all cursor-pointer ${
+                isSidebarCollapsed ? 'justify-center p-2.5' : 'px-2.5 py-2 space-x-2'
+              } ${
+                isResetModalOpen
+                  ? 'bg-villa-blue-light text-white font-bold shadow-xs'
+                  : 'text-villa-dark hover:bg-slate-100 hover:text-villa-blue-dark font-medium'
+              }`}
+              title="Inicio de año escolar"
+              aria-label="Inicio de año escolar"
+            >
+              <RotateCcw
+                className={`shrink-0 w-4 h-4 ${
+                  isResetModalOpen ? 'text-white' : 'text-amber-600'
+                }`}
+              />
+              {!isSidebarCollapsed && (
+                <span className="text-xs tracking-tight truncate">Inicio de año escolar</span>
+              )}
+            </button>
+
+            {/* 8. Accesos y Gestión de Permisos */}
             <button
               type="button"
               onClick={() => setIsAccessModalOpen(true)}
@@ -876,22 +908,9 @@ export const MainLayout: React.FC = () => {
               getTimeBlocks={getCurrentTimeBlocks}
             />
 
-            {/* Zona de Configuración Protegida: Inicio de Año Escolar y Sesión */}
-            <div className={`border-t border-slate-100 w-full shrink-0 space-y-1.5 ${isSidebarCollapsed ? 'p-1.5' : 'px-3 py-2'}`}>
-              <button
-                type="button"
-                onClick={() => setIsResetModalOpen(true)}
-                className={`group w-full flex items-center text-slate-600 bg-transparent hover:bg-amber-50 hover:text-amber-800 transition-colors rounded-md text-xs font-semibold whitespace-nowrap overflow-hidden text-ellipsis cursor-pointer ${
-                  isSidebarCollapsed ? 'justify-center py-2 px-0' : 'justify-start gap-2 py-1.5 px-3'
-                }`}
-                title="Inicio de año escolar: Reiniciar en blanco, proponer distribución automática o restaurar plantilla base"
-                aria-label="Inicio de año escolar"
-              >
-                <RotateCcw className="w-4 h-4 text-slate-400 group-hover:text-amber-600 transition-colors shrink-0" />
-                {!isSidebarCollapsed && <span className="truncate">Inicio de año escolar</span>}
-              </button>
-
-              {authUser && (
+            {/* Zona de Sesión Activa */}
+            {authUser && (
+              <div className={`border-t border-slate-100 w-full shrink-0 ${isSidebarCollapsed ? 'p-1.5' : 'px-3 py-2'}`}>
                 <div
                   className={`flex items-center justify-between rounded-lg bg-slate-50 border border-slate-200 ${
                     isSidebarCollapsed ? 'p-1.5 justify-center' : 'px-2.5 py-1.5'
@@ -923,8 +942,8 @@ export const MainLayout: React.FC = () => {
                     <LogOut className="w-3.5 h-3.5" />
                   </button>
                 </div>
-              )}
-            </div>
+              </div>
+            )}
           </div>
 
           {/* Anclaje Inferior del Copyright */}

@@ -3,7 +3,7 @@ import { GradeEntity, ShiftType } from '../../../domain/entities/grade.entity';
 import { TimeBlockEntity } from '../../../domain/entities/time-block.entity';
 import { AbsenceRequestEntity } from '../../../domain/entities/absence-request.entity';
 import { MatrixSlotCard } from './MatrixSlotCard';
-import { MatrixCell, setGlobalActiveDraggedBlock, CellCoordData } from './MatrixCell';
+import { MatrixCell, setGlobalActiveDraggedBlock, setGlobalAllTimeBlocks, CellCoordData } from './MatrixCell';
 import { Clock, Users } from 'lucide-react';
 import { createSlotDroppableId } from '../../../domain/services/dnd-slot.helper';
 
@@ -736,6 +736,167 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
   const hasSupportPlanRooms = supportPlanRoomGroups.length > 0;
   const isTransicion = shift === 'transicion-1';
 
+  // Sincronización continua de bloques para validación de colisiones sin re-render masivo
+  useEffect(() => {
+    setGlobalAllTimeBlocks(timeBlocks);
+  }, [timeBlocks]);
+  setGlobalAllTimeBlocks(timeBlocks);
+
+  // Mapeo indexado O(1) de bloques por grado y periodo
+  const blocksByGradeAndPeriod = useMemo(() => {
+    const map = new Map<string, TimeBlockEntity>();
+    for (let i = 0; i < timeBlocks.length; i++) {
+      const b = timeBlocks[i];
+      map.set(`${b.gradeId}__${b.period}`, b);
+    }
+    return map;
+  }, [timeBlocks]);
+
+  // Mapeo indexado O(1) de novedades pendientes por docente
+  const pendingByTeacherId = useMemo(() => {
+    const map = new Map<string, AbsenceRequestEntity>();
+    for (let i = 0; i < pendingRequests.length; i++) {
+      const r = pendingRequests[i];
+      if (r.teacher_id) {
+        map.set(r.teacher_id, r);
+      }
+    }
+    return map;
+  }, [pendingRequests]);
+
+  // Mapeo indexado O(1) del índice de periodos
+  const periodIndexMap = useMemo(() => {
+    const map = new Map<number, number>();
+    for (let i = 0; i < periods.length; i++) {
+      map.set(periods[i].period, i);
+    }
+    return map;
+  }, [periods]);
+
+  // Pre-cálculo O(1) de grados de Educación Media (10° y 11°)
+  const seniorHighGradeIds = useMemo(() => {
+    const set = new Set<string>();
+    for (let i = 0; i < grades.length; i++) {
+      const g = grades[i];
+      if (
+        g.fullName.startsWith('10') ||
+        g.fullName.startsWith('11') ||
+        g.gradeLevel === '10°' ||
+        g.gradeLevel === '11°'
+      ) {
+        set.add(g.id);
+      }
+    }
+    return set;
+  }, [grades]);
+
+  // Búsqueda O(1) combinada para selección por lote
+  const combinedSelectedIds = useMemo(() => {
+    const set = new Set<string>();
+    if (selectedCellIds) {
+      selectedCellIds.forEach((id) => set.add(id));
+    }
+    if (selectedCells) {
+      for (let i = 0; i < selectedCells.length; i++) {
+        set.add(selectedCells[i]);
+      }
+    }
+    return set;
+  }, [selectedCellIds, selectedCells]);
+
+  const renderGradeCell = useCallback(
+    (grade: GradeEntity, gradeIdx: number, p: MatrixPeriodConfig, isCurrentSlot: boolean) => {
+      const block = blocksByGradeAndPeriod.get(`${grade.id}__${p.period}`) || null;
+      const pending = block && block.teacherId ? pendingByTeacherId.get(block.teacherId) || null : null;
+      const droppableId = createSlotDroppableId(grade, p.period);
+
+      const hasAssignedSubject = Boolean(
+        block &&
+        block.status !== 'cancelled' &&
+        (
+          block.block_type === 'novelty' ||
+          Boolean(block.motivo_novedad) ||
+          (
+            block.subject &&
+            block.subject.trim() !== '' &&
+            block.block_type !== 'exit' &&
+            !block.subject.toUpperCase().includes('SALIDA') &&
+            !block.subject.toUpperCase().includes('NO DISPONIBLE') &&
+            !block.subject.toUpperCase().includes('SIN ASIGNACI')
+          )
+        )
+      );
+      const isSeniorHigh = seniorHighGradeIds.has(grade.id);
+      const isBeyondJornada = shift === 'morning' && p.period >= 7 && p.period <= 11 && !isSeniorHigh;
+      const isBlocked = !hasAssignedSubject && isBeyondJornada;
+      const isThisBlockDragging = Boolean(draggedBlock && block && draggedBlock.id === block.id);
+      const isSelected = combinedSelectedIds.has(droppableId) || Boolean(block && combinedSelectedIds.has(block.id));
+      const periodIdx = periodIndexMap.get(p.period) ?? 0;
+
+      return (
+        <div
+          key={grade.id}
+          className={`p-1.5 border-r border-b transition-colors min-h-[135px] flex flex-col justify-stretch ${
+            isCurrentSlot
+              ? 'bg-yellow-50/80 border-b-amber-300/60 shadow-inner'
+              : 'bg-white border-slate-200'
+          }`}
+        >
+          <MatrixCell
+            grade={grade}
+            period={p.period}
+            block={block}
+            pending={pending}
+            officialSubjects={officialSubjects}
+            allTimeBlocks={timeBlocks}
+            draggedBlock={draggedBlock}
+            droppableId={droppableId}
+            isThisBlockDragging={isThisBlockDragging}
+            isBlocked={isBlocked}
+            isHoliday={isHoliday}
+            isSelected={isSelected}
+            gradeIndex={gradeIdx}
+            periodIndex={periodIdx}
+            onSelectSlot={onSelectSlot}
+            onDrop={handleSlotDrop}
+            onDragStart={handleDragStart}
+            onDrag={handleDrag}
+            onDragEnd={handleDragEnd}
+            updateGhostPosition={updateGhostPosition}
+            onCellClick={onCellClick}
+            onTrashClick={onTrashClick}
+            onEmptyClick={onEmptyClick}
+            onToggleSelect={onToggleSelect}
+            onQuickChangeClassroom={onQuickChangeClassroom}
+          />
+        </div>
+      );
+    },
+    [
+      blocksByGradeAndPeriod,
+      pendingByTeacherId,
+      seniorHighGradeIds,
+      shift,
+      draggedBlock,
+      combinedSelectedIds,
+      periodIndexMap,
+      officialSubjects,
+      timeBlocks,
+      isHoliday,
+      onSelectSlot,
+      handleSlotDrop,
+      handleDragStart,
+      handleDrag,
+      handleDragEnd,
+      updateGhostPosition,
+      onCellClick,
+      onTrashClick,
+      onEmptyClick,
+      onToggleSelect,
+      onQuickChangeClassroom,
+    ]
+  );
+
   if (grades.length === 0) {
     return (
       <div className="p-12 text-center border-2 border-dashed border-slate-200 rounded-3xl bg-white shadow-xs">
@@ -858,81 +1019,6 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
     );
   };
 
-  const renderGradeCell = (grade: GradeEntity, gradeIdx: number, p: MatrixPeriodConfig, isCurrentSlot: boolean) => {
-    const block =
-      timeBlocks.find((b) => b.gradeId === grade.id && b.period === p.period) || null;
-    const pending = block
-      ? pendingRequests.find((r) => r.teacher_id === block.teacherId) || null
-      : null;
-    const droppableId = createSlotDroppableId(grade, p.period);
-
-    const hasAssignedSubject = Boolean(
-      block &&
-      block.status !== 'cancelled' &&
-      (
-        block.block_type === 'novelty' ||
-        Boolean(block.motivo_novedad) ||
-        (
-          block.subject &&
-          block.subject.trim() !== '' &&
-          block.block_type !== 'exit' &&
-          !block.subject.toUpperCase().includes('SALIDA') &&
-          !block.subject.toUpperCase().includes('NO DISPONIBLE') &&
-          !block.subject.toUpperCase().includes('SIN ASIGNACI')
-        )
-      )
-    );
-    const isSeniorHigh =
-      grade.fullName.startsWith('10') ||
-      grade.fullName.startsWith('11') ||
-      grade.gradeLevel === '10°' ||
-      grade.gradeLevel === '11°';
-    const isBeyondJornada = shift === 'morning' && p.period >= 7 && p.period <= 11 && !isSeniorHigh;
-    const isBlocked = !hasAssignedSubject && isBeyondJornada;
-    const isThisBlockDragging = Boolean(draggedBlock && block && draggedBlock.id === block.id);
-
-    return (
-      <div
-        key={grade.id}
-        className={`p-1.5 border-r border-b transition-colors min-h-[135px] flex flex-col justify-stretch ${
-          isCurrentSlot
-            ? 'bg-yellow-50/80 border-b-amber-300/60 shadow-inner'
-            : 'bg-white border-slate-200'
-        }`}
-      >
-        <MatrixCell
-          grade={grade}
-          period={p.period}
-          block={block}
-          pending={pending}
-          officialSubjects={officialSubjects}
-          allTimeBlocks={timeBlocks}
-          draggedBlock={draggedBlock}
-          droppableId={droppableId}
-          isThisBlockDragging={isThisBlockDragging}
-          isBlocked={isBlocked}
-          isHoliday={isHoliday}
-          isSelected={Boolean(
-            (selectedCellIds && (selectedCellIds.has(droppableId) || (block && selectedCellIds.has(block.id)))) ||
-            (selectedCells && (selectedCells.includes(droppableId) || (block && selectedCells.includes(block.id))))
-          )}
-          gradeIndex={gradeIdx}
-          periodIndex={periods.findIndex((item) => item.period === p.period)}
-          onSelectSlot={onSelectSlot}
-          onDrop={handleSlotDrop}
-          onDragStart={handleDragStart}
-          onDrag={handleDrag}
-          onDragEnd={handleDragEnd}
-          updateGhostPosition={updateGhostPosition}
-          onCellClick={onCellClick}
-          onTrashClick={onTrashClick}
-          onEmptyClick={onEmptyClick}
-          onToggleSelect={onToggleSelect}
-          onQuickChangeClassroom={onQuickChangeClassroom}
-        />
-      </div>
-    );
-  };
 
   return (
     <div className="w-full overflow-x-auto overflow-y-auto max-h-[calc(100vh-175px)] rounded-2xl border border-slate-200 bg-white shadow-xs touch-pan-x antialiased relative">

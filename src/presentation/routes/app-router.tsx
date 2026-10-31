@@ -29,32 +29,32 @@ export const AppRouter: React.FC = () => {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <CoordinatorMatrixProvider>
-          <Routes>
-            <Route path="public/schedule" element={<PublicScheduleViewerPage />} />
-            <Route path="h" element={<PublicScheduleViewerPage />} />
-            <Route path="h/:code" element={<PublicScheduleViewerPage />} />
-            <Route path="v/:code" element={<PublicScheduleViewerPage />} />
-            <Route path="s/:code" element={<PublicScheduleViewerPage />} />
-            <Route index element={<RootEntryGuard />} />
-            <Route
-              path="/"
-              element={
-                <CoordinatorAuthGuard>
+        <Routes>
+          <Route path="public/schedule" element={<PublicScheduleViewerPage />} />
+          <Route path="h" element={<PublicScheduleViewerPage />} />
+          <Route path="h/:code" element={<PublicScheduleViewerPage />} />
+          <Route path="v/:code" element={<PublicScheduleViewerPage />} />
+          <Route path="s/:code" element={<PublicScheduleViewerPage />} />
+          <Route index element={<RootEntryGuard />} />
+          <Route
+            path="/"
+            element={
+              <CoordinatorAuthGuard>
+                <CoordinatorMatrixProvider>
                   <MainLayout />
-                </CoordinatorAuthGuard>
-              }
-            >
-              <Route path="coordinator/matrix" element={<CoordinatorDesktopMatrixPage />} />
-              <Route path="coordinator/assignments" element={<CoordinatorAssignmentsPage />} />
-              <Route path="coordinator/novedades" element={<CoordinatorIncidencesPage />} />
-              <Route path="register/teacher" element={<TeacherOnboardingPage />} />
-              <Route path="teacher/locked" element={<TeacherLockedPage />} />
-              <Route path="teacher/absences" element={<CoordinatorIncidencesPage />} />
-              <Route path="*" element={<Navigate to="/coordinator/matrix" replace />} />
-            </Route>
-          </Routes>
-        </CoordinatorMatrixProvider>
+                </CoordinatorMatrixProvider>
+              </CoordinatorAuthGuard>
+            }
+          >
+            <Route path="coordinator/matrix" element={<CoordinatorDesktopMatrixPage />} />
+            <Route path="coordinator/assignments" element={<CoordinatorAssignmentsPage />} />
+            <Route path="coordinator/novedades" element={<CoordinatorIncidencesPage />} />
+            <Route path="register/teacher" element={<TeacherOnboardingPage />} />
+            <Route path="teacher/locked" element={<TeacherLockedPage />} />
+            <Route path="teacher/absences" element={<CoordinatorIncidencesPage />} />
+            <Route path="*" element={<Navigate to="/coordinator/matrix" replace />} />
+          </Route>
+        </Routes>
       </AuthProvider>
     </BrowserRouter>
   );

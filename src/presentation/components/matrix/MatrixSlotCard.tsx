@@ -85,7 +85,7 @@ interface MatrixSlotCardProps {
   onClick?: () => void;
 }
 
-export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
+const MatrixSlotCardComponent: React.FC<MatrixSlotCardProps> = ({
   timeBlock,
   pendingAbsence,
   officialSubjects,
@@ -784,3 +784,6 @@ export const MatrixSlotCard: React.FC<MatrixSlotCardProps> = ({
     </div>
   );
 };
+
+export const MatrixSlotCard = React.memo(MatrixSlotCardComponent);
+

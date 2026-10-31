@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
   X,
   Shield,
@@ -81,9 +81,11 @@ export const BreakSupervisionModal: React.FC<BreakSupervisionModalProps> = ({
   } | null>(null);
   const [savedBanner, setSavedBanner] = useState<boolean>(false);
   const [confirmReset, setConfirmReset] = useState<boolean>(false);
+  const wasOpenRef = useRef<boolean>(false);
 
+  // Inicializar jornada y filtros únicamente cuando el modal pasa de cerrado a abierto
   useEffect(() => {
-    if (isOpen) {
+    if (isOpen && !wasOpenRef.current) {
       setSelectedShift(initialShift);
       setTeacherFilter(initialTeacherFilter || 'ALL');
       setLocalSchedule(
@@ -92,7 +94,15 @@ export const BreakSupervisionModal: React.FC<BreakSupervisionModalProps> = ({
       setActiveCellPicker(null);
       setConfirmReset(false);
     }
+    wasOpenRef.current = isOpen;
   }, [isOpen, initialShift, initialTeacherFilter, scheduleData]);
+
+  // Actualizar datos en segundo plano sin reiniciar la jornada seleccionada por el usuario
+  useEffect(() => {
+    if (isOpen && !isEditingMode && scheduleData) {
+      setLocalSchedule(normalizeBreakSupervisionSchedule(scheduleData));
+    }
+  }, [isOpen, isEditingMode, scheduleData]);
 
   const currentZones = useMemo<BreakSupervisionZoneRow[]>(() => {
     return localSchedule[selectedShift] || [];

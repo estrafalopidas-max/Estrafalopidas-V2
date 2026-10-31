@@ -7,6 +7,7 @@ import { Trash2 } from 'lucide-react';
 
 // Global drag tracker to allow cross-component validation during HTML5 dragover/dragenter
 let globalActiveDraggedBlock: TimeBlockEntity | null = null;
+let globalAllTimeBlocks: TimeBlockEntity[] = [];
 
 export function setGlobalActiveDraggedBlock(block: TimeBlockEntity | null) {
   globalActiveDraggedBlock = block;
@@ -14,6 +15,14 @@ export function setGlobalActiveDraggedBlock(block: TimeBlockEntity | null) {
 
 export function getGlobalActiveDraggedBlock(): TimeBlockEntity | null {
   return globalActiveDraggedBlock;
+}
+
+export function setGlobalAllTimeBlocks(blocks: TimeBlockEntity[]) {
+  globalAllTimeBlocks = blocks;
+}
+
+export function getGlobalAllTimeBlocks(): TimeBlockEntity[] {
+  return globalAllTimeBlocks;
 }
 
 export interface CellCoordData {
@@ -53,7 +62,7 @@ export interface MatrixCellProps {
   onQuickChangeClassroom?: (block: TimeBlockEntity, newClassroom: string) => void;
 }
 
-export const MatrixCell: React.FC<MatrixCellProps> = ({
+const MatrixCellComponent: React.FC<MatrixCellProps> = ({
   grade,
   period,
   block,
@@ -130,7 +139,8 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
       const teacherName = activeItem.teacherName;
 
       if (teacherId && teacherId !== 'unassigned' && teacherName !== 'Sin Asignar') {
-        const hasTeacherCollision = allTimeBlocks.some((b) => {
+        const blocksToValidate = (allTimeBlocks && allTimeBlocks.length > 0) ? allTimeBlocks : getGlobalAllTimeBlocks();
+        const hasTeacherCollision = blocksToValidate.some((b) => {
           // Excluir el propio bloque arrastrado o el bloque destino cuando se reemplaza desde el cajón
           if (b.id === activeItem.id) return false;
           if (isTeacherPoolDrag && block && b.id === block.id) return false;
@@ -467,3 +477,52 @@ export const MatrixCell: React.FC<MatrixCellProps> = ({
     </div>
   );
 };
+
+function areMatrixCellPropsEqual(prev: MatrixCellProps, next: MatrixCellProps): boolean {
+  if (prev.droppableId !== next.droppableId) return false;
+  if (prev.period !== next.period) return false;
+  if (prev.grade.id !== next.grade.id) return false;
+  if (prev.gradeIndex !== next.gradeIndex) return false;
+  if (prev.periodIndex !== next.periodIndex) return false;
+
+  if (prev.isBlocked !== next.isBlocked) return false;
+  if (prev.isHoliday !== next.isHoliday) return false;
+  if (prev.isSelected !== next.isSelected) return false;
+  if (prev.isThisBlockDragging !== next.isThisBlockDragging) return false;
+
+  const prevDraggedId = prev.draggedBlock?.id ?? null;
+  const nextDraggedId = next.draggedBlock?.id ?? null;
+  if (prevDraggedId !== nextDraggedId) return false;
+
+  const prevHasBlock = Boolean(prev.block);
+  const nextHasBlock = Boolean(next.block);
+  if (prevHasBlock !== nextHasBlock) return false;
+
+  if (prev.block && next.block) {
+    if (prev.block.id !== next.block.id) return false;
+    if (prev.block.subject !== next.block.subject) return false;
+    if (prev.block.teacherId !== next.block.teacherId) return false;
+    if (prev.block.teacherName !== next.block.teacherName) return false;
+    if (prev.block.classroomName !== next.block.classroomName) return false;
+    if (prev.block.classroomId !== next.block.classroomId) return false;
+    if (prev.block.status !== next.block.status) return false;
+    if (prev.block.replacementTeacherId !== next.block.replacementTeacherId) return false;
+    if (prev.block.replacementTeacherName !== next.block.replacementTeacherName) return false;
+    if (prev.block.motivo_novedad !== next.block.motivo_novedad) return false;
+    if (prev.block.block_type !== next.block.block_type) return false;
+    if (prev.block.notes !== next.block.notes) return false;
+    if (prev.block.startTime !== next.block.startTime) return false;
+    if (prev.block.endTime !== next.block.endTime) return false;
+    if (prev.block.updatedAt !== next.block.updatedAt) return false;
+  }
+
+  const prevPendingId = prev.pending?.id ?? null;
+  const nextPendingId = next.pending?.id ?? null;
+  if (prevPendingId !== nextPendingId) return false;
+  if (prev.pending?.status !== next.pending?.status) return false;
+
+  return true;
+}
+
+export const MatrixCell = React.memo(MatrixCellComponent, areMatrixCellPropsEqual);
+

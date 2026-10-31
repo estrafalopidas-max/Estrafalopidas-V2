@@ -25,7 +25,15 @@ import {
   getDefaultWeekSlotMode,
   getAnchorDateForWeekSlot,
   getWeekMondayIso,
+  getStartOfWeek,
+  AcademicCalendarsStore,
+  loadAcademicCalendarsStore,
+  saveAcademicCalendarsStore,
+  getCalendarConfigForYear,
+  getInstitutionalEventsForDate,
 } from '../../domain/services/ChronologyEngine';
+import { savePublicScheduleSnapshot } from '../../domain/services/html-schedule-generator.service';
+import { publishScheduleToCloud } from '../../infrastructure/firebase/firebase-client';
 
 export interface KpiStats {
   total: number;
@@ -46,13 +54,21 @@ interface WeekScheduleContainer {
 const WEEK_CONTAINER_PREFIX = 'ievf_week_container_';
 const WEEK_CONTAINER_SCHEMA_VERSION = 4;
 
-export function clearAllWeekContainers(): void {
+export function clearAllWeekContainers(fromMondayIso?: string): void {
+  const cutoffIso =
+    fromMondayIso && /^\d{4}-\d{2}-\d{2}$/.test(fromMondayIso)
+      ? fromMondayIso
+      : getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
+
   try {
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
       if (k && k.startsWith(WEEK_CONTAINER_PREFIX)) {
-        keysToRemove.push(k);
+        const weekIso = k.slice(WEEK_CONTAINER_PREFIX.length);
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(weekIso) || weekIso >= cutoffIso) {
+          keysToRemove.push(k);
+        }
       }
     }
     keysToRemove.forEach((k) => localStorage.removeItem(k));
@@ -61,10 +77,33 @@ export function clearAllWeekContainers(): void {
   }
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
     try {
-      void fetch('/api/week-schedules', { method: 'DELETE' }).catch(() => {});
+      void fetch(`/api/week-schedules?fromMondayIso=${encodeURIComponent(cutoffIso)}`, {
+        method: 'DELETE',
+      }).catch(() => {});
     } catch {
       // ignore
     }
+  }
+}
+
+export function saveBlocksToWeekContainer(mondayIso: string, timeBlocks: any[]): void {
+  if (!mondayIso) return;
+  try {
+    const preconfigured = buildEventModalitiesForWeek(mondayIso);
+    const container: WeekScheduleContainer = {
+      schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
+      mondayIso,
+      timeBlocks,
+      meetingDays: preconfigured.meetingDays,
+      scheduleTypes: preconfigured.scheduleTypes,
+      updatedAt: Date.now(),
+    };
+    localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`, JSON.stringify(container));
+    localStorage.setItem('ievf_meeting_days', JSON.stringify(container.meetingDays));
+    localStorage.setItem('ievf_schedule_types', JSON.stringify(container.scheduleTypes));
+    persistWeekContainerToServer(mondayIso, container);
+  } catch {
+    // ignore
   }
 }
 
@@ -86,14 +125,61 @@ function persistWeekContainerToServer(
   }
 }
 
+function buildEventModalitiesForWeek(mondayIso: string): {
+  meetingDays: Record<string, boolean>;
+  scheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'>;
+} {
+  const meetingDaysMap: Record<string, boolean> = {};
+  const scheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> = {};
+  if (!mondayIso) return { meetingDays: meetingDaysMap, scheduleTypes };
+
+  try {
+    const monday = getStartOfWeek(mondayIso);
+    const dayKeys: DayOfWeek[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+
+    for (let i = 0; i < 5; i++) {
+      const d = new Date(monday.getTime());
+      d.setDate(monday.getDate() + i);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const day = String(d.getDate()).padStart(2, '0');
+      const iso = `${y}-${m}-${day}`;
+      const dayKey = dayKeys[i];
+
+      const matchedList = getInstitutionalEventsForDate(iso);
+      const matched = matchedList.find((ev) => ev.modality === 'B' || ev.modality === 'D') || matchedList[0];
+      if (matched) {
+        if (matched.modality === 'B') {
+          meetingDaysMap[dayKey] = true;
+          meetingDaysMap[`morning_${dayKey}`] = true;
+          meetingDaysMap[`afternoon_${dayKey}`] = true;
+          meetingDaysMap[`transicion-1_${dayKey}`] = true;
+          scheduleTypes[dayKey] = 'B';
+          scheduleTypes[`morning_${dayKey}`] = 'B';
+        } else if (matched.modality === 'D') {
+          meetingDaysMap[dayKey] = false;
+          meetingDaysMap[`morning_${dayKey}`] = false;
+          scheduleTypes[dayKey] = 'D';
+          scheduleTypes[`morning_${dayKey}`] = 'D';
+        }
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  return { meetingDays: meetingDaysMap, scheduleTypes };
+}
+
 function createCleanWeekContainer(mondayIso: string): WeekScheduleContainer {
   const cleanBlocks = getCleanBaseScheduleBlocks();
+  const { meetingDays, scheduleTypes } = buildEventModalitiesForWeek(mondayIso);
   const container: WeekScheduleContainer = {
     schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
     mondayIso,
     timeBlocks: cleanBlocks,
-    meetingDays: {},
-    scheduleTypes: {},
+    meetingDays,
+    scheduleTypes,
     updatedAt: Date.now(),
   };
   if (mondayIso) {
@@ -104,6 +190,32 @@ function createCleanWeekContainer(mondayIso: string): WeekScheduleContainer {
     }
   }
   return container;
+}
+
+function syncCurrentWeekToPublicSnapshot(container: WeekScheduleContainer): void {
+  try {
+    const currentCanonicalIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
+    if (container.mondayIso !== currentCanonicalIso) return;
+    const rawUsers = localStorage.getItem('ievf_users_v1');
+    const users = rawUsers ? JSON.parse(rawUsers) : SEED_TEACHERS;
+    const weekData = getCurrentWeekText(container.mondayIso);
+    const periodLabel = `${weekData.periodNumber}${getOrdinalSuffix(weekData.periodNumber)} Periodo`;
+    const snapshot = savePublicScheduleSnapshot(
+      container.timeBlocks || [],
+      Array.isArray(users) && users.length > 0 ? users : SEED_TEACHERS,
+      periodLabel,
+      weekData.weekNumber || 9,
+      {
+        activeWeekSlot: 'current',
+        anchorMondayIso: container.mondayIso,
+        meetingDays: container.meetingDays || {},
+        scheduleTypes: container.scheduleTypes || {},
+      }
+    );
+    void publishScheduleToCloud(snapshot, undefined, 'vf', true).catch(() => {});
+  } catch {
+    // ignore
+  }
 }
 
 function saveCurrentStateToWeekContainer(mondayIso: string, syncServer = true): void {
@@ -123,6 +235,7 @@ function saveCurrentStateToWeekContainer(mondayIso: string, syncServer = true): 
     localStorage.setItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`, JSON.stringify(container));
     if (syncServer) {
       persistWeekContainerToServer(mondayIso, container);
+      syncCurrentWeekToPublicSnapshot(container);
     }
   } catch {
     // ignore storage quota errors
@@ -140,7 +253,12 @@ function loadWeekContainer(mondayIso: string): WeekScheduleContainer | null {
       parsed.schemaVersion === WEEK_CONTAINER_SCHEMA_VERSION &&
       Array.isArray(parsed.timeBlocks)
     ) {
-      return parsed;
+      const preconfigured = buildEventModalitiesForWeek(mondayIso);
+      return {
+        ...parsed,
+        meetingDays: { ...preconfigured.meetingDays, ...(parsed.meetingDays || {}) },
+        scheduleTypes: { ...preconfigured.scheduleTypes, ...(parsed.scheduleTypes || {}) },
+      };
     }
     localStorage.removeItem(`${WEEK_CONTAINER_PREFIX}${mondayIso}`);
   } catch {
@@ -185,6 +303,10 @@ export interface CoordinatorMatrixContextType {
   setCurrentPeriod: (period: string) => void;
   activeWeekSlot: WeekSlotMode;
   setActiveWeekSlot: (slot: WeekSlotMode) => void;
+  customWeekMondayIso: string | null;
+  setCustomWeekMondayIso: (mondayIso: string | null) => void;
+  academicCalendarsStore: AcademicCalendarsStore;
+  updateAcademicCalendarsStore: (nextStore: AcademicCalendarsStore) => void;
   isAutoNextWeekCutoff: boolean;
   activeAnchorDate: Date;
   activeMondayIso: string;
@@ -259,6 +381,10 @@ const defaultContext: CoordinatorMatrixContextType = {
   setCurrentPeriod: () => {},
   activeWeekSlot: initialDefaultSlot,
   setActiveWeekSlot: () => {},
+  customWeekMondayIso: null,
+  setCustomWeekMondayIso: () => {},
+  academicCalendarsStore: loadAcademicCalendarsStore(),
+  updateAcademicCalendarsStore: () => {},
   isAutoNextWeekCutoff: isPastFridayCutoff(new Date()),
   activeAnchorDate: initialDefaultAnchor,
   activeMondayIso: getWeekMondayIso(initialDefaultAnchor),
@@ -306,6 +432,24 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
   const [officialSubjects, setOfficialSubjects] = useState<string[]>(DEFAULT_SUBJECT_NAMES);
   const [zoomLevel, setZoomLevel] = useState(100);
 
+  const [academicCalendarsStore, setAcademicCalendarsStore] = useState<AcademicCalendarsStore>(() =>
+    loadAcademicCalendarsStore()
+  );
+  const [customWeekMondayIso, setCustomWeekMondayIsoState] = useState<string | null>(null);
+
+  const updateAcademicCalendarsStore = useCallback((nextStore: AcademicCalendarsStore) => {
+    const saved = saveAcademicCalendarsStore(nextStore, true);
+    setAcademicCalendarsStore(saved);
+    try {
+      const currentCanonicalIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
+      const container =
+        loadWeekContainer(currentCanonicalIso) || createCleanWeekContainer(currentCanonicalIso);
+      syncCurrentWeekToPublicSnapshot(container);
+    } catch {
+      // ignore
+    }
+  }, []);
+
   const [isAutoNextWeekCutoff, setIsAutoNextWeekCutoff] = useState<boolean>(() =>
     isPastFridayCutoff(new Date())
   );
@@ -317,25 +461,25 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       const anchor = getAnchorDateForWeekSlot(defaultMode, new Date());
       const targetMondayIso = getWeekMondayIso(anchor);
       if (prevSavedIso && prevSavedIso !== targetMondayIso) {
-        saveCurrentStateToWeekContainer(prevSavedIso);
+        saveCurrentStateToWeekContainer(prevSavedIso, false);
       }
       const existingContainer = loadWeekContainer(targetMondayIso);
-      if (existingContainer) {
-        const blocksStr = JSON.stringify(existingContainer.timeBlocks);
-        localStorage.setItem('villaFloraMatrix', blocksStr);
-        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-        localStorage.setItem('ievf_meeting_days', JSON.stringify(existingContainer.meetingDays || {}));
-        localStorage.setItem('ievf_schedule_types', JSON.stringify(existingContainer.scheduleTypes || {}));
-      } else {
-        const cleanContainer = createCleanWeekContainer(targetMondayIso);
-        const blocksStr = JSON.stringify(cleanContainer.timeBlocks);
-        localStorage.setItem('villaFloraMatrix', blocksStr);
-        localStorage.setItem('ievf_time_blocks_v1', blocksStr);
-        localStorage.setItem('ievf_meeting_days', '{}');
-        localStorage.setItem('ievf_schedule_types', '{}');
-      }
+      const effectiveContainer = existingContainer || createCleanWeekContainer(targetMondayIso);
+      const blocksStr = JSON.stringify(effectiveContainer.timeBlocks);
+      localStorage.setItem('villaFloraMatrix', blocksStr);
+      localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+      localStorage.setItem('ievf_meeting_days', JSON.stringify(effectiveContainer.meetingDays || {}));
+      localStorage.setItem('ievf_schedule_types', JSON.stringify(effectiveContainer.scheduleTypes || {}));
       localStorage.setItem('ievf_active_week_slot', defaultMode);
       localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
+
+      // Si el snapshot público guardado pertenecía a una semana anterior ya cerrada, sincronizar la nueva Semana Actual
+      const rawPubSnap = localStorage.getItem('ievf_public_schedule_snapshot');
+      const parsedPubSnap = rawPubSnap ? JSON.parse(rawPubSnap) : null;
+      if (!parsedPubSnap || parsedPubSnap?.dayConfigs?.anchorMondayIso !== targetMondayIso) {
+        persistWeekContainerToServer(targetMondayIso, effectiveContainer);
+        syncCurrentWeekToPublicSnapshot(effectiveContainer);
+      }
     } catch {
       // ignore
     }
@@ -367,15 +511,20 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     }
   });
 
-  const activeAnchorDate = useMemo(
-    () => getAnchorDateForWeekSlot(activeWeekSlot, new Date()),
-    [activeWeekSlot, isAutoNextWeekCutoff]
-  );
+  const activeAnchorDate = useMemo(() => {
+    if (customWeekMondayIso) {
+      return getStartOfWeek(customWeekMondayIso);
+    }
+    return getAnchorDateForWeekSlot(activeWeekSlot, new Date());
+  }, [customWeekMondayIso, activeWeekSlot, isAutoNextWeekCutoff]);
   const activeMondayIso = useMemo(() => getWeekMondayIso(activeAnchorDate), [activeAnchorDate]);
   const activeMondayIsoRef = useRef<string>(activeMondayIso);
   activeMondayIsoRef.current = activeMondayIso;
   const isSwitchingWeekRef = useRef<boolean>(false);
-  const weekInfo = useMemo(() => getCurrentWeekText(activeAnchorDate), [activeAnchorDate]);
+  const weekInfo = useMemo(
+    () => getCurrentWeekText(activeAnchorDate),
+    [activeAnchorDate, academicCalendarsStore]
+  );
 
   const [currentAcademicWeek, setCurrentAcademicWeek] = useState<number>(weekInfo.weekNumber || 9);
   const [currentPeriod, setCurrentPeriod] = useState<string>(
@@ -434,8 +583,21 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     };
     refreshTeachers();
 
-    // Hidratar docentes y contenedores semanales desde PostgreSQL
+    // Hidratar docentes, calendarios multi-año y contenedores semanales desde PostgreSQL / NAS
     if (typeof window !== 'undefined' && typeof fetch === 'function') {
+      void fetch(`/api/academic-calendar?_t=${Date.now()}`, { cache: 'no-store' })
+        .then((res) => (res.ok ? res.json() : null))
+        .then((data) => {
+          if (data?.store && typeof data.store === 'object' && data.store.years) {
+            const hydrated = saveAcademicCalendarsStore(data.store, false);
+            setAcademicCalendarsStore(hydrated);
+          } else {
+            // Si aún no existe en el servidor, persistir la semilla 2026 + 2027
+            saveAcademicCalendarsStore(loadAcademicCalendarsStore(), true);
+          }
+        })
+        .catch(() => {});
+
       void fetch(`/api/teachers?_t=${Date.now()}`, { cache: 'no-store' })
         .then((res) => (res.ok ? res.json() : null))
         .then((data) => {
@@ -675,6 +837,14 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     setCustomHolidays((prev) => {
       const next = prev.includes(dateStr) ? prev.filter((d) => d !== dateStr) : [...prev, dateStr];
       localStorage.setItem('ievf_custom_holidays', JSON.stringify(next));
+      try {
+        const currentCanonicalIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', new Date()));
+        const container =
+          loadWeekContainer(currentCanonicalIso) || createCleanWeekContainer(currentCanonicalIso);
+        syncCurrentWeekToPublicSnapshot(container);
+      } catch {
+        // ignore
+      }
       return next;
     });
   }, []);
@@ -682,8 +852,9 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
   const setActiveWeekSlot = useCallback(
     (targetSlot: WeekSlotMode) => {
       const now = new Date();
-      const prevAnchor = getAnchorDateForWeekSlot(activeWeekSlot, now);
-      const prevMondayIso = getWeekMondayIso(prevAnchor);
+      const prevMondayIso =
+        activeMondayIsoRef.current ||
+        getWeekMondayIso(getAnchorDateForWeekSlot(activeWeekSlot, now));
       const targetAnchor = getAnchorDateForWeekSlot(targetSlot, now);
       const targetMondayIso = getWeekMondayIso(targetAnchor);
 
@@ -691,6 +862,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
         saveCurrentStateToWeekContainer(prevMondayIso, false);
       }
 
+      setCustomWeekMondayIsoState(null);
       activeMondayIsoRef.current = targetMondayIso;
       isSwitchingWeekRef.current = true;
 
@@ -724,6 +896,53 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       }
     },
     [activeWeekSlot]
+  );
+
+  const setCustomWeekMondayIso = useCallback(
+    (mondayIso: string | null) => {
+      if (!mondayIso) {
+        setActiveWeekSlot(activeWeekSlot);
+        return;
+      }
+      const targetMondayIso = getWeekMondayIso(mondayIso);
+      const prevMondayIso = activeMondayIsoRef.current;
+
+      if (prevMondayIso) {
+        saveCurrentStateToWeekContainer(prevMondayIso, true);
+      }
+
+      activeMondayIsoRef.current = targetMondayIso;
+      isSwitchingWeekRef.current = true;
+
+      try {
+        const targetContainer =
+          loadWeekContainer(targetMondayIso) || createCleanWeekContainer(targetMondayIso);
+
+        try {
+          localStorage.setItem('ievf_active_monday_iso', targetMondayIso);
+          const blocksStr = JSON.stringify(targetContainer.timeBlocks);
+          localStorage.setItem('villaFloraMatrix', blocksStr);
+          localStorage.setItem('ievf_time_blocks_v1', blocksStr);
+          localStorage.setItem('ievf_meeting_days', JSON.stringify(targetContainer.meetingDays || {}));
+          localStorage.setItem('ievf_schedule_types', JSON.stringify(targetContainer.scheduleTypes || {}));
+        } catch {
+          // ignore
+        }
+
+        setMeetingDays(targetContainer.meetingDays || {});
+        setScheduleTypes(targetContainer.scheduleTypes || {});
+        setCustomWeekMondayIsoState(targetMondayIso);
+        window.dispatchEvent(
+          new CustomEvent('week_slot_changed', {
+            detail: { slot: activeWeekSlot, mondayIso: targetMondayIso },
+          })
+        );
+        window.dispatchEvent(new Event('schedule_matrix_updated'));
+      } finally {
+        isSwitchingWeekRef.current = false;
+      }
+    },
+    [activeWeekSlot, setActiveWeekSlot]
   );
 
   const cloneCurrentWeekToNextWeek = useCallback(
@@ -919,8 +1138,8 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       const now = new Date();
       const pastCutoff = isPastFridayCutoff(now);
       setIsAutoNextWeekCutoff((prev) => {
-        if (!prev && pastCutoff) {
-          setActiveWeekSlot('next');
+        if (!prev && pastCutoff && !customWeekMondayIso) {
+          setActiveWeekSlot('current');
         }
         return pastCutoff;
       });
@@ -928,11 +1147,11 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
 
     const interval = window.setInterval(checkFridayCutoff, 30000);
     return () => window.clearInterval(interval);
-  }, [setActiveWeekSlot]);
+  }, [setActiveWeekSlot, customWeekMondayIso]);
 
   const weekHeaders = useMemo(
     () => generateWeekHeaders(activeAnchorDate, customHolidays),
-    [activeAnchorDate, customHolidays]
+    [activeAnchorDate, customHolidays, academicCalendarsStore]
   );
 
   const value = useMemo<CoordinatorMatrixContextType>(
@@ -972,6 +1191,10 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       setCurrentPeriod,
       activeWeekSlot,
       setActiveWeekSlot,
+      customWeekMondayIso,
+      setCustomWeekMondayIso,
+      academicCalendarsStore,
+      updateAcademicCalendarsStore,
       isAutoNextWeekCutoff,
       activeAnchorDate,
       activeMondayIso,
@@ -1030,6 +1253,10 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
       currentPeriod,
       activeWeekSlot,
       setActiveWeekSlot,
+      customWeekMondayIso,
+      setCustomWeekMondayIso,
+      academicCalendarsStore,
+      updateAcademicCalendarsStore,
       isAutoNextWeekCutoff,
       activeAnchorDate,
       activeMondayIso,

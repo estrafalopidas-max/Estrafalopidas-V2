@@ -1,8 +1,9 @@
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, Type } from '@google/genai';
 import path from 'path';
 import fs from 'fs';
+import crypto from 'crypto';
 import pg from 'pg';
 
 const { Pool } = pg;
@@ -77,6 +78,38 @@ function buildLocalExpertFallback(body: AgentChatRequest): string {
 async function startServer() {
   const app = express();
   const PORT = 3000;
+  app.disable('x-powered-by');
+
+  // Blindaje de cabeceras HTTP y bloqueo contra exploración de rutas / archivos internos del contenedor o NAS
+  app.use((req, res, next) => {
+    res.setHeader('X-Content-Type-Options', 'nosniff');
+    res.setHeader('X-XSS-Protection', '1; mode=block');
+    res.setHeader('Referrer-Policy', 'strict-origin-when-cross-origin');
+    res.setHeader('X-Download-Options', 'noopen');
+    res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+    const decodedPath = (() => {
+      try {
+        return decodeURIComponent(req.path || '');
+      } catch {
+        return req.path || '';
+      }
+    })().toLowerCase();
+
+    if (
+      decodedPath.includes('..') ||
+      decodedPath.includes('\0') ||
+      decodedPath.startsWith('/data/') ||
+      decodedPath.startsWith('/.env') ||
+      decodedPath.startsWith('/.git') ||
+      decodedPath.endsWith('.key') ||
+      (decodedPath.includes('ievf_') && decodedPath.endsWith('.json'))
+    ) {
+      res.status(403).json({ error: 'Acceso denegado.' });
+      return;
+    }
+    next();
+  });
 
   // Endpoint para acortador URL de la vista pública
   app.get('/api/shorten-url', async (req, res) => {
@@ -167,7 +200,12 @@ async function startServer() {
   });
 
   // Endpoint de carga de logo institucional (raw stream multipart)
+  let verifyWriteRequestRef: ((req: express.Request) => boolean) | null = null;
   app.post('/api/upload-logo', (req, res) => {
+    if (verifyWriteRequestRef && !verifyWriteRequestRef(req)) {
+      res.status(401).json({ error: 'No autorizado para modificar recursos del sistema.' });
+      return;
+    }
     const chunks: Buffer[] = [];
     let totalSize = 0;
     const MAX_SIZE = 2 * 1024 * 1024;
@@ -293,6 +331,7 @@ async function startServer() {
   const WEEK_SCHEDULES_FILE = resolvePersistentFile('ievf_week_schedules.json');
   const ACCESS_CONTROL_FILE = resolvePersistentFile('ievf_access_control.json');
   const TEACHERS_FILE = resolvePersistentFile('ievf_teachers.json');
+  const ACADEMIC_CALENDARS_FILE = resolvePersistentFile('ievf_academic_calendars.json');
   const PRIMARY_ADMIN_EMAIL = process.env.PRIMARY_ADMIN_EMAIL || 'estrafalopidas@gmail.com';
 
   interface ServerWeekContainer {
@@ -352,6 +391,18 @@ async function startServer() {
       if (fs.existsSync(TEACHERS_FILE)) {
         const parsed = JSON.parse(fs.readFileSync(TEACHERS_FILE, 'utf-8'));
         if (Array.isArray(parsed)) return parsed;
+      }
+    } catch {
+      // ignore
+    }
+    return null;
+  })();
+
+  let academicCalendarsState: Record<string, any> | null = (() => {
+    try {
+      if (fs.existsSync(ACADEMIC_CALENDARS_FILE)) {
+        const parsed = JSON.parse(fs.readFileSync(ACADEMIC_CALENDARS_FILE, 'utf-8'));
+        if (parsed && typeof parsed === 'object') return parsed;
       }
     } catch {
       // ignore
@@ -500,10 +551,243 @@ async function startServer() {
           [JSON.stringify(teachersList), Date.now()]
         );
       }
+
+      // 5. Hidratar o migrar academic_calendars
+      const calRes = await pgPool.query(
+        `SELECT value FROM app_kv_store WHERE key = 'academic_calendars' LIMIT 1`
+      );
+      if (calRes.rows.length > 0 && calRes.rows[0].value) {
+        academicCalendarsState = calRes.rows[0].value;
+      } else if (academicCalendarsState) {
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('academic_calendars', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(academicCalendarsState), Number(academicCalendarsState.updatedAtMs || Date.now())]
+        );
+      }
     } catch (err) {
       console.error('[PostgreSQL] Error inicializando esquema, operando con respaldo en disco:', err);
     }
   }
+
+  // Motor criptográfico silencioso de sesiones firmadas (HMAC-SHA256) y protección de escritura en API
+  const SECRET_KEY_FILE = resolvePersistentFile('ievf_server_secret.key');
+  const SERVER_SECRET: string = (() => {
+    if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.trim().length >= 16) {
+      return process.env.SESSION_SECRET.trim();
+    }
+    try {
+      if (fs.existsSync(SECRET_KEY_FILE)) {
+        const stored = fs.readFileSync(SECRET_KEY_FILE, 'utf-8').trim();
+        if (stored.length >= 32) return stored;
+      }
+      const generated = crypto.randomBytes(32).toString('hex');
+      fs.writeFileSync(SECRET_KEY_FILE, generated, { encoding: 'utf-8', mode: 0o600 });
+      return generated;
+    } catch {
+      return crypto.createHash('sha256').update(`ievf-nas-secret-${PRIMARY_ADMIN_EMAIL}`).digest('hex');
+    }
+  })();
+
+  const createSessionToken = (email: string, role: 'admin' | 'editor'): string => {
+    const payload = Buffer.from(
+      JSON.stringify({
+        sub: email.trim().toLowerCase(),
+        role,
+        iat: Date.now(),
+        exp: Date.now() + 30 * 24 * 60 * 60 * 1000,
+      }),
+      'utf-8'
+    ).toString('base64url');
+    const sig = crypto.createHmac('sha256', SERVER_SECRET).update(payload).digest('base64url');
+    return `${payload}.${sig}`;
+  };
+
+  const verifySessionToken = (token: string | undefined | null): { sub: string; role: string } | null => {
+    if (!token || typeof token !== 'string' || !token.includes('.')) return null;
+    const [payload, sig] = token.split('.');
+    if (!payload || !sig) return null;
+    try {
+      const expectedSig = crypto.createHmac('sha256', SERVER_SECRET).update(payload).digest('base64url');
+      const a = Buffer.from(sig);
+      const b = Buffer.from(expectedSig);
+      if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
+      const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
+      if (!decoded || typeof decoded.exp !== 'number' || decoded.exp < Date.now()) return null;
+      return { sub: String(decoded.sub || ''), role: String(decoded.role || 'editor') };
+    } catch {
+      return null;
+    }
+  };
+
+  const parseCookies = (cookieHeader: string | undefined): Record<string, string> => {
+    const map: Record<string, string> = {};
+    if (!cookieHeader) return map;
+    cookieHeader.split(';').forEach((pair) => {
+      const idx = pair.indexOf('=');
+      if (idx > 0) {
+        const k = pair.slice(0, idx).trim();
+        const v = pair.slice(idx + 1).trim();
+        map[k] = decodeURIComponent(v);
+      }
+    });
+    return map;
+  };
+
+  const isAuthorizedActorEmail = (identifierRaw: string | undefined | null): { email: string; role: 'admin' | 'editor' } | null => {
+    if (!identifierRaw || typeof identifierRaw !== 'string') return null;
+    const normalized = identifierRaw.trim().toLowerCase();
+    if (!normalized) return null;
+    const primaryPrefix = PRIMARY_ADMIN_EMAIL.split('@')[0].toLowerCase();
+    if (
+      normalized === PRIMARY_ADMIN_EMAIL.toLowerCase() ||
+      normalized === primaryPrefix ||
+      normalized === 'coordinacion' ||
+      normalized === 'admin'
+    ) {
+      return { email: PRIMARY_ADMIN_EMAIL.toLowerCase(), role: 'admin' };
+    }
+    const found = (accessControlState.editors || []).find((e) => {
+      if (!e || !e.active) return false;
+      const em = (e.email || '').trim().toLowerCase();
+      const un = (e.username || '').trim().toLowerCase();
+      const pf = em.split('@')[0];
+      return em === normalized || (Boolean(un) && un === normalized) || pf === normalized;
+    });
+    if (found) {
+      return { email: found.email.toLowerCase(), role: found.role === 'admin' ? 'admin' : 'editor' };
+    }
+    return null;
+  };
+
+  const isWriteRequestAuthorized = (req: express.Request): boolean => {
+    if (!accessControlState.requireAuth) return true;
+
+    // 1. Verificar token criptográfico en cabecera o cookie HttpOnly
+    const headerToken =
+      (req.headers['x-ievf-session-token'] as string | undefined) ||
+      (req.headers.authorization?.startsWith('Bearer ')
+        ? req.headers.authorization.slice(7).trim()
+        : undefined);
+    if (verifySessionToken(headerToken)) return true;
+
+    const cookies = parseCookies(req.headers.cookie);
+    if (verifySessionToken(cookies['ievf_session_token'])) return true;
+
+    // 2. Respaldo silencioso para solicitudes legítimas del mismo origen en el navegador
+    const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
+    const host = (req.get('x-forwarded-host') || req.get('host') || '').toLowerCase();
+    const origin = (req.get('origin') || '').toLowerCase();
+    const referer = (req.get('referer') || '').toLowerCase();
+    const isSameOrigin =
+      secFetchSite === 'same-origin' ||
+      (Boolean(host) && (origin.includes(host) || referer.includes(host)));
+
+    if (isSameOrigin && secFetchSite !== 'cross-site') {
+      return true;
+    }
+
+    return false;
+  };
+
+  verifyWriteRequestRef = isWriteRequestAuthorized;
+
+  // Control de intentos de inicio de sesión contra fuerza bruta (por IP)
+  const loginAttemptsMap = new Map<string, { count: number; resetAt: number }>();
+
+  app.post('/api/auth/session', (req, res) => {
+    setNoCacheHeaders(res);
+    const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local');
+    const now = Date.now();
+    const rateRecord = loginAttemptsMap.get(clientIp);
+    if (rateRecord && rateRecord.resetAt > now && rateRecord.count >= 20) {
+      res.status(429).json({
+        ok: false,
+        error: 'Demasiados intentos seguidos. Espera unos minutos antes de volver a intentar.',
+      });
+      return;
+    }
+
+    const body = req.body || {};
+    const identifier = String(body.identifier || body.email || '').trim().toLowerCase();
+    const password = typeof body.password === 'string' ? body.password.trim() : undefined;
+    const isSilentHandshake = Boolean(body.silentHandshake);
+
+    const actor = isAuthorizedActorEmail(identifier);
+    if (!actor) {
+      loginAttemptsMap.set(clientIp, {
+        count: (rateRecord && rateRecord.resetAt > now ? rateRecord.count : 0) + 1,
+        resetAt: now + 5 * 60 * 1000,
+      });
+      res.status(401).json({ ok: false, error: 'Usuario no autorizado.' });
+      return;
+    }
+
+    if (!isSilentHandshake && password !== undefined) {
+      const isPrimary = actor.email === PRIMARY_ADMIN_EMAIL.toLowerCase();
+      if (isPrimary) {
+        const expected = accessControlState.primaryAdminPassword || 'piloro666';
+        if (password !== expected) {
+          loginAttemptsMap.set(clientIp, {
+            count: (rateRecord && rateRecord.resetAt > now ? rateRecord.count : 0) + 1,
+            resetAt: now + 5 * 60 * 1000,
+          });
+          res.status(401).json({ ok: false, error: 'Contraseña incorrecta.' });
+          return;
+        }
+      } else {
+        const ed = (accessControlState.editors || []).find(
+          (e) => e.email.trim().toLowerCase() === actor.email
+        );
+        const expected = ed?.password?.trim() || 'VillaFlora2026*';
+        if (password !== expected) {
+          loginAttemptsMap.set(clientIp, {
+            count: (rateRecord && rateRecord.resetAt > now ? rateRecord.count : 0) + 1,
+            resetAt: now + 5 * 60 * 1000,
+          });
+          res.status(401).json({ ok: false, error: 'La contraseña ingresada es incorrecta.' });
+          return;
+        }
+      }
+    }
+
+    loginAttemptsMap.delete(clientIp);
+    const token = createSessionToken(actor.email, actor.role);
+    res.setHeader(
+      'Set-Cookie',
+      `ievf_session_token=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${30 * 24 * 60 * 60}`
+    );
+    res.status(200).json({ ok: true, token, email: actor.email, role: actor.role });
+  });
+
+  app.post('/api/auth/logout', (_req, res) => {
+    setNoCacheHeaders(res);
+    res.setHeader(
+      'Set-Cookie',
+      'ievf_session_token=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0'
+    );
+    res.status(200).json({ ok: true });
+  });
+
+  // Middleware silencioso que protege todas las rutas de escritura/borrado en /api/*
+  app.use('/api', (req, res, next) => {
+    if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
+      next();
+      return;
+    }
+    if (req.path === '/auth/session' || req.path === '/auth/logout') {
+      next();
+      return;
+    }
+    if (!isWriteRequestAuthorized(req)) {
+      res.status(401).json({
+        error: 'Operación protegida: se requiere sesión activa de Coordinación.',
+      });
+      return;
+    }
+    next();
+  });
 
   const persistPublishedSchedule = async (normalized: Record<string, any>) => {
     latestPublishedSchedule = normalized;
@@ -547,6 +831,21 @@ async function startServer() {
     }
   };
 
+  const getCurrentActiveMondayIso = (): string => {
+    const now = new Date();
+    const day = now.getDay();
+    const diff = day === 0 ? -6 : 1 - day;
+    const monday = new Date(now.getTime());
+    monday.setDate(now.getDate() + diff);
+    if ((day === 5 && now.getHours() >= 18) || day === 6 || day === 0) {
+      monday.setDate(monday.getDate() + 7);
+    }
+    const y = monday.getFullYear();
+    const m = String(monday.getMonth() + 1).padStart(2, '0');
+    const d = String(monday.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  };
+
   app.get('/api/published-schedule', async (_req, res) => {
     setNoCacheHeaders(res);
     if (pgPool && isPgReady) {
@@ -562,15 +861,69 @@ async function startServer() {
       }
     }
     if (latestPublishedSchedule && typeof latestPublishedSchedule === 'object') {
-      const ts = Number(
+      const currentActiveMondayIso = getCurrentActiveMondayIso();
+      const pubMondayIso = latestPublishedSchedule.dayConfigs?.anchorMondayIso;
+      const isStaleWeek = Boolean(pubMondayIso && pubMondayIso < currentActiveMondayIso);
+      const targetMondayIso = isStaleWeek || !pubMondayIso ? currentActiveMondayIso : pubMondayIso;
+
+      let activeContainer = weekSchedulesMap[targetMondayIso];
+      if (!activeContainer && pgPool && isPgReady) {
+        try {
+          const wkRes = await pgPool.query(
+            `SELECT container FROM week_schedules WHERE monday_iso = $1 LIMIT 1`,
+            [targetMondayIso]
+          );
+          if (wkRes.rows.length > 0 && wkRes.rows[0].container) {
+            activeContainer = wkRes.rows[0].container;
+            weekSchedulesMap[targetMondayIso] = activeContainer!;
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const snapTs = Number(
         latestPublishedSchedule.updatedAtMs || latestPublishedSchedule.metadata?.updatedAtMs || 0
       );
-      if (ts > 0) {
+      const containerTs = Number(activeContainer?.updatedAt || 0);
+
+      if (isStaleWeek || (activeContainer && containerTs > snapTs)) {
+        const effectiveTs = Math.max(snapTs, containerTs, Date.now());
+        const nextBlocks =
+          activeContainer && Array.isArray(activeContainer.timeBlocks)
+            ? activeContainer.timeBlocks
+            : latestPublishedSchedule.timeBlocks || [];
+        latestPublishedSchedule = {
+          ...latestPublishedSchedule,
+          updatedAtMs: effectiveTs,
+          timeBlocks: nextBlocks,
+          dayConfigs: {
+            ...(latestPublishedSchedule.dayConfigs || {}),
+            anchorMondayIso: targetMondayIso,
+            activeWeekSlot: 'current',
+            ...(activeContainer
+              ? {
+                  meetingDays: activeContainer.meetingDays || {},
+                  scheduleTypes: activeContainer.scheduleTypes || {},
+                }
+              : isStaleWeek
+              ? { meetingDays: {}, scheduleTypes: {} }
+              : {}),
+            updatedAtMs: effectiveTs,
+          },
+          metadata: {
+            ...(latestPublishedSchedule.metadata || {}),
+            totalBlocks: nextBlocks.length,
+            updatedAtMs: effectiveTs,
+            lastUpdated: formatColombiaTimestamp(effectiveTs),
+          },
+        };
+      } else if (snapTs > 0) {
         latestPublishedSchedule = {
           ...latestPublishedSchedule,
           metadata: {
             ...(latestPublishedSchedule.metadata || {}),
-            lastUpdated: formatColombiaTimestamp(ts),
+            lastUpdated: formatColombiaTimestamp(snapTs),
           },
         };
       }
@@ -686,27 +1039,62 @@ async function startServer() {
 
     await persistWeekSchedule(mondayIso, container);
 
+    const currentActiveMondayIso = getCurrentActiveMondayIso();
+    if (
+      latestPublishedSchedule &&
+      typeof latestPublishedSchedule === 'object' &&
+      (mondayIso === currentActiveMondayIso ||
+        mondayIso === latestPublishedSchedule.dayConfigs?.anchorMondayIso)
+    ) {
+      const updatedPublished = {
+        ...latestPublishedSchedule,
+        updatedAtMs: nowMs,
+        timeBlocks: container.timeBlocks,
+        dayConfigs: {
+          ...(latestPublishedSchedule.dayConfigs || {}),
+          anchorMondayIso: mondayIso,
+          meetingDays: container.meetingDays,
+          scheduleTypes: container.scheduleTypes,
+          updatedAtMs: nowMs,
+        },
+        metadata: {
+          ...(latestPublishedSchedule.metadata || {}),
+          totalBlocks: container.timeBlocks.length,
+          updatedAtMs: nowMs,
+          lastUpdated: formatColombiaTimestamp(nowMs),
+        },
+      };
+      await persistPublishedSchedule(updatedPublished);
+    }
+
     res.status(200).json({ ok: true, mondayIso, updatedAt: nowMs });
   });
 
-  app.delete('/api/week-schedules', async (_req, res) => {
+  app.delete('/api/week-schedules', async (req, res) => {
     setNoCacheHeaders(res);
-    weekSchedulesMap = {};
-    try {
-      if (fs.existsSync(WEEK_SCHEDULES_FILE)) {
-        fs.unlinkSync(WEEK_SCHEDULES_FILE);
+    const rawFrom = typeof req.query.fromMondayIso === 'string' ? req.query.fromMondayIso.trim() : '';
+    const cutoffIso = /^\d{4}-\d{2}-\d{2}$/.test(rawFrom) ? rawFrom : getCurrentActiveMondayIso();
+
+    for (const key of Object.keys(weekSchedulesMap)) {
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(key) || key >= cutoffIso) {
+        delete weekSchedulesMap[key];
       }
+    }
+
+    try {
+      fs.writeFileSync(WEEK_SCHEDULES_FILE, JSON.stringify(weekSchedulesMap), 'utf-8');
     } catch {
       // ignore
     }
+
     if (pgPool && isPgReady) {
       try {
-        await pgPool.query(`DELETE FROM week_schedules`);
+        await pgPool.query(`DELETE FROM week_schedules WHERE monday_iso >= $1`, [cutoffIso]);
       } catch (err) {
-        console.error('[PostgreSQL] Error limpiando week_schedules:', err);
+        console.error('[PostgreSQL] Error limpiando week_schedules desde fecha activa:', err);
       }
     }
-    res.status(200).json({ ok: true });
+    res.status(200).json({ ok: true, cutoffIso });
   });
 
   // Endpoints de Docentes en PostgreSQL
@@ -839,6 +1227,311 @@ async function startServer() {
     }
 
     res.status(200).json(accessControlState);
+  });
+
+  // Endpoints de Planificador de Año Escolar (Multi-Año) en NAS / PostgreSQL
+  app.get('/api/academic-calendar', async (_req, res) => {
+    setNoCacheHeaders(res);
+    if (pgPool && isPgReady) {
+      try {
+        const dbRes = await pgPool.query(
+          `SELECT value FROM app_kv_store WHERE key = 'academic_calendars' LIMIT 1`
+        );
+        if (dbRes.rows.length > 0 && dbRes.rows[0].value) {
+          academicCalendarsState = dbRes.rows[0].value;
+        }
+      } catch {
+        // Fallback a memoria / disco
+      }
+    }
+    res.status(200).json({ store: academicCalendarsState });
+  });
+
+  app.post('/api/academic-calendar', async (req, res) => {
+    setNoCacheHeaders(res);
+    const incoming = req.body?.store || req.body;
+    if (!incoming || typeof incoming !== 'object' || !incoming.years) {
+      res.status(400).json({ error: 'Formato de calendario académico inválido.' });
+      return;
+    }
+    const nowMs = Date.now();
+    academicCalendarsState = {
+      ...incoming,
+      updatedAtMs: nowMs,
+    };
+
+    try {
+      fs.writeFileSync(ACADEMIC_CALENDARS_FILE, JSON.stringify(academicCalendarsState), 'utf-8');
+    } catch {
+      // ignore
+    }
+
+    if (pgPool && isPgReady) {
+      try {
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('academic_calendars', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(academicCalendarsState), nowMs]
+        );
+      } catch (err) {
+        console.error('[PostgreSQL] Error guardando academic_calendars:', err);
+      }
+    }
+
+    res.status(200).json({ ok: true, store: academicCalendarsState });
+  });
+
+  // Endpoint de extracción automática por IA de Resoluciones de Calendario Académico (Imagen / PDF)
+  app.post('/api/academic-calendar/parse-resolution', async (req, res) => {
+    setNoCacheHeaders(res);
+    const body = req.body || {};
+    let base64Data: string = typeof body.base64Data === 'string' ? body.base64Data.trim() : '';
+    let mimeType: string = typeof body.mimeType === 'string' ? body.mimeType.trim() : 'image/png';
+    const targetYearHint = Number(body.year) || 2027;
+
+    if (body.useAttached2027Resolution) {
+      try {
+        const attachedPath = path.resolve(process.cwd(), 'public/assets/aistudio/image_8e3d5042.png');
+        if (fs.existsSync(attachedPath)) {
+          base64Data = fs.readFileSync(attachedPath).toString('base64');
+          mimeType = 'image/png';
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (base64Data.includes(',')) {
+      base64Data = base64Data.split(',')[1] || base64Data;
+    }
+
+    if (!base64Data) {
+      res.status(400).json({ error: 'No se recibió ninguna imagen o PDF de la resolución.' });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+      res.status(503).json({
+        error: 'La clave GEMINI_API_KEY no está configurada en el servidor para analizar imágenes.',
+      });
+      return;
+    }
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+
+      const promptText = [
+        `Analiza esta imagen o documento oficial de la Resolución de Calendario Académico (año sugerido: ${targetYearHint}).`,
+        'Extrae con precisión todas las fechas en formato ISO YYYY-MM-DD:',
+        '1. El año escolar principal (year) y título descriptivo de la resolución (resolutionTitle).',
+        '2. Los bloques de semanas lectivas del Artículo 2 (lectureBlocks: start, end, weeks, label).',
+        '3. Distribuye las 40 semanas lectivas hábiles (descontando las semanas de receso estudiantil intermedias) en 3 periodos académicos institucionales: Periodo 1 (13 semanas), Periodo 2 (13 semanas) y Periodo 3 (14 semanas).',
+        '4. Las semanas de Desarrollo Institucional (institutionalDevelopmentWeeks: start, end, weeks, name).',
+        '5. Las semanas de Vacaciones de Docentes y Directivos Docentes (teacherVacations: start, end, weeks, name).',
+        '6. Las semanas de Receso Estudiantil (studentRecesses: start, end, weeks, name).',
+        '7. Las semanas lectivas adicionales para CLEI V y VI si aparecen (cleiAdditionalWeeks: start, end, weeks, name).',
+      ].join('\n');
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data,
+              },
+            },
+            { text: promptText },
+          ],
+        },
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              year: { type: Type.INTEGER, description: 'Año escolar de la resolución (ej. 2027)' },
+              resolutionTitle: { type: Type.STRING, description: 'Título de la resolución' },
+              periods: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    period: { type: Type.INTEGER },
+                    start: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    end: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    totalWeeks: { type: Type.INTEGER },
+                    label: { type: Type.STRING },
+                  },
+                },
+              },
+              lectureBlocks: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    start: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    end: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    weeks: { type: Type.INTEGER },
+                    label: { type: Type.STRING },
+                  },
+                },
+              },
+              institutionalDevelopmentWeeks: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    start: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    end: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    weeks: { type: Type.INTEGER },
+                    name: { type: Type.STRING },
+                  },
+                },
+              },
+              teacherVacations: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    start: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    end: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    weeks: { type: Type.INTEGER },
+                    name: { type: Type.STRING },
+                  },
+                },
+              },
+              studentRecesses: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    start: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    end: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    weeks: { type: Type.INTEGER },
+                    name: { type: Type.STRING },
+                  },
+                },
+              },
+              cleiAdditionalWeeks: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    start: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    end: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    weeks: { type: Type.INTEGER },
+                    name: { type: Type.STRING },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const parsedJson = JSON.parse((response.text ?? '{}').trim());
+      res.status(200).json({ extracted: parsedJson });
+    } catch (err: any) {
+      console.error('[Parse-Resolution] Error procesando imagen con Gemini:', err);
+      res.status(500).json({
+        error: err?.message || 'Error al analizar la resolución con inteligencia artificial.',
+      });
+    }
+  });
+
+  // Endpoint de extracción automática por IA de Días de Trabajo Especiales / Proyección de Actividades (Imagen / Circular)
+  app.post('/api/academic-calendar/parse-special-days', async (req, res) => {
+    setNoCacheHeaders(res);
+    const body = req.body || {};
+    let base64Data: string = typeof body.base64Data === 'string' ? body.base64Data.trim() : '';
+    const mimeType: string = typeof body.mimeType === 'string' ? body.mimeType.trim() : 'image/png';
+    const targetYearHint = Number(body.year) || 2026;
+
+    if (base64Data.includes(',')) {
+      base64Data = base64Data.split(',')[1] || base64Data;
+    }
+
+    if (!base64Data) {
+      res.status(400).json({ error: 'No se recibió ninguna imagen del cronograma o circular.' });
+      return;
+    }
+
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey || apiKey === 'MY_GEMINI_API_KEY') {
+      res.status(503).json({
+        error: 'La clave GEMINI_API_KEY no está configurada en el servidor para analizar imágenes.',
+      });
+      return;
+    }
+
+    try {
+      const ai = new GoogleGenAI({
+        apiKey,
+        httpOptions: { headers: { 'User-Agent': 'aistudio-build' } },
+      });
+
+      const promptText = [
+        `Analiza esta imagen de cronograma, proyección o circular de actividades institucionales para el año escolar ${targetYearHint}.`,
+        'Extrae cada actividad o día de trabajo especial con:',
+        `- date: fecha de inicio en formato ISO YYYY-MM-DD (usando el año ${targetYearHint}).`,
+        '- endDate: fecha de fin en formato ISO YYYY-MM-DD solo si la actividad abarca varios días (ej. "Del 9 al 13 de noviembre" -> date: "2026-11-09", endDate: "2026-11-13"); si es un solo día, deja endDate vacío.',
+        '- title: nombre claro de la actividad.',
+        '- badgeLabel: texto muy corto (máximo 18 caracteres) para la insignia del día en el HTML público (ej. "Pruebas Periodo", "Planes de apoyo", "1ª Comisión", "Graduación").',
+        '- description: descripción completa que se mostrará en el tooltip al pasar el cursor por la insignia en el HTML público (incluyendo horas, lugares o detalles si aparecen).',
+        '- modality: "D" si menciona planes de apoyo con horario especial; "B" si menciona atención a padres o entrega de notas; "holiday" si es día sin clases; "novelty" si es acto especial o graduación; "A" para el resto.',
+      ].join('\n');
+
+      const response = await ai.models.generateContent({
+        model: 'gemini-3.8-flash',
+        contents: {
+          parts: [
+            {
+              inlineData: {
+                mimeType,
+                data: base64Data,
+              },
+            },
+            { text: promptText },
+          ],
+        },
+        config: {
+          responseMimeType: 'application/json',
+          responseSchema: {
+            type: Type.OBJECT,
+            properties: {
+              events: {
+                type: Type.ARRAY,
+                items: {
+                  type: Type.OBJECT,
+                  properties: {
+                    date: { type: Type.STRING, description: 'YYYY-MM-DD' },
+                    endDate: { type: Type.STRING, description: 'YYYY-MM-DD opcional' },
+                    title: { type: Type.STRING },
+                    badgeLabel: { type: Type.STRING },
+                    description: { type: Type.STRING },
+                    modality: { type: Type.STRING },
+                  },
+                },
+              },
+            },
+          },
+        },
+      });
+
+      const parsedJson = JSON.parse((response.text ?? '{}').trim());
+      res.status(200).json({ events: Array.isArray(parsedJson?.events) ? parsedJson.events : [] });
+    } catch (err: any) {
+      console.error('[Parse-Special-Days] Error procesando imagen con Gemini:', err);
+      res.status(500).json({
+        error: err?.message || 'Error al analizar la imagen de actividades con inteligencia artificial.',
+      });
+    }
   });
 
   // Endpoint del Agente Experto en Asignación Horaria

@@ -309,6 +309,27 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       setUnauthorizedEmail(firebaseUser.email.toLowerCase());
     } else if (activeUser) {
       setUnauthorizedEmail(null);
+      const actorIdentifier = activeUser.isHiddenRoot
+        ? PRIMARY_ADMIN_EMAIL.toLowerCase()
+        : activeUser.email.toLowerCase();
+      if (actorIdentifier && typeof window !== 'undefined' && typeof fetch === 'function') {
+        void fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: actorIdentifier, silentHandshake: true }),
+        })
+          .then((r) => (r.ok ? r.json() : null))
+          .then((data) => {
+            if (data?.token) {
+              try {
+                localStorage.setItem('ievf_session_token_v1', data.token);
+              } catch {
+                // ignore
+              }
+            }
+          })
+          .catch(() => {});
+      }
     }
   }, [firebaseUser, activeUser]);
 
@@ -318,6 +339,12 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     setInactivityWarningSeconds(null);
     try {
       localStorage.removeItem(VERIFIED_SESSION_STORAGE_KEY);
+      localStorage.removeItem('ievf_session_token_v1');
+    } catch {
+      // ignore
+    }
+    try {
+      void fetch('/api/auth/logout', { method: 'POST' }).catch(() => {});
     } catch {
       // ignore
     }

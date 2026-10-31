@@ -14,6 +14,9 @@ import {
   getDefaultWeekSlotMode,
   getAnchorDateForWeekSlot,
   getWeekMondayIso,
+  getCurrentWeekText,
+  getOrdinalSuffix,
+  InstitutionalEventModality,
 } from './ChronologyEngine';
 import {
   resolveCanonicalGradeName,
@@ -29,6 +32,16 @@ import {
 
 export { DEFAULT_LOGO_BASE64 };
 
+export interface PublicDayBadgeInfo {
+  id: string;
+  title: string;
+  badgeLabel: string;
+  description: string;
+  date: string;
+  endDate?: string;
+  modality?: InstitutionalEventModality;
+}
+
 export interface PublicDayConfigs {
   meetingDays: Record<string, boolean>;
   eventDays: Record<string, boolean>;
@@ -40,6 +53,7 @@ export interface PublicDayConfigs {
   updatedAtMs?: number;
   activeWeekSlot?: WeekSlotMode;
   anchorMondayIso?: string;
+  dayBadges?: Record<string, PublicDayBadgeInfo[]>;
 }
 
 export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): PublicDayConfigs {
@@ -87,25 +101,96 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     // ignore
   }
 
-  const meetingDays = custom?.meetingDays !== undefined ? custom.meetingDays : storedMeeting;
-  const eventDays = custom?.eventDays !== undefined ? custom.eventDays : storedEvent;
-  const customHolidays = custom?.customHolidays !== undefined ? custom.customHolidays : storedCustomHolidays;
-  const scheduleTypes = custom?.scheduleTypes !== undefined ? custom.scheduleTypes : storedScheduleTypes;
+  const now = new Date();
+  const currentCanonicalMondayIso = getWeekMondayIso(getAnchorDateForWeekSlot('current', now));
   const activeWeekSlot: WeekSlotMode =
-    custom?.activeWeekSlot || storedWeekSlot || getDefaultWeekSlotMode(new Date());
+    custom?.activeWeekSlot || storedWeekSlot || getDefaultWeekSlotMode(now);
+
+  // Si el lunes guardado pertenece a una semana anterior ya cerrada (ej. tras el viernes a las 18:00),
+  // avanzar automáticamente a la nueva Semana Actual vigente.
+  const isStaleCustomWeek = Boolean(
+    custom?.anchorMondayIso && custom.anchorMondayIso < currentCanonicalMondayIso
+  );
+  const validCustomMondayIso =
+    custom?.anchorMondayIso && !isStaleCustomWeek ? custom.anchorMondayIso : undefined;
+  const validStoredMondayIso =
+    storedMondayIso && storedMondayIso >= currentCanonicalMondayIso ? storedMondayIso : undefined;
+
   const effectiveAnchorDate =
-    custom?.anchorMondayIso ||
-    storedMondayIso ||
-    getAnchorDateForWeekSlot(activeWeekSlot, new Date());
+    validCustomMondayIso ||
+    validStoredMondayIso ||
+    getAnchorDateForWeekSlot(activeWeekSlot, now);
   const anchorMondayIso = getWeekMondayIso(effectiveAnchorDate);
 
+  // Si hay un contenedor semanal local para la semana vigente, recuperar sus modalidades
+  let containerMeeting: Record<string, boolean> | undefined;
+  let containerScheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> | undefined;
+  try {
+    const rawContainer = localStorage.getItem(`ievf_week_container_${anchorMondayIso}`);
+    if (rawContainer) {
+      const parsedContainer = JSON.parse(rawContainer);
+      if (parsedContainer && typeof parsedContainer === 'object') {
+        if (parsedContainer.meetingDays) containerMeeting = parsedContainer.meetingDays;
+        if (parsedContainer.scheduleTypes) containerScheduleTypes = parsedContainer.scheduleTypes;
+      }
+    }
+  } catch {
+    // ignore
+  }
+
+  const baseMeetingDays: Record<string, boolean> =
+    !isStaleCustomWeek && custom?.meetingDays !== undefined
+      ? { ...custom.meetingDays }
+      : storedMondayIso === anchorMondayIso
+      ? { ...storedMeeting }
+      : { ...(containerMeeting || {}) };
+
+  const baseScheduleTypes: Record<string, 'A' | 'B' | 'C' | 'D'> =
+    !isStaleCustomWeek && custom?.scheduleTypes !== undefined
+      ? { ...custom.scheduleTypes }
+      : storedMondayIso === anchorMondayIso
+      ? { ...storedScheduleTypes }
+      : { ...(containerScheduleTypes || {}) };
+
+  const eventDays =
+    !isStaleCustomWeek && custom?.eventDays !== undefined ? custom.eventDays : storedEvent;
+  const customHolidays =
+    custom?.customHolidays !== undefined ? custom.customHolidays : storedCustomHolidays;
+
   const weekHeaders = generateWeekHeaders(effectiveAnchorDate, customHolidays);
-  const holidayDays: Record<string, boolean> = { ...(custom?.holidayDays || {}) };
+  const holidayDays: Record<string, boolean> = {};
+  const dayBadges: Record<string, PublicDayBadgeInfo[]> = {};
+
   weekHeaders.forEach((d) => {
-    if (d.isHoliday) {
-      holidayDays[d.id] = true;
-    } else if (custom?.holidayDays?.[d.id] === undefined) {
-      holidayDays[d.id] = false;
+    holidayDays[d.id] = Boolean(d.isHoliday);
+    if (d.institutionalEvents && d.institutionalEvents.length > 0) {
+      dayBadges[d.id] = d.institutionalEvents.map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        badgeLabel: ev.badgeLabel || ev.title.slice(0, 22),
+        description: ev.description || ev.title,
+        date: ev.date,
+        endDate: ev.endDate,
+        modality: ev.modality,
+      }));
+      const modEvent =
+        d.institutionalEvents.find((ev) => ev.modality === 'B' || ev.modality === 'D') ||
+        d.institutionalEvents[0];
+      if (modEvent?.modality === 'B' && baseMeetingDays[d.id] === undefined) {
+        baseMeetingDays[d.id] = true;
+        baseMeetingDays[`morning_${d.id}`] = true;
+        baseMeetingDays[`afternoon_${d.id}`] = true;
+        baseMeetingDays[`transicion-1_${d.id}`] = true;
+        baseScheduleTypes[d.id] = 'B';
+        baseScheduleTypes[`morning_${d.id}`] = 'B';
+      } else if (modEvent?.modality === 'D' && baseScheduleTypes[d.id] === undefined) {
+        baseMeetingDays[d.id] = false;
+        baseMeetingDays[`morning_${d.id}`] = false;
+        baseScheduleTypes[d.id] = 'D';
+        baseScheduleTypes[`morning_${d.id}`] = 'D';
+      }
+    } else {
+      dayBadges[d.id] = [];
     }
   });
 
@@ -122,16 +207,17 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
     : loadBreakSupervisionSchedule();
 
   return {
-    meetingDays,
+    meetingDays: baseMeetingDays,
     eventDays,
     holidayDays,
     customHolidays,
-    scheduleTypes,
+    scheduleTypes: baseScheduleTypes,
     breakSupervision,
     blankMatrixMode: custom?.blankMatrixMode !== undefined ? custom.blankMatrixMode : isLocalBlank,
     updatedAtMs: custom?.updatedAtMs,
     activeWeekSlot,
     anchorMondayIso,
+    dayBadges,
   };
 }
 
@@ -216,13 +302,18 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
   } = options;
 
   const effectiveLogo = DEFAULT_LOGO_BASE64;
-  const rawPeriod = !academicPeriod || academicPeriod === '3° Periodo' ? '3er Periodo' : academicPeriod;
+  const effectiveDayConfigs = resolveEffectiveDayConfigs(dayConfigs);
+  const weekChronology = getCurrentWeekText(effectiveDayConfigs.anchorMondayIso || new Date());
+  const computedPeriodLabel = weekChronology.periodNumber
+    ? `${weekChronology.periodNumber}${getOrdinalSuffix(weekChronology.periodNumber)} Periodo`
+    : academicPeriod;
+  const rawPeriod = !computedPeriodLabel || computedPeriodLabel === '3° Periodo' ? '3er Periodo' : computedPeriodLabel;
   const displayPeriod =
     rawPeriod.toLowerCase().includes('académico') || rawPeriod.toLowerCase().includes('academico')
       ? rawPeriod
       : `${rawPeriod} académico`;
-  const displayWeek = !academicWeek || academicWeek === 8 ? 9 : academicWeek;
-  const effectiveDayConfigs = resolveEffectiveDayConfigs(dayConfigs);
+  const displayWeek = weekChronology.weekNumber || (!academicWeek || academicWeek === 8 ? 9 : academicWeek);
+  const displayTotalWeeks = weekChronology.totalWeeksInPeriod || 14;
   const dayConfigsSerialized = JSON.stringify(effectiveDayConfigs).replace(/</g, '\\u003c');
   const weekHeadersList = generateWeekHeaders(
     effectiveDayConfigs.anchorMondayIso || new Date(),
@@ -805,10 +896,11 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       padding: 6px;
       border-radius: 16px;
       border: 1px solid #dbeafe;
-      overflow-x: auto;
+      overflow: visible;
     }
     .day-tab {
-      padding: 10px 20px;
+      position: relative;
+      padding: 10px 18px;
       border-radius: 12px;
       border: 1px solid #cbd5e1;
       background: #ffffff;
@@ -854,6 +946,93 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       background: #007DC5;
       color: #ffffff;
       border: 1px solid rgba(255, 255, 255, 0.35);
+    }
+    .badge-special-day {
+      position: relative;
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      padding: 3px 8px;
+      border-radius: 8px;
+      font-size: 0.68rem;
+      font-weight: 900;
+      letter-spacing: 0.02em;
+      background: #fef3c7;
+      color: #92400e;
+      border: 1px solid #fcd34d;
+      line-height: 1.1;
+      cursor: help;
+      transition: transform 0.15s ease, box-shadow 0.15s ease;
+    }
+    .day-tab.active .badge-special-day {
+      background: #fbbf24;
+      color: #0f172a;
+      border-color: #fde68a;
+      box-shadow: 0 2px 6px rgba(0, 0, 0, 0.2);
+    }
+    .badge-special-day:hover {
+      transform: translateY(-1px);
+    }
+    .special-day-tooltip {
+      visibility: hidden;
+      opacity: 0;
+      pointer-events: none;
+      position: absolute;
+      bottom: calc(100% + 10px);
+      left: 50%;
+      transform: translateX(-50%) translateY(4px);
+      width: 290px;
+      white-space: normal;
+      text-align: left;
+      background: #0f172a;
+      color: #ffffff;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid #334155;
+      box-shadow: 0 14px 30px rgba(2, 6, 23, 0.45);
+      z-index: 9999;
+      transition: opacity 0.18s ease, transform 0.18s ease, visibility 0.18s ease;
+    }
+    .special-day-tooltip::after {
+      content: '';
+      position: absolute;
+      top: 100%;
+      left: 50%;
+      transform: translateX(-50%);
+      border-width: 6px;
+      border-style: solid;
+      border-color: #0f172a transparent transparent transparent;
+    }
+    .badge-special-day:hover .special-day-tooltip,
+    .badge-special-day:focus .special-day-tooltip {
+      visibility: visible;
+      opacity: 1;
+      transform: translateX(-50%) translateY(0);
+    }
+    .special-day-tooltip-kicker {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 6px;
+      font-size: 0.62rem;
+      font-weight: 900;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: #fbbf24;
+      margin-bottom: 4px;
+    }
+    .special-day-tooltip-title {
+      font-size: 0.78rem;
+      font-weight: 800;
+      color: #ffffff;
+      line-height: 1.3;
+      margin-bottom: 5px;
+    }
+    .special-day-tooltip-desc {
+      font-size: 0.72rem;
+      font-weight: 500;
+      color: #cbd5e1;
+      line-height: 1.45;
     }
     .period-inline-box {
       background: #f1f5f9;
@@ -1547,7 +1726,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
 
         <div class="period-inline-box">
           <div class="period-inline-title">${displayPeriod}</div>
-          <div class="period-inline-sub">Semana académica ${displayWeek} de 14</div>
+          <div class="period-inline-sub">Semana académica ${displayWeek} de ${displayTotalWeeks}</div>
         </div>
       </div>
     </div>
@@ -1567,7 +1746,14 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           <button type="button" onclick="closeBreakZonesModal()" style="background: rgba(255,255,255,0.15); border: 1px solid rgba(255,255,255,0.3); color: #fff; border-radius: 10px; padding: 6px 12px; font-weight: 800; cursor: pointer;">&#10005; Cerrar</button>
         </div>
         <div class="break-modal-toolbar">
-          <div style="font-weight: 800; color: #0f172a; font-size: 0.95rem;" id="breakModalTitle">Asignación semanal • Bachillerato (Mañana)</div>
+          <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 8px;">
+            <span style="font-weight: 800; color: #334155; font-size: 0.8rem;">Asignación semanal:</span>
+            <div style="display: inline-flex; align-items: center; background: #ffffff; padding: 3px; border-radius: 10px; border: 1px solid #e2e8f0; gap: 4px;">
+              <button type="button" class="break-shift-btn active" data-bshift="morning" onclick="selectBreakModalShift('morning')" style="padding: 5px 10px; border-radius: 7px; border: none; font-size: 0.75rem; font-weight: 700; cursor: pointer; background: #034EA2; color: #ffffff;">☀️ Bachillerato</button>
+              <button type="button" class="break-shift-btn" data-bshift="afternoon" onclick="selectBreakModalShift('afternoon')" style="padding: 5px 10px; border-radius: 7px; border: none; font-size: 0.75rem; font-weight: 700; cursor: pointer; background: transparent; color: #475569;">🌤️ Primaria</button>
+              <button type="button" class="break-shift-btn" data-bshift="transicion-1" onclick="selectBreakModalShift('transicion-1')" style="padding: 5px 10px; border-radius: 7px; border: none; font-size: 0.75rem; font-weight: 700; cursor: pointer; background: transparent; color: #475569;">✨ Transición</button>
+            </div>
+          </div>
           <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
             <div class="custom-dropdown-wrap" id="breakModalTeacherDropdownWrap" style="width: 280px;">
               <select id="breakModalTeacherSelect" class="form-control" onchange="syncCustomDropdown('breakModalTeacherSelect'); renderBreakZonesModalTable()" style="display: none;">
@@ -1609,6 +1795,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     const HOLIDAY_DAYS = (DAY_CONFIGS && DAY_CONFIGS.holidayDays) || {};
     const SCHEDULE_TYPES = (DAY_CONFIGS && DAY_CONFIGS.scheduleTypes) || {};
     const BREAK_SUPERVISION = (DAY_CONFIGS && DAY_CONFIGS.breakSupervision) || {};
+    const DAY_BADGES = (DAY_CONFIGS && DAY_CONFIGS.dayBadges) || {};
 
     const SHIFT_GRADES = {
       'morning': ['6°1', '6°2', '7°1', '7°2', '8°1', '8°2', '9°1', '9°2', '10°1', '10°2', '11°1', '11°2'],
@@ -1746,8 +1933,10 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     }
 
     const dayMap = { 1: 'lunes', 2: 'martes', 3: 'miercoles', 4: 'jueves', 5: 'viernes' };
-    const todayIndex = new Date().getDay();
-    const todayDayKey = dayMap[todayIndex] || 'lunes';
+    const nowInit = new Date();
+    const todayIndex = nowInit.getDay();
+    const isPastFridayCutoffNow = (todayIndex === 5 && nowInit.getHours() >= 18) || todayIndex === 6 || todayIndex === 0;
+    const todayDayKey = isPastFridayCutoffNow ? 'lunes' : (dayMap[todayIndex] || 'lunes');
     let currentDay = todayDayKey;
     let currentShift = 'morning';
 
@@ -1915,9 +2104,34 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       return false;
     }
 
+    let breakModalShift = 'morning';
+
+    function updateBreakShiftButtonsUI() {
+      document.querySelectorAll('.break-shift-btn').forEach(btn => {
+        const s = btn.getAttribute('data-bshift');
+        if (s === breakModalShift) {
+          btn.style.background = '#034EA2';
+          btn.style.color = '#ffffff';
+        } else {
+          btn.style.background = 'transparent';
+          btn.style.color = '#475569';
+        }
+      });
+    }
+
+    function selectBreakModalShift(shift) {
+      breakModalShift = shift;
+      updateBreakShiftButtonsUI();
+      renderBreakZonesModalTable();
+    }
+
     function openBreakZonesModal() {
       const modal = document.getElementById('breakZonesModal');
       if (!modal) return;
+      if (!modal.classList.contains('open')) {
+        breakModalShift = currentShift || 'morning';
+        updateBreakShiftButtonsUI();
+      }
       if (breakModalTeacherSelect && teacherSelect && teacherSelect.value !== 'ALL') {
         const matchedOpt = Array.from(breakModalTeacherSelect.options).find(o =>
           matchesTeacherInZoneCell(o.value, teacherSelect.value)
@@ -1967,7 +2181,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     function renderBreakZonesModalTable() {
       const body = document.getElementById('breakModalBody');
       if (!body) return;
-      const zones = Array.isArray(BREAK_SUPERVISION[currentShift]) ? BREAK_SUPERVISION[currentShift] : (Array.isArray(BREAK_SUPERVISION['morning']) ? BREAK_SUPERVISION['morning'] : []);
+      const zones = Array.isArray(BREAK_SUPERVISION[breakModalShift]) ? BREAK_SUPERVISION[breakModalShift] : [];
       const tFilter = breakModalTeacherSelect ? breakModalTeacherSelect.value : 'ALL';
       const searchInp = document.getElementById('breakModalSearchInput');
       const sQuery = normalizeZoneToken(searchInp ? searchInp.value : '');
@@ -2030,13 +2244,34 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       body.innerHTML = h;
     }
 
+    function escapeHtmlAttr(str) {
+      return String(str || '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;');
+    }
+
     function computeDynamicFullDayLabel(dayKey, fallbackLabel) {
       try {
         const now = new Date();
         const d = now.getDay();
         const diff = d === 0 ? -6 : 1 - d;
-        const mon = new Date(now);
-        mon.setDate(now.getDate() + diff);
+        const liveMon = new Date(now);
+        liveMon.setDate(now.getDate() + diff);
+        if ((d === 5 && now.getHours() >= 18) || d === 6 || d === 0) {
+          liveMon.setDate(liveMon.getDate() + 7);
+        }
+        liveMon.setHours(0, 0, 0, 0);
+
+        const anchorIso = DAY_CONFIGS && DAY_CONFIGS.anchorMondayIso;
+        let mon = liveMon;
+        if (anchorIso && /^\d{4}-\d{2}-\d{2}$/.test(anchorIso)) {
+          const parsedMon = new Date(anchorIso + 'T00:00:00');
+          if (!isNaN(parsedMon.getTime()) && parsedMon.getTime() >= liveMon.getTime()) {
+            mon = parsedMon;
+          }
+        }
         const offsets = { lunes: 0, martes: 1, miercoles: 2, jueves: 3, viernes: 4 };
         const target = new Date(mon);
         target.setDate(mon.getDate() + (offsets[dayKey] || 0));
@@ -2055,6 +2290,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
         const fullLabel = computeDynamicFullDayLabel(dayKey, baseLabel);
         const isHol = Boolean(HOLIDAY_DAYS[dayKey]);
         const isToday = dayKey === todayDayKey;
+        const specialBadges = Array.isArray(DAY_BADGES[dayKey]) ? DAY_BADGES[dayKey] : [];
         if (isToday) {
           b.classList.add('is-today-tab');
         } else {
@@ -2069,6 +2305,23 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           htmlContent += '<span>• Festivo</span>';
         } else {
           b.classList.remove('is-holiday-tab');
+        }
+        if (specialBadges.length > 0) {
+          specialBadges.forEach(ev => {
+            const bLabel = escapeHtmlAttr(ev.badgeLabel || ev.title || 'Actividad especial');
+            const bTitle = escapeHtmlAttr(ev.title || '');
+            const bDesc = escapeHtmlAttr(ev.description || ev.title || '');
+            const bRange = ev.endDate && ev.endDate !== ev.date
+              ? escapeHtmlAttr(ev.date + ' al ' + ev.endDate)
+              : escapeHtmlAttr(ev.date || '');
+            htmlContent += '<span class="badge-special-day" tabindex="0">';
+            htmlContent += '<span>✨</span><span>' + bLabel + '</span>';
+            htmlContent += '<span class="special-day-tooltip">';
+            htmlContent += '<span class="special-day-tooltip-kicker"><span>Día de trabajo especial</span><span>' + bRange + '</span></span>';
+            htmlContent += '<div class="special-day-tooltip-title">' + bTitle + '</div>';
+            htmlContent += '<div class="special-day-tooltip-desc">' + bDesc + '</div>';
+            htmlContent += '</span></span>';
+          });
         }
         b.innerHTML = htmlContent;
       });
@@ -2820,8 +3073,12 @@ export function savePublicScheduleSnapshot(
     blankMatrixMode: isBlankMatrix,
     updatedAtMs: nowMs,
   });
-  const normalizedPeriod = !academicPeriod || academicPeriod === '3° Periodo' ? '3er Periodo' : academicPeriod;
-  const normalizedWeek = !academicWeek || academicWeek === 8 ? 9 : academicWeek;
+  const weekData = getCurrentWeekText(effectiveDayConfigs.anchorMondayIso || new Date());
+  const computedPeriod = weekData.periodNumber
+    ? `${weekData.periodNumber}${getOrdinalSuffix(weekData.periodNumber)} Periodo`
+    : academicPeriod;
+  const normalizedPeriod = !computedPeriod || computedPeriod === '3° Periodo' ? '3er Periodo' : computedPeriod;
+  const normalizedWeek = weekData.weekNumber || (!academicWeek || academicWeek === 8 ? 9 : academicWeek);
 
   const activeTeachers = sortTeachersWithLowPriorityLast(
     teachers.filter(
@@ -2884,7 +3141,24 @@ export function getPublicScheduleSnapshot(): PublicScheduleSnapshot | null {
     const raw = localStorage.getItem('ievf_public_schedule_snapshot');
     if (raw) {
       const parsed = JSON.parse(raw) as PublicScheduleSnapshot;
-      parsed.dayConfigs = resolveEffectiveDayConfigs(parsed.dayConfigs);
+      const prevMondayIso = parsed.dayConfigs?.anchorMondayIso;
+      const resolvedDayConfigs = resolveEffectiveDayConfigs(parsed.dayConfigs);
+      parsed.dayConfigs = resolvedDayConfigs;
+
+      // Mantener la parrilla publicada intacta; sincronizar únicamente etiquetas de período y semana si la fecha lo amerita
+      const targetMondayIso = resolvedDayConfigs.anchorMondayIso;
+      if (targetMondayIso) {
+        const weekData = getCurrentWeekText(targetMondayIso);
+        if (parsed.metadata) {
+          if (weekData.periodNumber) {
+            parsed.metadata.academicPeriod = `${weekData.periodNumber}${getOrdinalSuffix(weekData.periodNumber)} Periodo`;
+          }
+          if (weekData.weekNumber) {
+            parsed.metadata.academicWeek = weekData.weekNumber;
+          }
+        }
+      }
+
       if (Array.isArray(parsed.teachers)) {
         parsed.teachers = sortTeachersWithLowPriorityLast(
           parsed.teachers.map((t) => {
