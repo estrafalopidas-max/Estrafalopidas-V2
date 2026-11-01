@@ -771,7 +771,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     });
   }, [selectedShift, isMeetingDay, isEventDay, activeScheduleType, filteredBlocks]);
 
-  const logoUrl = '/assets/aistudio/logo_html_859fb25c.png';
+  const logoUrl = DEFAULT_LOGO_BASE64;
 
   const [viewportWidth, setViewportWidth] = useState<number>(() =>
     typeof window !== 'undefined' ? window.innerWidth : 1280
