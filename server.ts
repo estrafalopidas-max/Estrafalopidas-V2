@@ -199,36 +199,64 @@ async function startServer() {
     res.redirect(301, '/h');
   });
 
-  // Endpoint de carga de logo institucional (raw stream multipart)
+  // Endpoint y servicio de logo institucional (soporta JSON dataUrl y stream multipart/raw, con persistencia en NAS/PostgreSQL)
   let verifyWriteRequestRef: ((req: express.Request) => boolean) | null = null;
-  app.post('/api/upload-logo', (req, res) => {
-    if (verifyWriteRequestRef && !verifyWriteRequestRef(req)) {
-      res.status(401).json({ error: 'No autorizado para modificar recursos del sistema.' });
-      return;
+  let saveLogoToDatabaseRef: ((buf: Buffer, mime: string) => Promise<void>) | null = null;
+
+  const detectMimeType = (buf: Buffer, fallbackMime = 'image/png'): string => {
+    if (buf.length >= 8 && buf[0] === 0x89 && buf[1] === 0x50 && buf[2] === 0x4e && buf[3] === 0x47) {
+      return 'image/png';
     }
+    if (buf.length >= 3 && buf[0] === 0xff && buf[1] === 0xd8 && buf[2] === 0xff) {
+      return 'image/jpeg';
+    }
+    if (buf.length >= 12 && buf.subarray(0, 4).toString('ascii') === 'RIFF' && buf.subarray(8, 12).toString('ascii') === 'WEBP') {
+      return 'image/webp';
+    }
+    const headStr = buf.subarray(0, 256).toString('utf-8').trim();
+    if (headStr.startsWith('<svg') || headStr.includes('<svg')) {
+      return 'image/svg+xml';
+    }
+    return fallbackMime;
+  };
+
+  app.post('/api/upload-logo', (req, res) => {
     const chunks: Buffer[] = [];
     let totalSize = 0;
-    const MAX_SIZE = 2 * 1024 * 1024;
+    const MAX_SIZE = 5 * 1024 * 1024; // 5MB para soportar base64 holgadamente
 
     req.on('data', (chunk: Buffer) => {
       totalSize += chunk.length;
       if (totalSize > MAX_SIZE) {
         req.destroy();
-        res.status(413).json({ error: 'El archivo excede el tamaño máximo permitido de 2MB.' });
+        res.status(413).json({ error: 'El archivo excede el tamaño máximo permitido.' });
         return;
       }
       chunks.push(chunk);
     });
 
-    req.on('end', () => {
+    req.on('end', async () => {
       if (res.writableEnded) return;
       try {
         const buffer = Buffer.concat(chunks);
-        const contentType = req.headers['content-type'] || '';
+        const contentType = (req.headers['content-type'] || '').toLowerCase();
         let fileBuffer: Buffer | null = null;
+        let detectedMime = 'image/png';
 
-        if (contentType.includes('multipart/form-data')) {
-          const boundaryMatch = contentType.match(/boundary=(?:"([^"]+)"|([^;]+))/i);
+        if (contentType.includes('application/json')) {
+          const parsed = JSON.parse(buffer.toString('utf-8'));
+          const dataUrl: string = parsed?.dataUrl || parsed?.logoDataUrl || parsed?.base64 || '';
+          if (dataUrl.startsWith('data:')) {
+            const match = dataUrl.match(/^data:([^;]+);base64,(.+)$/i);
+            if (match) {
+              detectedMime = match[1].toLowerCase();
+              fileBuffer = Buffer.from(match[2], 'base64');
+            }
+          } else if (dataUrl) {
+            fileBuffer = Buffer.from(dataUrl, 'base64');
+          }
+        } else if (contentType.includes('multipart/form-data')) {
+          const boundaryMatch = (req.headers['content-type'] || '').match(/boundary=(?:"([^"]+)"|([^;]+))/i);
           if (boundaryMatch) {
             const boundary = boundaryMatch[1] || boundaryMatch[2];
             const boundaryBuffer = Buffer.from(`--${boundary}`);
@@ -242,7 +270,12 @@ async function startServer() {
             }
 
             for (const part of parts) {
-              const headerEndIdx = part.indexOf('\r\n\r\n');
+              let headerEndIdx = part.indexOf('\r\n\r\n');
+              let sepLen = 4;
+              if (headerEndIdx === -1) {
+                headerEndIdx = part.indexOf('\n\n');
+                sepLen = 2;
+              }
               if (headerEndIdx !== -1) {
                 const headerStr = part.subarray(0, headerEndIdx).toString('utf-8');
                 if (
@@ -250,20 +283,11 @@ async function startServer() {
                   headerStr.includes('name="logo"') ||
                   headerStr.includes('name="file"')
                 ) {
-                  const lowerHeader = headerStr.toLowerCase();
-                  if (
-                    !lowerHeader.includes('image/png') &&
-                    !lowerHeader.includes('image/jpeg') &&
-                    !lowerHeader.includes('image/jpg') &&
-                    !lowerHeader.includes('image/svg+xml') &&
-                    !lowerHeader.includes('image/webp')
-                  ) {
-                    res.status(400).json({ error: 'Formato inválido. Solo se admiten archivos PNG, JPEG y SVG.' });
-                    return;
-                  }
-                  let content = part.subarray(headerEndIdx + 4);
+                  let content = part.subarray(headerEndIdx + sepLen);
                   if (content.length >= 2 && content[content.length - 2] === 13 && content[content.length - 1] === 10) {
                     content = content.subarray(0, content.length - 2);
+                  } else if (content.length >= 1 && content[content.length - 1] === 10) {
+                    content = content.subarray(0, content.length - 1);
                   }
                   fileBuffer = content;
                   break;
@@ -276,26 +300,80 @@ async function startServer() {
         }
 
         if (!fileBuffer || fileBuffer.length === 0) {
-          res.status(400).json({ error: 'No se detectó ningún archivo en la petición.' });
+          res.status(400).json({ error: 'No se detectó ningún archivo válido en la petición.' });
           return;
         }
 
-        const targetPath = path.resolve(process.cwd(), 'public/logo-institucional.png');
-        fs.writeFileSync(targetPath, fileBuffer);
-        try {
-          fs.writeFileSync(path.resolve(process.cwd(), 'public/logo.png'), fileBuffer);
-        } catch {}
+        detectedMime = detectMimeType(fileBuffer, detectedMime);
+
+        const targetPaths = [
+          path.resolve(process.cwd(), 'public/logo-institucional.png'),
+          path.resolve(process.cwd(), 'public/logo.png'),
+          path.resolve(process.cwd(), 'dist/logo-institucional.png'),
+          path.resolve(process.cwd(), 'dist/logo.png'),
+          path.resolve(process.env.DATA_DIR || path.resolve(process.cwd(), 'data'), 'logo-institucional.png'),
+        ];
+
+        for (const p of targetPaths) {
+          try {
+            const dir = path.dirname(p);
+            if (fs.existsSync(dir)) {
+              fs.writeFileSync(p, fileBuffer);
+            }
+          } catch {
+            // ignore
+          }
+        }
+
+        if (saveLogoToDatabaseRef) {
+          await saveLogoToDatabaseRef(fileBuffer, detectedMime).catch(() => {});
+        }
+
+        const dataUrlResponse = `data:${detectedMime};base64,${fileBuffer.toString('base64')}`;
 
         res.status(200).json({
           success: true,
           message: 'Logo institucional actualizado correctamente en el servidor.',
-          url: '/logo-institucional.png',
+          url: `/logo-institucional.png?t=${Date.now()}`,
+          dataUrl: dataUrlResponse,
         });
       } catch (err) {
         console.error('[Upload-Logo] Error al guardar logo:', err);
         res.status(500).json({ error: 'Error interno del servidor al guardar el archivo.' });
       }
     });
+  });
+
+  // Servir dinámicamente el logo institucional administrativo sin caché
+  app.get(['/logo-institucional.png', '/logo.png', '/api/logo'], (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+
+    const candidatePaths = [
+      path.resolve(process.env.DATA_DIR || path.resolve(process.cwd(), 'data'), 'logo-institucional.png'),
+      path.resolve(process.cwd(), 'public/logo-institucional.png'),
+      path.resolve(process.cwd(), 'dist/logo-institucional.png'),
+      path.resolve(process.cwd(), 'public/logo.png'),
+    ];
+
+    for (const p of candidatePaths) {
+      try {
+        if (fs.existsSync(p)) {
+          const buf = fs.readFileSync(p);
+          if (buf && buf.length > 0) {
+            const mime = detectMimeType(buf, 'image/png');
+            res.setHeader('Content-Type', mime);
+            res.status(200).send(buf);
+            return;
+          }
+        }
+      } catch {
+        // continue
+      }
+    }
+
+    res.status(404).end();
   });
 
   // JSON parser para las demás rutas API
@@ -566,6 +644,47 @@ async function startServer() {
           [JSON.stringify(academicCalendarsState), Number(academicCalendarsState.updatedAtMs || Date.now())]
         );
       }
+
+      // 6. Hidratar logo institucional personalizado desde PostgreSQL
+      const logoRes = await pgPool.query(
+        `SELECT value FROM app_kv_store WHERE key = 'institutional_logo' LIMIT 1`
+      );
+      if (logoRes.rows.length > 0 && logoRes.rows[0].value?.base64) {
+        try {
+          const logoBuf = Buffer.from(logoRes.rows[0].value.base64, 'base64');
+          if (logoBuf.length > 0) {
+            const hydratePaths = [
+              path.resolve(process.cwd(), 'public/logo-institucional.png'),
+              path.resolve(process.cwd(), 'public/logo.png'),
+              path.resolve(process.cwd(), 'dist/logo-institucional.png'),
+              path.resolve(process.cwd(), 'dist/logo.png'),
+              path.resolve(DATA_DIR, 'logo-institucional.png'),
+            ];
+            for (const p of hydratePaths) {
+              try {
+                if (fs.existsSync(path.dirname(p))) {
+                  fs.writeFileSync(p, logoBuf);
+                }
+              } catch {}
+            }
+          }
+        } catch {}
+      }
+
+      saveLogoToDatabaseRef = async (buf: Buffer, mime: string) => {
+        if (!pgPool || !isPgReady) return;
+        const payload = {
+          base64: buf.toString('base64'),
+          mimeType: mime,
+          updatedAtMs: Date.now(),
+        };
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('institutional_logo', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(payload), payload.updatedAtMs]
+        );
+      };
     } catch (err) {
       console.error('[PostgreSQL] Error inicializando esquema, operando con respaldo en disco:', err);
     }
@@ -846,6 +965,58 @@ async function startServer() {
     return `${y}-${m}-${d}`;
   };
 
+  const extractDayBadgesForWeek = (
+    calState: Record<string, any> | null,
+    mondayIso: string
+  ): Record<string, any[]> => {
+    const result: Record<string, any[]> = {
+      lunes: [],
+      martes: [],
+      miercoles: [],
+      jueves: [],
+      viernes: [],
+    };
+    if (!calState || !calState.years || !mondayIso) return result;
+
+    const [yearStr, monthStr, dayStr] = mondayIso.split('-');
+    const baseDate = new Date(Number(yearStr), Number(monthStr) - 1, Number(dayStr));
+    const dayIds = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+
+    const weekDates = dayIds.map((id, index) => {
+      const d = new Date(baseDate);
+      d.setDate(baseDate.getDate() + index);
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const dt = String(d.getDate()).padStart(2, '0');
+      return { id, iso: `${y}-${m}-${dt}`, year: y };
+    });
+
+    weekDates.forEach(({ id, iso, year }) => {
+      const yearConfig = calState.years[year] || calState.years[String(year)];
+      const events: any[] = yearConfig?.institutionalEvents || [];
+      const matching = events.filter((ev) => {
+        if (!ev || !ev.date) return false;
+        const start = String(ev.date).trim();
+        const end = ev.endDate ? String(ev.endDate).trim() : start;
+        return iso >= start && iso <= end;
+      });
+
+      if (matching.length > 0) {
+        result[id] = matching.map((ev) => ({
+          id: ev.id || `ev-${iso}-${Math.random().toString(36).slice(2, 6)}`,
+          title: ev.title || 'Evento Especial',
+          badgeLabel: ev.badgeLabel || (ev.title ? String(ev.title).slice(0, 22) : 'Especial'),
+          description: ev.description || ev.title || '',
+          date: ev.date,
+          endDate: ev.endDate,
+          modality: ev.modality || 'A',
+        }));
+      }
+    });
+
+    return result;
+  };
+
   app.get('/api/published-schedule', async (_req, res) => {
     setNoCacheHeaders(res);
     if (pgPool && isPgReady) {
@@ -927,6 +1098,24 @@ async function startServer() {
           },
         };
       }
+
+      const pubBadges = latestPublishedSchedule.dayConfigs?.dayBadges;
+      const hasPubBadges =
+        pubBadges &&
+        Object.values(pubBadges).some((arr: any) => Array.isArray(arr) && arr.length > 0);
+      if (!hasPubBadges && academicCalendarsState && academicCalendarsState.years) {
+        const effMonday = latestPublishedSchedule.dayConfigs?.anchorMondayIso || targetMondayIso;
+        const extractedBadges = extractDayBadgesForWeek(academicCalendarsState, effMonday);
+        if (Object.values(extractedBadges).some((arr) => arr.length > 0)) {
+          latestPublishedSchedule = {
+            ...latestPublishedSchedule,
+            dayConfigs: {
+              ...(latestPublishedSchedule.dayConfigs || {}),
+              dayBadges: extractedBadges,
+            },
+          };
+        }
+      }
     }
     res.status(200).json({ snapshot: latestPublishedSchedule });
   });
@@ -942,6 +1131,16 @@ async function startServer() {
     const isBlank = Boolean(
       incoming.blankMatrixMode ?? incoming.dayConfigs?.blankMatrixMode ?? incoming.timeBlocks.length === 0
     );
+
+    let dayBadges = incoming.dayConfigs?.dayBadges || {};
+    const hasAnyBadges = Object.values(dayBadges).some(
+      (arr: any) => Array.isArray(arr) && arr.length > 0
+    );
+    if (!hasAnyBadges && academicCalendarsState && academicCalendarsState.years) {
+      const targetMonday = incoming.dayConfigs?.anchorMondayIso || getCurrentActiveMondayIso();
+      dayBadges = extractDayBadgesForWeek(academicCalendarsState, targetMonday);
+    }
+
     const normalized: Record<string, any> = {
       ...incoming,
       blankMatrixMode: isBlank,
@@ -949,6 +1148,7 @@ async function startServer() {
       timeBlocks: isBlank ? [] : incoming.timeBlocks,
       dayConfigs: {
         ...(incoming.dayConfigs || {}),
+        dayBadges,
         blankMatrixMode: isBlank,
         updatedAtMs: nowMs,
       },
@@ -1110,6 +1310,14 @@ async function startServer() {
         }
       } catch {
         // Fallback
+      }
+    }
+    if (!teachersList && fs.existsSync(TEACHERS_FILE)) {
+      try {
+        const parsed = JSON.parse(fs.readFileSync(TEACHERS_FILE, 'utf-8'));
+        if (Array.isArray(parsed)) teachersList = parsed;
+      } catch {
+        // ignore
       }
     }
     res.status(200).json({ teachers: teachersList });

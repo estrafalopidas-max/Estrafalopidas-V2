@@ -1,0 +1,1583 @@
+[
+  {
+    "id": "t-docente-trans1",
+    "email": "yessica.bolivar@ievillaflora.edu.co",
+    "displayName": "Yessica Bolívar Bolívar",
+    "shortName": "Yessica Bolívar",
+    "groupDirection": "TS-01",
+    "role": "teacher",
+    "documentId": "43501012",
+    "phone": "3102001012",
+    "subjects": [
+      "Propósitos 1, 2, 3 y 4",
+      "Proyectos Lúdico Pedagógicos"
+    ],
+    "specialty": [
+      "Propósitos 1, 2, 3 y 4",
+      "Proyectos Lúdico Pedagógicos"
+    ],
+    "assignedSubject": "Propósitos 1, 2, 3 y 4",
+    "subject": "Propósitos 1, 2, 3 y 4",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-trans-1"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#60A5FA",
+    "color_hex": "#60A5FA",
+    "avatarColor": "#60A5FA",
+    "allowedSubjects": [
+      "Propósitos 1, 2, 3 y 4",
+      "Proyectos Lúdico Pedagógicos"
+    ]
+  },
+  {
+    "id": "t-docente-trans2",
+    "email": "ana.monsalve@ievillaflora.edu.co",
+    "displayName": "Ana María Monsalve García",
+    "shortName": "Ana Monsalve",
+    "groupDirection": "TS-02",
+    "role": "teacher",
+    "documentId": "43501013",
+    "phone": "3102001013",
+    "subjects": [
+      "Propósitos 1, 2, 3 y 4",
+      "Proyectos Lúdico Pedagógicos"
+    ],
+    "specialty": [
+      "Propósitos 1, 2, 3 y 4",
+      "Proyectos Lúdico Pedagógicos"
+    ],
+    "assignedSubject": "Propósitos 1, 2, 3 y 4",
+    "subject": "Propósitos 1, 2, 3 y 4",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-trans-2"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#14532D",
+    "color_hex": "#14532D",
+    "avatarColor": "#14532D",
+    "allowedSubjects": [
+      "Propósitos 1, 2, 3 y 4",
+      "Proyectos Lúdico Pedagógicos"
+    ]
+  },
+  {
+    "id": "t-docente-101",
+    "email": "mariluz.martinez@ievillaflora.edu.co",
+    "displayName": "Mariluz Viviana Martínez Cortés",
+    "shortName": "Mariluz Martínez",
+    "groupDirection": "01-01",
+    "role": "teacher",
+    "documentId": "43501001",
+    "phone": "3102001001",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Lengua Castellana",
+    "subject": "Lengua Castellana",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-101"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#7F1D1D",
+    "color_hex": "#7F1D1D",
+    "avatarColor": "#7F1D1D",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-102",
+    "email": "daniela.murillo@ievillaflora.edu.co",
+    "displayName": "Daniela María Murillo Rueda",
+    "shortName": "Daniela Murillo",
+    "groupDirection": "01-02",
+    "role": "teacher",
+    "documentId": "43501002",
+    "phone": "3102001002",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Lengua Castellana",
+    "subject": "Lengua Castellana",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-102"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#F87171",
+    "color_hex": "#F87171",
+    "avatarColor": "#F87171",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-201",
+    "email": "laura.arroyave@ievillaflora.edu.co",
+    "displayName": "Laura Arroyave Mejía",
+    "shortName": "Laura Arroyave",
+    "groupDirection": "02-01",
+    "role": "teacher",
+    "documentId": "43501003",
+    "phone": "3102001003",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-201"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#4C1D95",
+    "color_hex": "#4C1D95",
+    "avatarColor": "#4C1D95",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-202",
+    "email": "juliana.arias@ievillaflora.edu.co",
+    "displayName": "Juliana Arias Suárez",
+    "shortName": "Juliana Arias",
+    "groupDirection": "02-02",
+    "role": "teacher",
+    "documentId": "43501004",
+    "phone": "3102001004",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-202"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#A78BFA",
+    "color_hex": "#A78BFA",
+    "avatarColor": "#A78BFA",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-301",
+    "email": "silvia.vanegas@ievillaflora.edu.co",
+    "displayName": "Silvia Rosa Vanegas Villa",
+    "shortName": "Silvia Vanegas",
+    "groupDirection": "03-01",
+    "role": "teacher",
+    "documentId": "43501005",
+    "phone": "3102001005",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-301"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#78350F",
+    "color_hex": "#78350F",
+    "avatarColor": "#78350F",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-302",
+    "email": "mary.mesa@ievillaflora.edu.co",
+    "displayName": "Mary Luz Mesa Osorio",
+    "shortName": "Mary Mesa",
+    "groupDirection": "03-02",
+    "role": "teacher",
+    "documentId": "43501006",
+    "phone": "3102001006",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-302"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#FBBF24",
+    "color_hex": "#FBBF24",
+    "avatarColor": "#FBBF24",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-303",
+    "email": "eliana.ascuntar@ievillaflora.edu.co",
+    "displayName": "Eliana Marina Ascuntar Ascuntar",
+    "shortName": "Eliana Ascuntar",
+    "groupDirection": "03-03",
+    "role": "teacher",
+    "documentId": "43501007",
+    "phone": "3102001007",
+    "subjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-303"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#0E7490",
+    "color_hex": "#0E7490",
+    "avatarColor": "#0E7490",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Ciencias Sociales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Matemáticas",
+      "Estadística",
+      "Geometría",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-401",
+    "email": "gleider.guerra@ievillaflora.edu.co",
+    "displayName": "Gleider Yael Guerra Ortiz",
+    "shortName": "Gleider Guerra",
+    "groupDirection": "04-01",
+    "role": "teacher",
+    "documentId": "43501008",
+    "phone": "3102001008",
+    "subjects": [
+      "Ciencias Naturales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Estadística"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Estadística"
+    ],
+    "assignedSubject": "Ciencias Naturales",
+    "subject": "Ciencias Naturales",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-401",
+      "g-402",
+      "g-501",
+      "g-502"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#38BDF8",
+    "color_hex": "#38BDF8",
+    "avatarColor": "#38BDF8",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Educación Artística",
+      "Ética y Valores",
+      "Estadística"
+    ]
+  },
+  {
+    "id": "t-docente-402",
+    "email": "edelmira.mena@ievillaflora.edu.co",
+    "displayName": "Edelmira Mena Mosquera",
+    "shortName": "Edelmira Mena",
+    "groupDirection": "04-02",
+    "role": "teacher",
+    "documentId": "43501009",
+    "phone": "3102001009",
+    "subjects": [
+      "Ciencias Sociales",
+      "Ética y Valores",
+      "Matemáticas"
+    ],
+    "specialty": [
+      "Ciencias Sociales",
+      "Ética y Valores",
+      "Matemáticas"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-401",
+      "g-402",
+      "g-501",
+      "g-502"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#831843",
+    "color_hex": "#831843",
+    "avatarColor": "#831843",
+    "allowedSubjects": [
+      "Ciencias Sociales",
+      "Ética y Valores",
+      "Matemáticas"
+    ]
+  },
+  {
+    "id": "t-docente-501",
+    "email": "cristina.henao@ievillaflora.edu.co",
+    "displayName": "Cristina Liceth Henao Taborda",
+    "shortName": "Cristina Henao",
+    "groupDirection": "05-01",
+    "role": "teacher",
+    "documentId": "43501010",
+    "phone": "3102001010",
+    "subjects": [
+      "Ética y Valores",
+      "Lengua Castellana",
+      "Tecnología e Informática"
+    ],
+    "specialty": [
+      "Ética y Valores",
+      "Lengua Castellana",
+      "Tecnología e Informática"
+    ],
+    "assignedSubject": "Lengua Castellana",
+    "subject": "Lengua Castellana",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-401",
+      "g-402",
+      "g-501",
+      "g-502"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#F472B6",
+    "color_hex": "#F472B6",
+    "avatarColor": "#F472B6",
+    "allowedSubjects": [
+      "Ética y Valores",
+      "Lengua Castellana",
+      "Tecnología e Informática"
+    ]
+  },
+  {
+    "id": "t-docente-502",
+    "email": "luis.williams@ievillaflora.edu.co",
+    "displayName": "Luis Eduardo Williams Flórez",
+    "shortName": "Luis Williams",
+    "groupDirection": "05-02",
+    "role": "teacher",
+    "documentId": "43501011",
+    "phone": "3102001011",
+    "subjects": [
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Geometría"
+    ],
+    "specialty": [
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Geometría"
+    ],
+    "assignedSubject": "Educación Física",
+    "subject": "Educación Física",
+    "academicLevel": "primaria",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-401",
+      "g-402",
+      "g-501",
+      "g-502"
+    ],
+    "maxWeeklyHours": 25,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#312E81",
+    "color_hex": "#312E81",
+    "avatarColor": "#312E81",
+    "allowedSubjects": [
+      "Ética y Valores",
+      "Educación Física",
+      "Educación Religiosa",
+      "Lengua Castellana",
+      "Inglés",
+      "Geometría"
+    ]
+  },
+  {
+    "id": "t-m-isabel",
+    "email": "maria.giraldo@ievillaflora.edu.co",
+    "displayName": "María Isabel Giraldo Rojas",
+    "shortName": "Mª Isabel Giraldo",
+    "groupDirection": "06-01",
+    "role": "teacher",
+    "documentId": "71234008",
+    "phone": "3001001008",
+    "subjects": [
+      "Lengua Castellana",
+      "Literatura"
+    ],
+    "specialty": [
+      "Lengua Castellana",
+      "Literatura"
+    ],
+    "assignedSubject": "Lengua Castellana",
+    "subject": "Lengua Castellana",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#818CF8",
+    "color_hex": "#818CF8",
+    "avatarColor": "#818CF8",
+    "allowedSubjects": [
+      "Lengua Castellana",
+      "Literatura"
+    ]
+  },
+  {
+    "id": "t-claudia",
+    "email": "claudia.castaneda@ievillaflora.edu.co",
+    "displayName": "Claudia Cecilia Castañeda Ceballos",
+    "shortName": "Claudia Castañeda",
+    "groupDirection": "06-02",
+    "role": "teacher",
+    "documentId": "71234004",
+    "phone": "3001001004",
+    "subjects": [
+      "Matemáticas",
+      "Estadística"
+    ],
+    "specialty": [
+      "Matemáticas",
+      "Estadística"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-901",
+      "g-902"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#34D399",
+    "color_hex": "#34D399",
+    "avatarColor": "#34D399",
+    "allowedSubjects": [
+      "Matemáticas",
+      "Estadística"
+    ]
+  },
+  {
+    "id": "t-diana",
+    "email": "diana.silva@ievillaflora.edu.co",
+    "displayName": "Diana Yasmín Silva Granda",
+    "shortName": "Diana Silva",
+    "groupDirection": "07-01",
+    "role": "teacher",
+    "documentId": "71234013",
+    "phone": "3001001013",
+    "subjects": [
+      "Geometría"
+    ],
+    "specialty": [
+      "Geometría"
+    ],
+    "assignedSubject": "Geometría",
+    "subject": "Geometría",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#7C2D12",
+    "color_hex": "#7C2D12",
+    "avatarColor": "#7C2D12",
+    "allowedSubjects": [
+      "Geometría"
+    ]
+  },
+  {
+    "id": "t-eliana",
+    "email": "eliana.osorio@ievillaflora.edu.co",
+    "displayName": "Eliana María Osorio Zapata",
+    "shortName": "Eliana Osorio",
+    "groupDirection": "07-02",
+    "role": "teacher",
+    "documentId": "71234014",
+    "phone": "3001001014",
+    "subjects": [
+      "Filosofía",
+      "Ciencias Sociales"
+    ],
+    "specialty": [
+      "Filosofía",
+      "Ciencias Sociales"
+    ],
+    "assignedSubject": "Ciencias Sociales",
+    "subject": "Ciencias Sociales",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#FB923C",
+    "color_hex": "#FB923C",
+    "avatarColor": "#FB923C",
+    "allowedSubjects": [
+      "Filosofía",
+      "Ciencias Sociales"
+    ]
+  },
+  {
+    "id": "t-linda",
+    "email": "linda.montoya@ievillaflora.edu.co",
+    "displayName": "Linda Patricia Montoya Vega",
+    "shortName": "Linda Montoya",
+    "groupDirection": "08-01",
+    "role": "teacher",
+    "documentId": "71234007",
+    "phone": "3001001007",
+    "subjects": [
+      "Educación Artística"
+    ],
+    "specialty": [
+      "Educación Artística"
+    ],
+    "assignedSubject": "Educación Artística",
+    "subject": "Educación Artística",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#064E3B",
+    "color_hex": "#064E3B",
+    "avatarColor": "#064E3B",
+    "allowedSubjects": [
+      "Educación Artística"
+    ]
+  },
+  {
+    "id": "t-diego",
+    "email": "diego.castano@ievillaflora.edu.co",
+    "displayName": "Diego Alexander Castaño Aristizábal",
+    "shortName": "Diego Castaño",
+    "groupDirection": "08-02",
+    "role": "teacher",
+    "documentId": "71234006",
+    "phone": "3001001006",
+    "subjects": [
+      "Tecnología e Informática",
+      "Cátedra de la Paz"
+    ],
+    "specialty": [
+      "Tecnología e Informática",
+      "Cátedra de la Paz"
+    ],
+    "assignedSubject": "Tecnología e Informática",
+    "subject": "Tecnología e Informática",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#6EE7B7",
+    "color_hex": "#6EE7B7",
+    "avatarColor": "#6EE7B7",
+    "allowedSubjects": [
+      "Tecnología e Informática",
+      "Cátedra de la Paz"
+    ]
+  },
+  {
+    "id": "t-katia",
+    "email": "katia.agualimpia@ievillaflora.edu.co",
+    "displayName": "Katia Danesa Agualimpia Puerta",
+    "shortName": "Katia Agualimpia",
+    "groupDirection": "09-01",
+    "role": "teacher",
+    "documentId": "71234012",
+    "phone": "3001001012",
+    "subjects": [
+      "Ciencias Sociales",
+      "Economía y Política"
+    ],
+    "specialty": [
+      "Ciencias Sociales",
+      "Economía y Política"
+    ],
+    "assignedSubject": "Ciencias Sociales",
+    "subject": "Ciencias Sociales",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#581C87",
+    "color_hex": "#581C87",
+    "avatarColor": "#581C87",
+    "allowedSubjects": [
+      "Ciencias Sociales",
+      "Economía y Política"
+    ]
+  },
+  {
+    "id": "t-betty",
+    "email": "maria.vasquez@ievillaflora.edu.co",
+    "displayName": "María Betty Vásquez Vélez",
+    "shortName": "Betty Vásquez",
+    "groupDirection": "09-02",
+    "role": "teacher",
+    "documentId": "71234005",
+    "phone": "3001001005",
+    "subjects": [
+      "Lengua Castellana",
+      "Literatura"
+    ],
+    "specialty": [
+      "Lengua Castellana",
+      "Literatura"
+    ],
+    "assignedSubject": "Lengua Castellana",
+    "subject": "Lengua Castellana",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-901",
+      "g-902"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#C084FC",
+    "color_hex": "#C084FC",
+    "avatarColor": "#C084FC",
+    "allowedSubjects": [
+      "Lengua Castellana",
+      "Literatura"
+    ]
+  },
+  {
+    "id": "t-alejandra",
+    "email": "maria.perez@ievillaflora.edu.co",
+    "displayName": "María Alejandra Pérez Pino",
+    "shortName": "Alejandra Pérez",
+    "groupDirection": "10-01",
+    "role": "teacher",
+    "documentId": "71234016",
+    "phone": "3001001016",
+    "subjects": [
+      "Ciencias Naturales",
+      "Biología",
+      "Química"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Biología",
+      "Química"
+    ],
+    "assignedSubject": "Biología",
+    "subject": "Biología",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#134E4A",
+    "color_hex": "#134E4A",
+    "avatarColor": "#134E4A",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Biología",
+      "Química"
+    ]
+  },
+  {
+    "id": "t-lorena-l",
+    "email": "lizhet.lopera@ievillaflora.edu.co",
+    "displayName": "Lizhet Lorena Lopera Mazo",
+    "shortName": "Lorena Lopera",
+    "groupDirection": "10-02",
+    "role": "teacher",
+    "documentId": "71234009",
+    "phone": "3001001009",
+    "subjects": [
+      "Matemáticas",
+      "Estadística"
+    ],
+    "specialty": [
+      "Matemáticas",
+      "Estadística"
+    ],
+    "assignedSubject": "Matemáticas",
+    "subject": "Matemáticas",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-701",
+      "g-702",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#2DD4BF",
+    "color_hex": "#2DD4BF",
+    "avatarColor": "#2DD4BF",
+    "allowedSubjects": [
+      "Matemáticas",
+      "Estadística"
+    ]
+  },
+  {
+    "id": "t-natalia",
+    "email": "natalia.caro@ievillaflora.edu.co",
+    "displayName": "Natalia Andrea Caro Sánchez",
+    "shortName": "Natalia Caro",
+    "groupDirection": "11-01",
+    "role": "teacher",
+    "documentId": "71234010",
+    "phone": "3001001010",
+    "subjects": [
+      "Inglés",
+      "Laboratorio de Inglés"
+    ],
+    "specialty": [
+      "Inglés",
+      "Laboratorio de Inglés"
+    ],
+    "assignedSubject": "Inglés",
+    "subject": "Inglés",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#854D0E",
+    "color_hex": "#854D0E",
+    "avatarColor": "#854D0E",
+    "allowedSubjects": [
+      "Inglés",
+      "Laboratorio de Inglés"
+    ]
+  },
+  {
+    "id": "t-laura",
+    "email": "laura.gallego@ievillaflora.edu.co",
+    "displayName": "Laura Gallego Cortés",
+    "shortName": "Laura Gallego",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234003",
+    "phone": "3001001003",
+    "subjects": [
+      "Ética y Valores",
+      "Educación Religiosa"
+    ],
+    "specialty": [
+      "Ética y Valores",
+      "Educación Religiosa"
+    ],
+    "assignedSubject": "Ética y Valores",
+    "subject": "Ética y Valores",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#FDE047",
+    "color_hex": "#FDE047",
+    "avatarColor": "#FDE047",
+    "allowedSubjects": [
+      "Ética y Valores",
+      "Educación Religiosa"
+    ]
+  },
+  {
+    "id": "t-omar",
+    "email": "gleysher.mosquera@ievillaflora.edu.co",
+    "displayName": "Gleysher Omar Mosquera Perea",
+    "shortName": "Omar Mosquera",
+    "groupDirection": "Sin asignación",
+    "entrySchedule": {
+      "defaultEntryTime": "09:25",
+      "exceptions": {
+        "jueves": "06:10"
+      },
+      "label": "Ingreso 9:25 a.m. (Jueves 6:10 a.m.)"
+    },
+    "role": "teacher",
+    "documentId": "71234017",
+    "phone": "3001001017",
+    "subjects": [
+      "Tecnología e Informática",
+      "MT-Bases de Datos",
+      "Cátedra de la Paz"
+    ],
+    "specialty": [
+      "Tecnología e Informática",
+      "MT-Bases de Datos",
+      "Cátedra de la Paz"
+    ],
+    "assignedSubject": "MT-Bases de Datos",
+    "subject": "MT-Bases de Datos",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1101"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#0F172A",
+    "color_hex": "#0F172A",
+    "avatarColor": "#0F172A",
+    "allowedSubjects": [
+      "Tecnología e Informática",
+      "MT-Bases de Datos",
+      "Cátedra de la Paz"
+    ]
+  },
+  {
+    "id": "t-jairo-andres",
+    "email": "jairo.murcia@ievillaflora.edu.co",
+    "displayName": "Jairo Andrés Murcia Velasco",
+    "shortName": "Jairo Murcia",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234002",
+    "phone": "3001001002",
+    "subjects": [
+      "Ciencias Naturales",
+      "Cátedra de la Paz"
+    ],
+    "specialty": [
+      "Ciencias Naturales",
+      "Cátedra de la Paz"
+    ],
+    "assignedSubject": "Ciencias Naturales",
+    "subject": "Ciencias Naturales",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#EA580C",
+    "color_hex": "#EA580C",
+    "avatarColor": "#EA580C",
+    "allowedSubjects": [
+      "Ciencias Naturales",
+      "Cátedra de la Paz"
+    ]
+  },
+  {
+    "id": "t-liscy",
+    "email": "liscy.palacios@ievillaflora.edu.co",
+    "displayName": "Liscy Vanessa Palacios Ibargüen",
+    "shortName": "Liscy Palacios",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234011",
+    "phone": "3001001011",
+    "subjects": [
+      "Física",
+      "Matemáticas"
+    ],
+    "specialty": [
+      "Física",
+      "Matemáticas"
+    ],
+    "assignedSubject": "Física",
+    "subject": "Física",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#94A3B8",
+    "color_hex": "#94A3B8",
+    "avatarColor": "#94A3B8",
+    "allowedSubjects": [
+      "Física",
+      "Matemáticas"
+    ]
+  },
+  {
+    "id": "t-alejandro",
+    "email": "alejandro.ramirez@ievillaflora.edu.co",
+    "displayName": "Alejandro Ramírez Cañas",
+    "shortName": "Alejandro Ramírez",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234001",
+    "phone": "3001001001",
+    "subjects": [
+      "Inglés",
+      "Laboratorio de Inglés"
+    ],
+    "specialty": [
+      "Inglés",
+      "Laboratorio de Inglés"
+    ],
+    "assignedSubject": "Inglés",
+    "subject": "Inglés",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#1E3A8A",
+    "color_hex": "#1E3A8A",
+    "avatarColor": "#1E3A8A",
+    "allowedSubjects": [
+      "Inglés",
+      "Laboratorio de Inglés"
+    ]
+  },
+  {
+    "id": "t-camilo",
+    "email": "camilo.torres@ievillaflora.edu.co",
+    "displayName": "Camilo Andrés Torres Charry",
+    "shortName": "Camilo Torres",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234015",
+    "phone": "3001001015",
+    "subjects": [
+      "Educación Física"
+    ],
+    "specialty": [
+      "Educación Física"
+    ],
+    "assignedSubject": "Educación Física",
+    "subject": "Educación Física",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-601",
+      "g-602",
+      "g-701",
+      "g-702",
+      "g-801",
+      "g-802",
+      "g-901",
+      "g-902",
+      "g-1001",
+      "g-1002",
+      "g-1101",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#701A75",
+    "color_hex": "#701A75",
+    "avatarColor": "#701A75",
+    "allowedSubjects": [
+      "Educación Física"
+    ]
+  },
+  {
+    "id": "t-sara",
+    "email": "sara.casafus@ievillaflora.edu.co",
+    "displayName": "Sara Casafus",
+    "shortName": "Sara Casafus",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234026",
+    "phone": "3001001026",
+    "subjects": [
+      "MT-Audiovisuales"
+    ],
+    "specialty": [
+      "MT-Audiovisuales"
+    ],
+    "assignedSubject": "MT-Audiovisuales",
+    "subject": "MT-Audiovisuales",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-1002",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#365314",
+    "color_hex": "#365314",
+    "avatarColor": "#365314",
+    "allowedSubjects": [
+      "MT-Audiovisuales"
+    ]
+  },
+  {
+    "id": "t-paola",
+    "email": "paola@ievillaflora.edu.co",
+    "displayName": "Paola",
+    "shortName": "Paola",
+    "groupDirection": "Sin asignación",
+    "role": "teacher",
+    "documentId": "71234027",
+    "phone": "3001001027",
+    "subjects": [
+      "MT-Bases de Datos"
+    ],
+    "specialty": [
+      "MT-Bases de Datos"
+    ],
+    "assignedSubject": "MT-Bases de Datos",
+    "subject": "MT-Bases de Datos",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-1001",
+      "g-1101"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#A3E635",
+    "color_hex": "#A3E635",
+    "avatarColor": "#A3E635",
+    "allowedSubjects": [
+      "MT-Bases de Datos"
+    ]
+  },
+  {
+    "id": "t-alexander",
+    "email": "alexander.uribe@ievillaflora.edu.co",
+    "displayName": "Alexander Uribe Montalvo",
+    "shortName": "Alexander Uribe",
+    "groupDirection": "Sin asignación",
+    "entrySchedule": {
+      "defaultEntryTime": "09:25",
+      "exceptions": {
+        "lunes": "06:10"
+      },
+      "label": "Ingreso 9:25 a.m. (Lunes 6:10 a.m.)"
+    },
+    "role": "teacher",
+    "documentId": "71234018",
+    "phone": "3001001018",
+    "subjects": [
+      "Tecnología e Informática",
+      "MT-Audiovisuales"
+    ],
+    "specialty": [
+      "Tecnología e Informática",
+      "MT-Audiovisuales"
+    ],
+    "assignedSubject": "Tecnología e Informática",
+    "subject": "Tecnología e Informática",
+    "academicLevel": "bachillerato",
+    "academicAssignmentStatus": "assigned",
+    "assignedGradeIds": [
+      "g-901",
+      "g-902",
+      "g-1002",
+      "g-1102"
+    ],
+    "maxWeeklyHours": 24,
+    "isActive": true,
+    "createdAt": "2026-01-15T00:00:00Z",
+    "updatedAt": "2026-01-15T00:00:00Z",
+    "color": "#E879F9",
+    "color_hex": "#E879F9",
+    "avatarColor": "#E879F9",
+    "allowedSubjects": [
+      "Tecnología e Informática",
+      "MT-Audiovisuales"
+    ]
+  },
+  {
+    "id": "teacher-1793541677897",
+    "displayName": "Adriana Mier",
+    "shortName": "Adriana Mier",
+    "groupDirection": "Sin asignación",
+    "documentId": "",
+    "email": "adriana.mier@villaflora.edu.co",
+    "role": "teacher",
+    "maxWeeklyHours": 24,
+    "color_hex": "#FB923C",
+    "color": "#FB923C",
+    "avatarColor": "#FB923C",
+    "allowedSubjects": [],
+    "subjects": [],
+    "specialty": [],
+    "isActive": true,
+    "createdAt": "2026-11-01T14:01:17.897Z",
+    "updatedAt": "2026-11-01T14:01:17.897Z",
+    "userEdited": true
+  }
+]

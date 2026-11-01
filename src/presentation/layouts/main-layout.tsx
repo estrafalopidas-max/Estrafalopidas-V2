@@ -135,7 +135,11 @@ export const MainLayout: React.FC = () => {
 
   // Destrucción de Caché Visual (Busting) y Gestión Dinámica de Logo
   const [logoUrl, setLogoUrl] = useState<string>(() => {
-    return localStorage.getItem('ievf_logo_url') || '/logo-institucional.png';
+    return (
+      localStorage.getItem('ievf_logo_data_url') ||
+      localStorage.getItem('ievf_logo_url') ||
+      '/logo-institucional.png'
+    );
   });
   const [isUploadingLogo, setIsUploadingLogo] = useState<boolean>(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -146,18 +150,17 @@ export const MainLayout: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    // Validación estricta en cliente (tamaño <= 2MB y formatos admitidos)
-    const MAX_SIZE = 2 * 1024 * 1024; // 2MB
-    const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml'];
+    const MAX_SIZE = 4 * 1024 * 1024; // 4MB
+    const ALLOWED_TYPES = ['image/png', 'image/jpeg', 'image/jpg', 'image/svg+xml', 'image/webp'];
 
     if (file.size > MAX_SIZE) {
-      setUploadError('El archivo excede el tamaño máximo permitido de 2MB.');
+      setUploadError('El archivo excede el tamaño máximo permitido de 4MB.');
       e.target.value = '';
       return;
     }
 
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setUploadError('Formato inválido. Solo se admiten archivos PNG, JPEG y SVG.');
+    if (file.type && !ALLOWED_TYPES.includes(file.type)) {
+      setUploadError('Formato inválido. Solo se admiten archivos PNG, JPEG, WEBP y SVG.');
       e.target.value = '';
       return;
     }
@@ -167,12 +170,31 @@ export const MainLayout: React.FC = () => {
     setUploadSuccess(null);
 
     try {
-      const formData = new FormData();
-      formData.append('logo', file);
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => {
+          if (typeof reader.result === 'string') {
+            resolve(reader.result);
+          } else {
+            reject(new Error('No se pudo leer el archivo seleccionado.'));
+          }
+        };
+        reader.onerror = () => reject(new Error('Error leyendo el archivo local.'));
+        reader.readAsDataURL(file);
+      });
 
+      // Actualización visual inmediata en interfaz y almacenamiento local
+      setLogoUrl(dataUrl);
+      localStorage.setItem('ievf_logo_data_url', dataUrl);
+
+      const token = localStorage.getItem('ievf_session_token') || '';
       const response = await fetch('/api/upload-logo', {
         method: 'POST',
-        body: formData,
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-ievf-session-token': token } : {}),
+        },
+        body: JSON.stringify({ dataUrl, fileName: file.name, mimeType: file.type }),
       });
 
       const data = await response.json().catch(() => null);
@@ -181,19 +203,9 @@ export const MainLayout: React.FC = () => {
         throw new Error(data?.error || 'Error al procesar y guardar el logo en el servidor.');
       }
 
-      // Destrucción de Caché Visual (Busting):
       const newTimestampUrl = `/logo-institucional.png?t=${Date.now()}`;
-      setLogoUrl(newTimestampUrl);
       localStorage.setItem('ievf_logo_url', newTimestampUrl);
-
-      // Respaldo en Data URL para renderizado local inmediato
-      const reader = new FileReader();
-      reader.onload = () => {
-        if (typeof reader.result === 'string') {
-          localStorage.setItem('ievf_logo_data_url', reader.result);
-        }
-      };
-      reader.readAsDataURL(file);
+      window.dispatchEvent(new Event('institutional_logo_updated'));
 
       setUploadSuccess('¡Logo institucional actualizado correctamente!');
       setTimeout(() => setUploadSuccess(null), 4000);

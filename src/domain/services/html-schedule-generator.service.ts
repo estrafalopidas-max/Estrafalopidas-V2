@@ -163,7 +163,18 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
 
   weekHeaders.forEach((d) => {
     holidayDays[d.id] = Boolean(d.isHoliday);
-    if (d.institutionalEvents && d.institutionalEvents.length > 0) {
+    const customBadgesForDay = custom?.dayBadges?.[d.id];
+    if (Array.isArray(customBadgesForDay) && customBadgesForDay.length > 0) {
+      dayBadges[d.id] = customBadgesForDay.map((ev) => ({
+        id: ev.id,
+        title: ev.title,
+        badgeLabel: ev.badgeLabel || ev.title.slice(0, 22),
+        description: ev.description || ev.title,
+        date: ev.date,
+        endDate: ev.endDate,
+        modality: ev.modality,
+      }));
+    } else if (d.institutionalEvents && d.institutionalEvents.length > 0) {
       dayBadges[d.id] = d.institutionalEvents.map((ev) => ({
         id: ev.id,
         title: ev.title,
@@ -173,9 +184,15 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
         endDate: ev.endDate,
         modality: ev.modality,
       }));
+    } else {
+      dayBadges[d.id] = [];
+    }
+
+    const effectiveEvents = dayBadges[d.id];
+    if (effectiveEvents && effectiveEvents.length > 0) {
       const modEvent =
-        d.institutionalEvents.find((ev) => ev.modality === 'B' || ev.modality === 'D') ||
-        d.institutionalEvents[0];
+        effectiveEvents.find((ev) => ev.modality === 'B' || ev.modality === 'D') ||
+        effectiveEvents[0];
       if (modEvent?.modality === 'B' && baseMeetingDays[d.id] === undefined) {
         baseMeetingDays[d.id] = true;
         baseMeetingDays[`morning_${d.id}`] = true;
@@ -189,10 +206,16 @@ export function resolveEffectiveDayConfigs(custom?: Partial<PublicDayConfigs>): 
         baseScheduleTypes[d.id] = 'D';
         baseScheduleTypes[`morning_${d.id}`] = 'D';
       }
-    } else {
-      dayBadges[d.id] = [];
     }
   });
+
+  if (custom?.dayBadges) {
+    Object.keys(custom.dayBadges).forEach((k) => {
+      if (!dayBadges[k] && Array.isArray(custom.dayBadges![k])) {
+        dayBadges[k] = custom.dayBadges![k];
+      }
+    });
+  }
 
   const isLocalBlank = (() => {
     try {
@@ -319,6 +342,24 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
     effectiveDayConfigs.anchorMondayIso || new Date(),
     effectiveDayConfigs.customHolidays
   );
+  if (effectiveDayConfigs.dayBadges) {
+    weekHeadersList.forEach((h) => {
+      const badges = effectiveDayConfigs.dayBadges?.[h.id];
+      if (badges && badges.length > 0 && (!h.institutionalEvents || h.institutionalEvents.length === 0)) {
+        const mappedEvents = badges.map((b) => ({
+          id: b.id,
+          title: b.title,
+          badgeLabel: b.badgeLabel,
+          description: b.description,
+          date: b.date || '',
+          endDate: b.endDate,
+          modality: (b.modality || 'A') as InstitutionalEventModality,
+        }));
+        h.institutionalEvents = mappedEvents;
+        h.institutionalEvent = mappedEvents[0];
+      }
+    });
+  }
   const weekHeadersMap: Record<string, string> = {};
   weekHeadersList.forEach((h) => {
     weekHeadersMap[h.id] = h.label;

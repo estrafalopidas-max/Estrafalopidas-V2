@@ -1143,10 +1143,48 @@ export function ensureSeedDataLoaded() {
   } catch {}
 
   if (!isCurrentVersion || !localStorage.getItem('ievf_users_v1')) {
-    const mergedTeachers = SEED_TEACHERS.filter((t) => !deletedIds.has(t.id)).map((t) => {
+    let existingNonSeed: UserEntity[] = [];
+    try {
+      const rawExisting = localStorage.getItem('ievf_users_v1');
+      if (rawExisting) {
+        const parsedExisting = JSON.parse(rawExisting);
+        if (Array.isArray(parsedExisting)) {
+          const seedIds = new Set(SEED_TEACHERS.map((t) => t.id));
+          existingNonSeed = parsedExisting.filter(
+            (u: any) =>
+              u &&
+              u.id &&
+              !deletedIds.has(String(u.id)) &&
+              u.id !== 't-adriana-mier' &&
+              (!seedIds.has(u.id) || u.userEdited)
+          );
+        }
+      }
+    } catch {}
+
+    const mergedTeachers = SEED_TEACHERS.filter((t) => !deletedIds.has(t.id) && t.id !== 't-adriana-mier').map((t) => {
       const lockedHex = lockedColors[t.id] || t.color_hex || t.color || '#007DC5';
       return { ...t, color: lockedHex, color_hex: lockedHex, avatarColor: lockedHex };
     });
+
+    const seenIds = new Set(mergedTeachers.map((t) => t.id));
+    for (const customTeacher of existingNonSeed) {
+      if (!seenIds.has(customTeacher.id)) {
+        const hex = customTeacher.color_hex || customTeacher.color || lockedColors[customTeacher.id] || '#007DC5';
+        lockedColors[customTeacher.id] = hex;
+        mergedTeachers.push({
+          ...customTeacher,
+          color: hex,
+          color_hex: hex,
+          avatarColor: hex,
+          role: 'teacher',
+          isActive: customTeacher.isActive !== false,
+          userEdited: true,
+        });
+        seenIds.add(customTeacher.id);
+      }
+    }
+
     localStorage.setItem('ievf_users_v1', JSON.stringify(mergedTeachers));
   } else {
     try {
@@ -1160,25 +1198,24 @@ export function ensureSeedDataLoaded() {
           let changed = false;
           const filtered = parsed
             .filter((u: any) => {
-              const rem =
-                (u?.id && deletedIds.has(String(u.id))) ||
-                u?.id === 't-adriana-mier' ||
-                String(u?.displayName || '').toLowerCase().includes('adriana mier') ||
-                String(u?.displayName || '').toLowerCase().includes('adriana luc');
+              const rem = (u?.id && deletedIds.has(String(u.id))) || u?.id === 't-adriana-mier';
               if (rem) changed = true;
               return !rem;
             })
             .map((u: any) => {
-              if (u?.userEdited) {
+              if (u?.userEdited || (u?.id && !seedTeacherById.has(u.id))) {
                 const userHex = u?.color_hex || u?.color || (u?.id && lockedColors[u.id]) || '#007DC5';
                 if (u?.id && userHex) {
                   updateTeacherDictionaryColor(u.id, userHex);
                 }
                 return {
                   ...u,
+                  role: 'teacher',
+                  isActive: u.isActive !== false,
                   color: userHex,
                   color_hex: userHex,
                   avatarColor: userHex,
+                  userEdited: true,
                 };
               }
 

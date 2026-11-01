@@ -28,8 +28,7 @@ function isRemovedTeacher(u: Partial<UserEntity> | null | undefined, deletedIds:
   if (!u) return true;
   if (u.id && deletedIds.has(u.id)) return true;
   if (u.id === 't-adriana-mier') return true;
-  const name = (u.displayName || u.shortName || '').toLowerCase();
-  return name.includes('adriana mier') || name.includes('adriana lucía mier') || name.includes('adriana lucia mier');
+  return false;
 }
 
 function normalizeUserRecord(u: UserEntity & { userEdited?: boolean }): UserEntity {
@@ -43,6 +42,8 @@ function normalizeUserRecord(u: UserEntity & { userEdited?: boolean }): UserEnti
     });
     return {
       ...u,
+      role: 'teacher',
+      isActive: u.isActive !== false,
       color: hex,
       color_hex: hex,
       avatarColor: hex,
@@ -61,6 +62,8 @@ function normalizeUserRecord(u: UserEntity & { userEdited?: boolean }): UserEnti
     '#007DC5';
   return {
     ...u,
+    role: 'teacher',
+    isActive: u.isActive !== false,
     shortName,
     color: lockedColor,
     color_hex: lockedColor,
@@ -71,7 +74,14 @@ function normalizeUserRecord(u: UserEntity & { userEdited?: boolean }): UserEnti
 
 export class FirestoreUserRepository implements IUserRepository {
   async getAll(): Promise<UserEntity[]> {
-    const raw = localStorage.getItem(LS_BACKUP_KEY);
+    let raw = localStorage.getItem(LS_BACKUP_KEY);
+    if (!raw) {
+      try {
+        const { ensureSeedDataLoaded } = await import('../seed/initial-seed');
+        ensureSeedDataLoaded();
+        raw = localStorage.getItem(LS_BACKUP_KEY);
+      } catch {}
+    }
     if (!raw) return [];
     const parsed: UserEntity[] = JSON.parse(raw);
     const deletedIds = getDeletedTeacherIds();
@@ -102,14 +112,18 @@ export class FirestoreUserRepository implements IUserRepository {
     return all.filter((u) => u.role === role);
   }
 
-  private syncTeachersToServer(users: any[]): void {
+  private async syncTeachersToServer(users: any[]): Promise<void> {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return;
     try {
-      void fetch('/api/teachers', {
+      const token = localStorage.getItem('ievf_session_token') || '';
+      await fetch('/api/teachers', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-ievf-session-token': token } : {}),
+        },
         body: JSON.stringify({ teachers: users }),
-      }).catch(() => {});
+      });
     } catch {
       // ignore network error
     }
@@ -118,15 +132,41 @@ export class FirestoreUserRepository implements IUserRepository {
   async create(user: UserEntity): Promise<UserEntity> {
     const raw = localStorage.getItem(LS_BACKUP_KEY);
     const localUsers: any[] = raw ? JSON.parse(raw) : [];
-    const entry = { ...user, userEdited: true };
-    localUsers.push(entry);
+    const finalId = user.id || `t-custom-${Date.now()}`;
+    const hex = user.color_hex || user.color || '#007DC5';
+    const entry: UserEntity = {
+      ...user,
+      id: finalId,
+      color: hex,
+      color_hex: hex,
+      avatarColor: hex,
+      role: 'teacher',
+      isActive: user.isActive !== false,
+      userEdited: true,
+      maxWeeklyHours: Number(user.maxWeeklyHours) || 24,
+    };
+
+    try {
+      const lockedRaw = localStorage.getItem('ievf_locked_teacher_colors_v1');
+      const lockedMap = lockedRaw ? JSON.parse(lockedRaw) : {};
+      lockedMap[finalId] = hex;
+      localStorage.setItem('ievf_locked_teacher_colors_v1', JSON.stringify(lockedMap));
+    } catch {}
+
+    const existingIdx = localUsers.findIndex((u) => u.id === finalId);
+    if (existingIdx !== -1) {
+      localUsers[existingIdx] = entry;
+    } else {
+      localUsers.push(entry);
+    }
     localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(localUsers));
-    this.syncTeachersToServer(localUsers);
-    updateTeacherDictionaryProfile(user.id, {
-      fullName: user.displayName,
-      shortName: user.shortName,
-      colorHex: user.color_hex || user.color,
-      groupDirection: user.groupDirection,
+    await this.syncTeachersToServer(localUsers);
+
+    updateTeacherDictionaryProfile(entry.id, {
+      fullName: entry.displayName,
+      shortName: entry.shortName,
+      colorHex: hex,
+      groupDirection: entry.groupDirection,
     });
     window.dispatchEvent(new Event('users_collection_updated'));
     window.dispatchEvent(new Event('schedule_matrix_updated'));
@@ -157,7 +197,7 @@ export class FirestoreUserRepository implements IUserRepository {
       }
 
       localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(localUsers));
-      this.syncTeachersToServer(localUsers);
+      await this.syncTeachersToServer(localUsers);
 
       const newHex = merged.color_hex || merged.color;
       if (newHex) {
@@ -233,7 +273,7 @@ export class FirestoreUserRepository implements IUserRepository {
       const targetUser = localUsers.find((u) => u.id === id);
       const filteredUsers = localUsers.filter((u) => u.id !== id);
       localStorage.setItem(LS_BACKUP_KEY, JSON.stringify(filteredUsers));
-      this.syncTeachersToServer(filteredUsers);
+      await this.syncTeachersToServer(filteredUsers);
 
       // Desasignar bloques horarios que pertenecían al docente eliminado
       for (const matrixKey of ['ievf_time_blocks_v1', 'villaFloraMatrix']) {

@@ -35,6 +35,7 @@ export interface UserEntity {
   color_hex?: string; // Inmutable static Hex ('#RRGGBB') hard-locked al registrarse
   avatarColor?: string;
   maxWeeklyHours: number; // Límite legal semanal obligatorio de horas lectivas (Decreto 1850 / MEN, default 22)
+  userEdited?: boolean; // Indica si el registro fue creado o modificado por el usuario
   createdAt: string; // ISO 8601
   updatedAt: string; // ISO 8601
 }

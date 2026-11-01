@@ -818,7 +818,7 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
     [teachers]
   );
 
-  const openTeacherModal = useCallback((teacher?: UserEntity | null) => {
+  const openTeacherModal = useCallback((teacher?: UserEntity | null, _isEditMode?: boolean) => {
     setSelectedTeacherForEdit(teacher || null);
     setIsTeacherModalOpen(true);
   }, []);

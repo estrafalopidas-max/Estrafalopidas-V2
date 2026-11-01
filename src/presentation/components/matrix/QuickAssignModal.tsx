@@ -229,7 +229,7 @@ export const QuickAssignModal: React.FC<QuickAssignModalProps> = ({
 
   // List of active teachers
   const activeTeachers = useMemo(() => {
-    return teachers.filter((t) => t.role === 'teacher' && t.isActive !== false);
+    return teachers.filter((t) => (!t.role || t.role === 'teacher') && t.isActive !== false);
   }, [teachers]);
 
   // Collision and school arrival schedule checking for each teacher in this specific period and day

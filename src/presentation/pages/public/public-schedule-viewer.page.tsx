@@ -44,6 +44,7 @@ import {
   generateWeekHeaders,
   getCurrentWeekText,
   getOrdinalSuffix,
+  InstitutionalEventModality,
 } from '../../../domain/services/ChronologyEngine';
 import { normalizeTimeBlocksGrades, resolveCanonicalShift } from '../../../domain/services/grade-normalization.service';
 import { ensureSeedDataLoaded } from '../../../infrastructure/seed/initial-seed';
@@ -497,10 +498,35 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     return sortTeachersWithLowPriorityLast(mapped);
   }, [isEmbeddedModal, liveTeachers, snapshot?.teachers]);
 
-  const weekHeaders = useMemo(
-    () => generateWeekHeaders(dayConfigs.anchorMondayIso || new Date(), dayConfigs.customHolidays),
-    [dayConfigs.anchorMondayIso, dayConfigs.customHolidays]
-  );
+  const weekHeaders = useMemo(() => {
+    const rawHeaders = generateWeekHeaders(
+      dayConfigs.anchorMondayIso || new Date(),
+      dayConfigs.customHolidays
+    );
+    if (dayConfigs.dayBadges) {
+      return rawHeaders.map((h) => {
+        const badges = dayConfigs.dayBadges?.[h.id];
+        if (badges && badges.length > 0 && (!h.institutionalEvents || h.institutionalEvents.length === 0)) {
+          const mappedEvents = badges.map((b) => ({
+            id: b.id,
+            title: b.title,
+            badgeLabel: b.badgeLabel,
+            description: b.description,
+            date: b.date || '',
+            endDate: b.endDate,
+            modality: (b.modality || 'A') as InstitutionalEventModality,
+          }));
+          return {
+            ...h,
+            institutionalEvents: mappedEvents,
+            institutionalEvent: mappedEvents[0],
+          };
+        }
+        return h;
+      });
+    }
+    return rawHeaders;
+  }, [dayConfigs.anchorMondayIso, dayConfigs.customHolidays, dayConfigs.dayBadges]);
 
   const breakSupervisionMap = useMemo(() => {
     if (dayConfigs.breakSupervision) {
