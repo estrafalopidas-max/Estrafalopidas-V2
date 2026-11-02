@@ -221,6 +221,10 @@ async function startServer() {
   };
 
   app.post('/api/upload-logo', (req, res) => {
+    if (verifyWriteRequestRef && !verifyWriteRequestRef(req)) {
+      res.status(401).json({ error: 'Operación protegida: se requiere sesión activa de Coordinación.' });
+      return;
+    }
     const chunks: Buffer[] = [];
     let totalSize = 0;
     const MAX_SIZE = 5 * 1024 * 1024; // 5MB para soportar base64 holgadamente
@@ -559,9 +563,38 @@ async function startServer() {
           value JSONB NOT NULL,
           updated_at_ms BIGINT NOT NULL
         );
+
+        ALTER TABLE published_schedule ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE week_schedules ENABLE ROW LEVEL SECURITY;
+        ALTER TABLE app_kv_store ENABLE ROW LEVEL SECURITY;
+
+        DO $$
+        BEGIN
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies WHERE tablename = 'published_schedule' AND policyname = 'rls_published_schedule_backend'
+          ) THEN
+            CREATE POLICY rls_published_schedule_backend ON published_schedule
+              FOR ALL TO CURRENT_USER USING (true) WITH CHECK (true);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies WHERE tablename = 'week_schedules' AND policyname = 'rls_week_schedules_backend'
+          ) THEN
+            CREATE POLICY rls_week_schedules_backend ON week_schedules
+              FOR ALL TO CURRENT_USER USING (true) WITH CHECK (true);
+          END IF;
+
+          IF NOT EXISTS (
+            SELECT 1 FROM pg_policies WHERE tablename = 'app_kv_store' AND policyname = 'rls_app_kv_store_backend'
+          ) THEN
+            CREATE POLICY rls_app_kv_store_backend ON app_kv_store
+              FOR ALL TO CURRENT_USER USING (true) WITH CHECK (true);
+          END IF;
+        END
+        $$;
       `);
       isPgReady = true;
-      console.log('[PostgreSQL] Conectado y tablas verificadas correctamente.');
+      console.log('[PostgreSQL] Conectado, tablas y políticas RLS verificadas correctamente.');
 
       // 1. Hidratar o migrar published_schedule
       const pubRes = await pgPool.query(
@@ -843,7 +876,24 @@ async function startServer() {
       return;
     }
 
-    if (!isSilentHandshake && password !== undefined) {
+    if (isSilentHandshake) {
+      const existingHeaderToken =
+        (req.headers['x-ievf-session-token'] as string | undefined) ||
+        (req.headers.authorization?.startsWith('Bearer ')
+          ? req.headers.authorization.slice(7).trim()
+          : undefined);
+      const cookies = parseCookies(req.headers.cookie);
+      const verifiedExisting =
+        verifySessionToken(existingHeaderToken) || verifySessionToken(cookies['ievf_session_token']);
+      if (!verifiedExisting || verifiedExisting.sub.toLowerCase() !== actor.email.toLowerCase()) {
+        res.status(401).json({ ok: false, error: 'Sesión previa inválida o expirada.' });
+        return;
+      }
+    } else {
+      if (password === undefined || !password) {
+        res.status(401).json({ ok: false, error: 'Se requiere contraseña para iniciar sesión.' });
+        return;
+      }
       const isPrimary = actor.email === PRIMARY_ADMIN_EMAIL.toLowerCase();
       if (isPrimary) {
         const expected = accessControlState.primaryAdminPassword || 'piloro666';
@@ -1353,6 +1403,14 @@ async function startServer() {
     res.status(200).json({ ok: true, count: teachersList.length });
   });
 
+  const sanitizeAccessControlForClient = (state: ServerAccessControlConfig) => ({
+    requireAuth: state.requireAuth,
+    inactivityTimeoutMinutes: state.inactivityTimeoutMinutes,
+    primaryAdminEmail: state.primaryAdminEmail,
+    updatedAtMs: state.updatedAtMs,
+    editors: (state.editors || []).map(({ password: _pwd, ...rest }) => rest),
+  });
+
   app.get('/api/access-control', async (_req, res) => {
     setNoCacheHeaders(res);
     if (pgPool && isPgReady) {
@@ -1367,7 +1425,7 @@ async function startServer() {
         // Fallback
       }
     }
-    res.status(200).json(accessControlState);
+    res.status(200).json(sanitizeAccessControlForClient(accessControlState));
   });
 
   app.post('/api/access-control', async (req, res) => {
@@ -1382,28 +1440,42 @@ async function startServer() {
     const nextPrimaryAdminPassword =
       typeof body.primaryAdminPassword === 'string' &&
       body.primaryAdminPassword.trim() &&
-      body.primaryAdminPassword.trim() !== 'VillaFlora2026*'
+      body.primaryAdminPassword.trim() !== 'VillaFlora2026*' &&
+      body.primaryAdminPassword.trim() !== '***REDACTED***'
         ? body.primaryAdminPassword.trim()
         : accessControlState.primaryAdminPassword || 'piloro666';
+    const existingEditorsByEmail = new Map(
+      (accessControlState.editors || []).map((e) => [e.email.trim().toLowerCase(), e])
+    );
     const nextEditors: ServerAuthorizedEditor[] = Array.isArray(body.editors)
       ? body.editors
           .filter((e: any) => e && typeof e.email === 'string' && e.email.trim())
-          .map((e: any) => ({
-            email: e.email.trim().toLowerCase(),
-            ...(typeof e.username === 'string' && e.username.trim()
-              ? { username: e.username.trim().toLowerCase() }
-              : {}),
-            name: typeof e.name === 'string' && e.name.trim() ? e.name.trim() : e.email.trim(),
-            ...(typeof e.position === 'string' && e.position.trim()
-              ? { position: e.position.trim() }
-              : {}),
-            ...(typeof e.password === 'string' && e.password.trim()
-              ? { password: e.password.trim() }
-              : {}),
-            role: e.role === 'admin' ? 'admin' : 'editor',
-            addedAt: typeof e.addedAt === 'string' ? e.addedAt : new Date().toISOString(),
-            active: typeof e.active === 'boolean' ? e.active : true,
-          }))
+          .map((e: any) => {
+            const cleanEmail = e.email.trim().toLowerCase();
+            const prevEditor = existingEditorsByEmail.get(cleanEmail);
+            const incomingPwd =
+              typeof e.password === 'string' &&
+              e.password.trim() &&
+              e.password.trim() !== '***REDACTED***'
+                ? e.password.trim()
+                : prevEditor?.password;
+            return {
+              email: cleanEmail,
+              ...(typeof e.username === 'string' && e.username.trim()
+                ? { username: e.username.trim().toLowerCase() }
+                : prevEditor?.username
+                ? { username: prevEditor.username }
+                : {}),
+              name: typeof e.name === 'string' && e.name.trim() ? e.name.trim() : e.email.trim(),
+              ...(typeof e.position === 'string' && e.position.trim()
+                ? { position: e.position.trim() }
+                : {}),
+              ...(incomingPwd ? { password: incomingPwd } : {}),
+              role: e.role === 'admin' ? 'admin' : 'editor',
+              addedAt: typeof e.addedAt === 'string' ? e.addedAt : new Date().toISOString(),
+              active: typeof e.active === 'boolean' ? e.active : true,
+            };
+          })
       : accessControlState.editors;
 
     accessControlState = {
@@ -1434,7 +1506,7 @@ async function startServer() {
       }
     }
 
-    res.status(200).json(accessControlState);
+    res.status(200).json(sanitizeAccessControlForClient(accessControlState));
   });
 
   // Endpoints de Planificador de Año Escolar (Multi-Año) en NAS / PostgreSQL

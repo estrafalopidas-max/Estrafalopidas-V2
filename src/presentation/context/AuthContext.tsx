@@ -9,7 +9,7 @@ import { Clock, LogOut, CheckCircle2 } from 'lucide-react';
 import { auth } from '../../infrastructure/firebase/firebase-client';
 
 export const PRIMARY_ADMIN_EMAIL = 'estrafalopidas@gmail.com';
-export const DEFAULT_PRIMARY_ADMIN_PASSWORD = 'piloro666';
+export const DEFAULT_PRIMARY_ADMIN_PASSWORD = '';
 const ACCESS_CONTROL_STORAGE_KEY = 'ievf_access_control_v1';
 const VERIFIED_SESSION_STORAGE_KEY = 'ievf_verified_editor_session_v1';
 
@@ -111,7 +111,13 @@ function loadLocalAccessControl(): StoredAccessControl {
 
 function saveLocalAccessControl(data: StoredAccessControl): void {
   try {
-    localStorage.setItem(ACCESS_CONTROL_STORAGE_KEY, JSON.stringify(data));
+    const sanitized: StoredAccessControl = {
+      requireAuth: data.requireAuth,
+      inactivityTimeoutMinutes: data.inactivityTimeoutMinutes,
+      editors: (data.editors || []).map(({ password: _pwd, ...rest }) => rest),
+      updatedAtMs: data.updatedAtMs,
+    };
+    localStorage.setItem(ACCESS_CONTROL_STORAGE_KEY, JSON.stringify(sanitized));
   } catch {
     // ignore
   }
@@ -312,10 +318,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const actorIdentifier = activeUser.isHiddenRoot
         ? PRIMARY_ADMIN_EMAIL.toLowerCase()
         : activeUser.email.toLowerCase();
-      if (actorIdentifier && typeof window !== 'undefined' && typeof fetch === 'function') {
+      const existingToken = (() => {
+        try {
+          return localStorage.getItem('ievf_session_token_v1');
+        } catch {
+          return null;
+        }
+      })();
+      if (actorIdentifier && existingToken && typeof window !== 'undefined' && typeof fetch === 'function') {
         void fetch('/api/auth/session', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'x-ievf-session-token': existingToken,
+          },
           body: JSON.stringify({ identifier: actorIdentifier, silentHandshake: true }),
         })
           .then((r) => (r.ok ? r.json() : null))
@@ -418,72 +434,40 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
       await syncWithServer();
 
-      const primaryPrefix = PRIMARY_ADMIN_EMAIL.split('@')[0].toLowerCase();
-      const isPrimaryUser =
-        cleanId === PRIMARY_ADMIN_EMAIL.toLowerCase() ||
-        cleanId === primaryPrefix ||
-        cleanId === 'coordinacion' ||
-        cleanId === 'admin';
-
-      if (isPrimaryUser) {
-        const expectedPwd = primaryAdminPassword || DEFAULT_PRIMARY_ADMIN_PASSWORD;
-        if (cleanPwd !== expectedPwd) {
+      try {
+        const res = await fetch('/api/auth/session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ identifier: cleanId, password: cleanPwd }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok || !data?.ok) {
           return {
             ok: false,
-            error: 'Contraseña incorrecta.',
+            error: data?.error || 'Credenciales inválidas.',
           };
         }
-        const emailToStore = PRIMARY_ADMIN_EMAIL.toLowerCase();
+
+        const emailToStore = String(data.email || cleanId).trim().toLowerCase();
         lastActivityRef.current = Date.now();
         setManualSessionEmail(emailToStore);
         try {
           localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, emailToStore);
+          if (data.token) {
+            localStorage.setItem('ievf_session_token_v1', data.token);
+          }
         } catch {
           // ignore
         }
         return { ok: true };
-      }
-
-      const found = editors.find((e) => {
-        const emailMatch = e.email.trim().toLowerCase() === cleanId;
-        const userMatch = e.username && e.username.trim().toLowerCase() === cleanId;
-        const prefixMatch = e.email.split('@')[0].toLowerCase() === cleanId;
-        return emailMatch || Boolean(userMatch) || prefixMatch;
-      });
-
-      if (!found) {
-        return {
-          ok: false,
-          error: `El usuario "${identifierInput.trim()}" no se encuentra registrado.`,
-        };
-      }
-
-      if (!found.active) {
-        return {
-          ok: false,
-          error: 'Tu cuenta se encuentra pausada temporalmente por Coordinación académica.',
-        };
-      }
-
-      const expectedEditorPwd = found.password?.trim() || 'VillaFlora2026*';
-      if (cleanPwd !== expectedEditorPwd) {
-        return {
-          ok: false,
-          error: 'La contraseña ingresada es incorrecta.',
-        };
-      }
-
-      const emailToStore = found.email.trim().toLowerCase();
-      lastActivityRef.current = Date.now();
-      setManualSessionEmail(emailToStore);
-      try {
-        localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, emailToStore);
       } catch {
-        // ignore
+        return {
+          ok: false,
+          error: 'No se pudo verificar la sesión con el servidor.',
+        };
       }
-      return { ok: true };
     },
-    [editors, primaryAdminPassword, syncWithServer]
+    [syncWithServer]
   );
 
   const loginWithAuthorizedEmail = useCallback(

@@ -50,6 +50,16 @@ service cloud.firestore {
       data.updatedAt == request.time;
     }
 
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email == 'estrafalopidas@gmail.com' &&
+        request.auth.token.email_verified == true;
+    }
+
     match /test/{docId} {
       allow get: if isValidId(docId);
     }
@@ -57,11 +67,13 @@ service cloud.firestore {
     match /published_schedules/{scheduleId} {
       allow get: if isValidId(scheduleId);
 
-      allow create: if isValidId(scheduleId) &&
+      allow create: if isVerifiedAdmin() &&
+        isValidId(scheduleId) &&
         scheduleId == 'official' &&
         isValidPublishedSchedule(incoming());
 
-      allow update: if isValidId(scheduleId) &&
+      allow update: if isVerifiedAdmin() &&
+        isValidId(scheduleId) &&
         scheduleId == 'official' &&
         isValidPublishedSchedule(incoming()) &&
         incoming().diff(existing()).affectedKeys().hasOnly([
