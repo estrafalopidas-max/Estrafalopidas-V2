@@ -103,9 +103,6 @@ export function resolveSelectedCellTargets(input: ResolveBatchTargetsInput): Bat
   const periodMap = new Map<number, PeriodTimingDescriptor>(periods.map((p) => [p.period, p]));
 
   const addTarget = (grade: GradeEntity, period: number, directBlock?: TimeBlockEntity | null) => {
-    if (isMeetingDay && shift === 'morning' && period === 1) {
-      return;
-    }
     if ((shift === 'afternoon' || shift === 'transicion-1') && period > 5) {
       return;
     }

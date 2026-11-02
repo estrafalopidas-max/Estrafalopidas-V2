@@ -1951,25 +1951,26 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       } else {
         return [
           {
-            period: 1,
-            time: '06:10 - 07:00',
-            label: 'Horario',
-            isMeetingFirstHour: true,
+            period: -2,
+            time: '06:10 - 07:10',
+            label: 'Pre-Jornada',
+            isPreJornada: true,
             meetingTitle: 'ATENCIÓN A PADRES',
-            meetingDesc: 'Franja institucional reservada para atención personalizada a padres de familia y acudientes (06:10 - 07:00) • Sin asignación de clases.'
+            meetingDesc: 'Franja institucional reservada para atención personalizada a padres de familia y acudientes (06:10 - 07:10) • Sin asignación de clases.'
           },
-          { period: 2, time: '07:00 - 07:55', label: '1ª Hora' },
-          { period: 3, time: '07:55 - 08:50', label: '2ª Hora' },
-          { period: 4, time: '08:50 - 09:45', label: '3ª Hora' },
-          { period: 0, time: '09:45 - 10:15', label: 'Descanso Pedagógico y Alimentación Escolar', isBreak: true },
-          { period: 5, time: '10:15 - 11:10', label: '4ª Hora' },
-          { period: 6, time: '11:10 - 12:05', label: '5ª Hora' },
+          { period: 1, time: '07:10 - 07:55', label: '1ª Hora' },
+          { period: 2, time: '07:55 - 08:40', label: '2ª Hora' },
+          { period: 3, time: '08:40 - 09:25', label: '3ª Hora' },
+          { period: 0, time: '09:25 - 09:55', label: 'Descanso Pedagógico y Alimentación Escolar', isBreak: true },
+          { period: 4, time: '09:55 - 10:40', label: '4ª Hora' },
+          { period: 5, time: '10:40 - 11:25', label: '5ª Hora' },
+          { period: 6, time: '11:25 - 12:10', label: '6ª Hora' },
           { period: -1, time: '12:40 - 17:35', label: 'Salida General / Jornada Media Técnica', isTransition: true, mediaTecnicaOnly: true },
-          { period: 7, time: '12:40 - 13:35', label: '6ª Hora', mediaTecnicaOnly: true },
-          { period: 8, time: '13:35 - 14:30', label: '7ª Hora', mediaTecnicaOnly: true },
-          { period: 9, time: '14:30 - 15:25', label: '8ª Hora', mediaTecnicaOnly: true },
-          { period: 10, time: '15:45 - 16:40', label: '9ª Hora', mediaTecnicaOnly: true },
-          { period: 11, time: '16:40 - 17:35', label: '10ª Hora', mediaTecnicaOnly: true }
+          { period: 7, time: '12:40 - 13:35', label: '7ª Hora', mediaTecnicaOnly: true },
+          { period: 8, time: '13:35 - 14:30', label: '8ª Hora', mediaTecnicaOnly: true },
+          { period: 9, time: '14:30 - 15:25', label: '9ª Hora', mediaTecnicaOnly: true },
+          { period: 10, time: '15:45 - 16:40', label: '10ª Hora', mediaTecnicaOnly: true },
+          { period: 11, time: '16:40 - 17:35', label: '11ª Hora', mediaTecnicaOnly: true }
         ];
       }
     }

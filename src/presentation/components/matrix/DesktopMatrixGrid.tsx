@@ -285,56 +285,51 @@ export function generateMatrixSchedule(
       preJornada: null,
     };
   } else {
-    // Modo Reunión Bachillerato:
-    // Bloque 1 (Fila 1) rígidamente 50 minutos: 06:10 a 07:00 (ATENCIÓN A PADRES)
-    const b1Start = currentMinute; // 370 min (06:10)
-    const b1End = b1Start + 50; // 420 min (07:00)
-    periods.push({
-      period: 1,
-      ordinal: 'Horario',
-      time: `${formatMinutesToTimeString(b1Start)} - ${formatMinutesToTimeString(b1End)}`,
-      label: 'Horario',
-    });
-    currentMinute = b1End; // 07:00
+    // Modo Reunión Bachillerato (Horario B - Atención a Padres):
+    // Franja institucional previa de 06:10 a 07:10 (60 minutos) sin eliminar la 1ª Hora.
+    // Las 6 horas de la mañana quedan de 45 minutos exactos cada una (270 min lectivos / 6 horas),
+    // respetando el receso pedagógico de 30 minutos después de la 3ª Hora (09:25 a 09:55) y finalizando a las 12:10.
+    const preJornada: PreJornadaConfig = {
+      time: '06:10 - 07:10',
+      label: 'ATENCIÓN A PADRES',
+      description:
+        'Franja institucional reservada para atención personalizada a padres de familia y acudientes (06:10 a 07:10) • Bachillerato',
+    };
 
-    // Del Bloque 2 (07:00) al Bloque 4 (09:45): 1ª, 2ª y 3ª Hora (55 min cada una antes del receso)
-    // Bloque 2: 07:00 - 07:55 (1ª Hora)
-    // Bloque 3: 07:55 - 08:50 (2ª Hora)
-    // Bloque 4: 08:50 - 09:45 (3ª Hora)
-    for (let p = 2; p <= 4; p++) {
-      const start = currentMinute;
-      const end = start + 55;
+    const morningMeetingStart = 7 * 60 + 10; // 07:10 (430 min)
+    const classDurationMinutes = 45; // 45 min exactos por hora
+
+    // Bloques 1 a 3 (1ª, 2ª y 3ª Hora: 07:10 a 09:25)
+    for (let p = 1; p <= 3; p++) {
+      const start = morningMeetingStart + (p - 1) * classDurationMinutes;
+      const end = start + classDurationMinutes;
       periods.push({
         period: p,
-        ordinal: `${p - 1}ª Hora`,
+        ordinal: `${p}ª Hora`,
         time: `${formatMinutesToTimeString(start)} - ${formatMinutesToTimeString(end)}`,
-        label: `${p - 1}ª Hora`,
+        label: `${p}ª Hora`,
       });
-      currentMinute = end; // At p=4: 09:45 (585 min)
     }
 
-    // Receso siempre después de la 3ª Hora: 09:45 a 10:15 (30 min)
-    const breakStart = currentMinute; // 09:45 (585 min)
-    const breakEnd = breakStart + 30; // 10:15 (615 min)
+    // Receso pedagógico de 30 minutos después de la 3ª Hora: 09:25 a 09:55
+    const breakStart = morningMeetingStart + 3 * classDurationMinutes; // 09:25 (565 min)
+    const breakEnd = breakStart + 30; // 09:55 (595 min)
     const breakTime = `${formatMinutesToTimeString(breakStart)} - ${formatMinutesToTimeString(breakEnd)}`;
-    currentMinute = breakEnd; // 10:15
 
-    // Bloques 5 y 6 (55 min cada uno después del receso -> 4ª y 5ª Hora)
-    // Bloque 5: 10:15 - 11:10 (4ª Hora)
-    // Bloque 6: 11:10 - 12:05 (5ª Hora)
-    for (let p = 5; p <= 6; p++) {
-      const start = currentMinute;
-      const end = start + 55;
+    // Bloques 4 a 6 (4ª, 5ª y 6ª Hora: 09:55 a 12:10)
+    for (let p = 4; p <= 6; p++) {
+      const idx = p - 4; // 0, 1, 2
+      const start = breakEnd + idx * classDurationMinutes;
+      const end = start + classDurationMinutes;
       periods.push({
         period: p,
-        ordinal: `${p - 1}ª Hora`,
+        ordinal: `${p}ª Hora`,
         time: `${formatMinutesToTimeString(start)} - ${formatMinutesToTimeString(end)}`,
-        label: `${p - 1}ª Hora`,
+        label: `${p}ª Hora`,
       });
-      currentMinute = end; // At p=6: 12:05 PM
     }
 
-    // Media Técnica (Bloques 7 a 11 -> 6ª a 10ª Hora)
+    // Media Técnica (Bloques 7 a 11 -> 7ª a 11ª Hora)
     const mediaTecnicaTimes = [
       '12:40 - 13:35',
       '13:35 - 14:30',
@@ -345,9 +340,9 @@ export function generateMatrixSchedule(
     for (let p = 7; p <= 11; p++) {
       periods.push({
         period: p,
-        ordinal: `${p - 1}ª Hora`,
+        ordinal: `${p}ª Hora`,
         time: mediaTecnicaTimes[p - 7],
-        label: `${p - 1}ª Hora`,
+        label: `${p}ª Hora`,
       });
     }
 
@@ -355,7 +350,7 @@ export function generateMatrixSchedule(
       periods,
       breakTime,
       breakLabel: `Descanso Pedagógico y Alimentación Escolar (de ${breakTime.replace(' - ', ' a ')})`,
-      preJornada: null,
+      preJornada,
     };
   }
 }
@@ -426,8 +421,6 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
   const breakSplitIndex =
     isMorning && scheduleType === 'D' && !isMeetingDay
       ? 7
-      : isMorning && isMeetingDay
-      ? 4
       : 3;
   const firstHalf = periods.slice(0, breakSplitIndex);
   const secondHalf = periods.slice(breakSplitIndex);
@@ -1287,34 +1280,8 @@ export const DesktopMatrixGrid: React.FC<DesktopMatrixGridProps> = ({
                 )}
               </div>
 
-              {/* Droppable data cells for each grade OR Fused Transversal Row 1 on Meeting Day */}
-              {isMeetingDay && isMorning && p.period === 1 ? (
-                <div
-                  style={{ gridColumn: `span ${grades.length}` }}
-                  className={`border-r border-b min-h-[135px] flex flex-col items-center justify-center p-4 text-center select-none shadow-inner transition-colors ${
-                    isCurrent
-                      ? 'bg-amber-100/90 border-amber-300'
-                      : 'bg-gray-200 border-gray-300'
-                  }`}
-                >
-                  <div className="flex items-center justify-center gap-2 mb-1">
-                    <Users className="w-5 h-5 text-gray-700" />
-                    <span className="text-base sm:text-lg font-bold text-gray-900 tracking-wider uppercase">
-                      ATENCIÓN A PADRES
-                    </span>
-                    {isCurrent && (
-                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-villa-magenta text-white shadow-2xs animate-pulse">
-                        En curso
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-xs font-semibold text-gray-600 max-w-xl">
-                    Franja institucional reservada para atención personalizada a padres de familia y acudientes (06:10 - 07:00) • Sin asignación de clases.
-                  </p>
-                </div>
-              ) : (
-                grades.map((grade, gradeIdx) => renderGradeCell(grade, gradeIdx, p, isCurrent))
-              )}
+              {/* Droppable data cells for each grade */}
+              {grades.map((grade, gradeIdx) => renderGradeCell(grade, gradeIdx, p, isCurrent))}
             </React.Fragment>
           );
         })}

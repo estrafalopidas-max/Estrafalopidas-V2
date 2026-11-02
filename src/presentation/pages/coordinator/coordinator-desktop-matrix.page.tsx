@@ -837,16 +837,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       }
     }
 
-    // Period 1 is strictly locked for Atención a Padres on meeting days in Bachillerato
-    if (isMeetingDay && selectedShift === 'morning' && targetSlot.period === 1) {
-      setActiveConflict({
-        isValid: false,
-        conflictType: 'classroom',
-        message: '¡Franja Bloqueada! El Horario (06:10 a 07:00) está reservado exclusivamente para la Atención a Padres de Familia.',
-      });
-      return;
-    }
-
     // Safety guard: Primaria y Transición constan estrictamente de 5 horas pedagógicas
     if ((selectedShift === 'afternoon' || selectedShift === 'transicion-1') && targetSlot.period > 5) {
       setActiveConflict({

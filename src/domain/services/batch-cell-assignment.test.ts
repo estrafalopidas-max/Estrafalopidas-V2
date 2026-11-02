@@ -318,4 +318,30 @@ test('buildSlotEditUpdatePayload converts an active institutional novelty cell i
   assert.equal(edited.status, 'regular');
 });
 
+test('Bachillerato Atención a padres (06:10-07:10) preserves period 1 (1ª Hora) and distributes 07:10-12:10 across 6 equal 45-min hours with 30-min break (09:25-09:55)', () => {
+  const slot1 = createSlotDroppableId(SAMPLE_GRADES[0], 1);
+  const targets = resolveSelectedCellTargets({
+    selectedIds: [slot1],
+    timeBlocks: [],
+    grades: SAMPLE_GRADES,
+    dayOfWeek: 'martes',
+    shift: 'morning',
+    periods: [
+      { period: 1, time: '07:10 - 07:55' },
+      { period: 2, time: '07:55 - 08:40' },
+      { period: 3, time: '08:40 - 09:25' },
+      { period: 4, time: '09:55 - 10:40' },
+      { period: 5, time: '10:40 - 11:25' },
+      { period: 6, time: '11:25 - 12:10' },
+    ],
+    isMeetingDay: true,
+  });
+
+  assert.equal(targets.length, 1);
+  assert.equal(targets[0].period, 1);
+  assert.equal(targets[0].startTime, '07:10');
+  assert.equal(targets[0].endTime, '07:55');
+});
+
+
 
