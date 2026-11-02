@@ -130,25 +130,33 @@ export const CoordinatorAuthGuard: React.FC<{ children: React.ReactNode }> = ({ 
     }
   };
 
-  const logoSrc = '/assets/aistudio/logo_html_859fb25c.png';
+  const labLogoSrc = '/assets/villaflora-lab-logo.png';
+  const fallbackLogoSrc = '/assets/aistudio/logo_html_859fb25c.png';
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-blue-950 to-slate-900 flex items-center justify-center p-4 select-none">
       <div className="w-full max-w-md bg-white rounded-3xl shadow-2xl border border-slate-200 overflow-hidden animate-in fade-in zoom-in-95 duration-200">
-        {/* Cabecera Institucional */}
-        <div className="bg-gradient-to-r from-blue-950 via-indigo-900 to-sky-900 px-6 py-6 text-white border-b-4 border-amber-400 flex flex-col items-center text-center">
-          <img
-            src={logoSrc}
-            alt="Escudo I.E. Villa Flora"
-            className="h-16 sm:h-[72px] w-auto object-contain mb-3 select-none"
-            onError={(e) => {
-              (e.currentTarget as HTMLImageElement).src = DEFAULT_LOGO_BASE64;
-            }}
-          />
-          <h1 className="text-lg sm:text-xl font-extrabold tracking-tight text-white leading-tight">
+        {/* Cabecera Institucional con Logo Oficial Villa Flora Lab */}
+        <div className="bg-gradient-to-r from-blue-950 via-indigo-900 to-sky-900 px-6 pt-6 pb-5 text-white border-b-4 border-amber-400 flex flex-col items-center text-center">
+          <div className="bg-white p-3 rounded-2xl shadow-md border border-white/60 mb-3.5 flex items-center justify-center w-full max-w-[340px]">
+            <img
+              src={labLogoSrc}
+              alt="Institución Educativa Villa Flora - Villa Flora Lab"
+              className="h-14 sm:h-16 w-auto max-w-full object-contain select-none"
+              onError={(e) => {
+                const target = e.currentTarget as HTMLImageElement;
+                if (target.src !== fallbackLogoSrc) {
+                  target.src = fallbackLogoSrc;
+                } else {
+                  target.src = DEFAULT_LOGO_BASE64;
+                }
+              }}
+            />
+          </div>
+          <h1 className="text-base sm:text-lg font-extrabold tracking-tight text-white leading-tight">
             <span className="block">Sistema de Agendamiento Escolar</span>
-            <span className="block text-sky-200 font-bold text-xs sm:text-sm mt-1">
-              Horarios, actividades y jornadas académicas
+            <span className="block text-sky-200 font-bold text-xs mt-1">
+              Coordinación Académica y Jornadas Escolares
             </span>
           </h1>
         </div>
