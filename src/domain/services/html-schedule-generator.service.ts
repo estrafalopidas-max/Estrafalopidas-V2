@@ -474,6 +474,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       shift: resolveBlockShift(b),
       grade: resolveCanonicalGradeName(b),
       subject: b.subject,
+      teacherId: b.teacherId,
       teacher: teacherShortName,
       teacherFullName,
       teacherColor: colorHex,
@@ -1726,7 +1727,7 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
           </div>
 
           <div class="custom-dropdown-wrap" id="teacherDropdownWrap" style="width: 220px;">
-            <select id="teacherSelect" class="form-control" onchange="syncCustomDropdown('teacherSelect'); renderSchedule()" title="Filtrar por Docente" style="display: none;">
+            <select id="teacherSelect" class="form-control" onchange="syncCustomDropdown('teacherSelect'); handleTeacherFilterChange()" title="Filtrar por Docente" style="display: none;">
               <option value="ALL">Todos los docentes</option>
             </select>
             <button type="button" class="custom-dropdown-btn" id="teacherDropdownBtn" onclick="toggleCustomDropdown('teacherDropdownWrap')" title="Filtrar por Docente">
@@ -2467,6 +2468,75 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       return tokens.every(tok => haystack.includes(tok));
     }
 
+    function blockMatchesTeacher(b, selectedTeacher) {
+      if (!selectedTeacher || selectedTeacher === 'ALL') return true;
+      const normSelectedTeacher = normalizeSearchStr(selectedTeacher);
+      const matchedT = (ALL_TEACHERS || []).find(t =>
+        t.id === selectedTeacher ||
+        normalizeSearchStr(t.name) === normSelectedTeacher ||
+        normalizeSearchStr(t.fullName) === normSelectedTeacher
+      );
+      const normTargetShort = matchedT ? normalizeSearchStr(matchedT.name) : normSelectedTeacher;
+      const normTargetFull = matchedT ? normalizeSearchStr(matchedT.fullName) : normSelectedTeacher;
+      const bShort = normalizeSearchStr(b.teacher);
+      const bFull = normalizeSearchStr(b.teacherFullName);
+      const bRepl = normalizeSearchStr(b.replacement);
+      return Boolean(
+        (matchedT && b.teacherId === matchedT.id) ||
+        bShort === normSelectedTeacher ||
+        bFull === normSelectedTeacher ||
+        bShort === normTargetShort ||
+        bFull === normTargetFull ||
+        (bRepl && (bRepl === normSelectedTeacher || bRepl === normTargetShort || bRepl === normTargetFull))
+      );
+    }
+
+    function handleTeacherFilterChange() {
+      const selectedTeacher = teacherSelect.value;
+      if (selectedTeacher && selectedTeacher !== 'ALL') {
+        const teacherBlocks = ALL_BLOCKS.filter(b => blockMatchesTeacher(b, selectedTeacher));
+        if (teacherBlocks.length > 0) {
+          const shiftsOrder = ['morning', 'afternoon', 'transicion-1'];
+          const hasInCurrentShift = teacherBlocks.some(b => b.shift === currentShift);
+          const targetShift = hasInCurrentShift
+            ? currentShift
+            : (shiftsOrder.find(s => teacherBlocks.some(b => b.shift === s)) || currentShift);
+
+          if (targetShift !== currentShift) {
+            currentShift = targetShift;
+            document.querySelectorAll('.shift-tab').forEach(b => {
+              if (b.getAttribute('data-shift') === targetShift) b.classList.add('active');
+              else b.classList.remove('active');
+            });
+            gradeSelect.value = 'ALL';
+            populateGradesForShift(targetShift);
+          } else if (gradeSelect.value !== 'ALL' && !teacherBlocks.some(b => b.shift === targetShift && b.grade === gradeSelect.value)) {
+            gradeSelect.value = 'ALL';
+            syncCustomDropdown('gradeSelect');
+          }
+
+          const shiftTeacherBlocks = teacherBlocks.filter(b => b.shift === targetShift);
+          if (
+            shiftTeacherBlocks.length > 0 &&
+            (Boolean(HOLIDAY_DAYS[currentDay]) || !shiftTeacherBlocks.some(b => b.day === currentDay))
+          ) {
+            const daysOrder = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+            const firstDay =
+              daysOrder.find(d => !Boolean(HOLIDAY_DAYS[d]) && shiftTeacherBlocks.some(b => b.day === d)) ||
+              daysOrder.find(d => shiftTeacherBlocks.some(b => b.day === d));
+            if (firstDay) {
+              currentDay = firstDay;
+              document.querySelectorAll('.day-tab').forEach(b => {
+                if (b.getAttribute('data-day') === firstDay) b.classList.add('active');
+                else b.classList.remove('active');
+              });
+            }
+          }
+        }
+      }
+      renderSchedule();
+    }
+
     function renderSchedule() {
       const container = document.getElementById('scheduleContainer');
       const selectedGrade = gradeSelect.value;
@@ -2482,12 +2552,11 @@ export function generateStandaloneScheduleHtml(options: HtmlScheduleGenerationOp
       );
       const isEventDay = Boolean(EVENT_DAYS[currentDay]);
 
-      // Filter blocks strictly by currentShift and currentDay
       const filtered = ALL_BLOCKS.filter(b => {
         if (b.shift !== currentShift) return false;
         if (b.day !== currentDay) return false;
         if (selectedGrade !== 'ALL' && b.grade !== selectedGrade) return false;
-        if (selectedTeacher !== 'ALL' && b.teacher !== selectedTeacher && b.teacherFullName !== selectedTeacher) return false;
+        if (selectedTeacher !== 'ALL' && !blockMatchesTeacher(b, selectedTeacher)) return false;
         if (!matchesSearchTokens(b, searchTokens)) return false;
         return true;
       });

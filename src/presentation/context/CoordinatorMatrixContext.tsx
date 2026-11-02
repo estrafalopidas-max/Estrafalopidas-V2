@@ -640,13 +640,18 @@ export const CoordinatorMatrixProvider: React.FC<{ children: React.ReactNode }> 
         let activeUpdatedContainer: WeekScheduleContainer | null = null;
         for (const [iso, srvContainer] of Object.entries(serverWeeks)) {
           if (srvContainer && Array.isArray(srvContainer.timeBlocks)) {
+            const srvUpdatedAt = Number(srvContainer.updatedAt || 0);
+            const existingLocal = loadWeekContainer(iso);
+            if (existingLocal && Number(existingLocal.updatedAt || 0) > srvUpdatedAt) {
+              continue;
+            }
             const normalizedContainer: WeekScheduleContainer = {
               schemaVersion: WEEK_CONTAINER_SCHEMA_VERSION,
               mondayIso: iso,
               timeBlocks: srvContainer.timeBlocks,
               meetingDays: srvContainer.meetingDays || {},
               scheduleTypes: srvContainer.scheduleTypes || {},
-              updatedAt: Number(srvContainer.updatedAt || Date.now()),
+              updatedAt: srvUpdatedAt || Date.now(),
             };
             try {
               localStorage.setItem(

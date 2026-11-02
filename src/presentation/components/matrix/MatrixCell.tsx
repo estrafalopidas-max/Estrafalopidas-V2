@@ -516,6 +516,17 @@ function areMatrixCellPropsEqual(prev: MatrixCellProps, next: MatrixCellProps): 
     if (prev.block.updatedAt !== next.block.updatedAt) return false;
   }
 
+  if (prev.allTimeBlocks !== next.allTimeBlocks) return false;
+  if (prev.officialSubjects !== next.officialSubjects) return false;
+  if (prev.onQuickChangeClassroom !== next.onQuickChangeClassroom) return false;
+  if (prev.onSelectSlot !== next.onSelectSlot) return false;
+  if (prev.onDrop !== next.onDrop) return false;
+  if (prev.onDragStart !== next.onDragStart) return false;
+  if (prev.onCellClick !== next.onCellClick) return false;
+  if (prev.onTrashClick !== next.onTrashClick) return false;
+  if (prev.onEmptyClick !== next.onEmptyClick) return false;
+  if (prev.onToggleSelect !== next.onToggleSelect) return false;
+
   const prevPendingId = prev.pending?.id ?? null;
   const nextPendingId = next.pending?.id ?? null;
   if (prevPendingId !== nextPendingId) return false;

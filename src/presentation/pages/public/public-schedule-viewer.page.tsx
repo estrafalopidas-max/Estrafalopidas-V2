@@ -53,7 +53,7 @@ import {
   sortTeachersWithLowPriorityLast,
   updateTeacherDictionaryProfile,
 } from '../../../domain/services/teacher-normalization.service';
-import { getFullTeacherName } from '../../../domain/services/teacher-visual-identity.service';
+import { getFullTeacherName, getShortTeacherName } from '../../../domain/services/teacher-visual-identity.service';
 import {
   getTeacherSupervisionForDay,
   loadBreakSupervisionSchedule,
@@ -632,17 +632,135 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
     return true;
   };
 
+  const normalizeTeacherSearchStr = (val: string | null | undefined) =>
+    (val || '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+
+  const doesBlockMatchTeacher = (b: TimeBlockEntity, teacherQuery: string): boolean => {
+    if (!teacherQuery || teacherQuery === 'ALL') return true;
+    const normQuery = normalizeTeacherSearchStr(teacherQuery);
+    const matchedTeacherObj = teachers.find(
+      (t) =>
+        t.id === teacherQuery ||
+        normalizeTeacherSearchStr(t.displayName) === normQuery ||
+        normalizeTeacherSearchStr((t as any).shortName) === normQuery ||
+        normalizeTeacherSearchStr(getFullTeacherName(t.id, t.displayName || '')) === normQuery ||
+        normalizeTeacherSearchStr(getShortTeacherName(t.id, t.displayName || '')) === normQuery
+    );
+
+    const targetIds = new Set<string>([teacherQuery]);
+    const targetNames = new Set<string>([
+      normQuery,
+      normalizeTeacherSearchStr(getShortTeacherName(undefined, teacherQuery)),
+      normalizeTeacherSearchStr(getFullTeacherName(undefined, teacherQuery)),
+    ]);
+
+    if (matchedTeacherObj) {
+      if (matchedTeacherObj.id) targetIds.add(matchedTeacherObj.id);
+      if (matchedTeacherObj.displayName) targetNames.add(normalizeTeacherSearchStr(matchedTeacherObj.displayName));
+      if ((matchedTeacherObj as any).shortName) targetNames.add(normalizeTeacherSearchStr((matchedTeacherObj as any).shortName));
+      targetNames.add(normalizeTeacherSearchStr(getFullTeacherName(matchedTeacherObj.id, matchedTeacherObj.displayName || '')));
+      targetNames.add(normalizeTeacherSearchStr(getShortTeacherName(matchedTeacherObj.id, matchedTeacherObj.displayName || '')));
+    }
+    targetNames.delete('');
+
+    const blockFull = normalizeTeacherSearchStr(getFullTeacherName(b.teacherId, b.teacherName || ''));
+    const blockShort = normalizeTeacherSearchStr(getShortTeacherName(b.teacherId, b.teacherName || ''));
+    const blockRaw = normalizeTeacherSearchStr(b.teacherName);
+    const replRaw = normalizeTeacherSearchStr(b.replacementTeacherName);
+    const replFull = normalizeTeacherSearchStr(
+      b.replacementTeacherName ? getFullTeacherName(b.replacementTeacherId, b.replacementTeacherName) : ''
+    );
+
+    return Boolean(
+      (b.teacherId && targetIds.has(b.teacherId)) ||
+        (b.replacementTeacherId && targetIds.has(b.replacementTeacherId)) ||
+        (blockRaw && targetNames.has(blockRaw)) ||
+        (blockFull && targetNames.has(blockFull)) ||
+        (blockShort && targetNames.has(blockShort)) ||
+        (replRaw && targetNames.has(replRaw)) ||
+        (replFull && targetNames.has(replFull))
+    );
+  };
+
+  const handleSelectTeacher = (teacherVal: string) => {
+    setSelectedTeacher(teacherVal);
+    setIsTeacherMenuOpen(false);
+    if (teacherVal === 'ALL') return;
+
+    const teacherBlocks = timeBlocks.filter((b) => isAssignedBlock(b) && doesBlockMatchTeacher(b, teacherVal));
+    if (teacherBlocks.length === 0) return;
+
+    const shiftsOrder: ShiftType[] = ['morning', 'afternoon', 'transicion-1'];
+    const hasInCurrentShift = teacherBlocks.some((b) => resolveBlockShift(b) === selectedShift);
+    const targetShift = hasInCurrentShift
+      ? selectedShift
+      : shiftsOrder.find((s) => teacherBlocks.some((b) => resolveBlockShift(b) === s)) || selectedShift;
+
+    if (targetShift !== selectedShift) {
+      setSelectedShift(targetShift);
+      setSelectedGrade('ALL');
+    } else if (
+      selectedGrade !== 'ALL' &&
+      !teacherBlocks.some((b) => resolveBlockShift(b) === targetShift && b.gradeName === selectedGrade)
+    ) {
+      setSelectedGrade('ALL');
+    }
+
+    const isDayHoliday = (d: DayOfWeek) => Boolean(dayConfigs.holidayDays?.[d]);
+    const shiftTeacherBlocks = teacherBlocks.filter((b) => resolveBlockShift(b) === targetShift);
+    if (
+      shiftTeacherBlocks.length > 0 &&
+      (isDayHoliday(selectedDay) || !shiftTeacherBlocks.some((b) => b.dayOfWeek === selectedDay))
+    ) {
+      const daysOrder: DayOfWeek[] = ['lunes', 'martes', 'miercoles', 'jueves', 'viernes'];
+      const firstDayWithClasses =
+        daysOrder.find((d) => !isDayHoliday(d) && shiftTeacherBlocks.some((b) => b.dayOfWeek === d)) ||
+        daysOrder.find((d) => shiftTeacherBlocks.some((b) => b.dayOfWeek === d));
+      if (firstDayWithClasses) {
+        setSelectedDay(firstDayWithClasses);
+      }
+    }
+  };
+
   // Filtered blocks strictly by selectedShift and selectedDay
   const filteredBlocks = useMemo(() => {
-    const normalizeStr = (val: string | null | undefined) =>
-      (val || '')
-        .normalize('NFD')
-        .replace(/[\u0300-\u036f]/g, '')
-        .toLowerCase()
-        .trim();
+    const normalizeStr = normalizeTeacherSearchStr;
 
     const searchTokens = normalizeStr(searchTerm).split(/\s+/).filter(Boolean);
     const normalizedSelectedTeacher = normalizeStr(selectedTeacher);
+
+    const matchedTeacherObj =
+      selectedTeacher !== 'ALL'
+        ? teachers.find(
+            (t) =>
+              t.id === selectedTeacher ||
+              normalizeStr(t.displayName) === normalizedSelectedTeacher ||
+              normalizeStr((t as any).shortName) === normalizedSelectedTeacher ||
+              normalizeStr(getFullTeacherName(t.id, t.displayName || '')) === normalizedSelectedTeacher ||
+              normalizeStr(getShortTeacherName(t.id, t.displayName || '')) === normalizedSelectedTeacher
+          )
+        : null;
+
+    const targetTeacherIds = new Set<string>();
+    const targetTeacherNames = new Set<string>();
+    if (selectedTeacher !== 'ALL') {
+      targetTeacherIds.add(selectedTeacher);
+      targetTeacherNames.add(normalizedSelectedTeacher);
+      if (matchedTeacherObj) {
+        if (matchedTeacherObj.id) targetTeacherIds.add(matchedTeacherObj.id);
+        if (matchedTeacherObj.displayName) targetTeacherNames.add(normalizeStr(matchedTeacherObj.displayName));
+        if ((matchedTeacherObj as any).shortName) targetTeacherNames.add(normalizeStr((matchedTeacherObj as any).shortName));
+        targetTeacherNames.add(normalizeStr(getFullTeacherName(matchedTeacherObj.id, matchedTeacherObj.displayName || '')));
+        targetTeacherNames.add(normalizeStr(getShortTeacherName(matchedTeacherObj.id, matchedTeacherObj.displayName || '')));
+      }
+      targetTeacherNames.add(normalizeStr(getShortTeacherName(undefined, selectedTeacher)));
+      targetTeacherNames.add(normalizeStr(getFullTeacherName(undefined, selectedTeacher)));
+      targetTeacherNames.delete('');
+    }
 
     return timeBlocks.filter((b) => {
       if (!isAssignedBlock(b)) return false;
@@ -650,9 +768,26 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
       if (b.dayOfWeek !== selectedDay) return false;
       if (selectedGrade !== 'ALL' && b.gradeName !== selectedGrade) return false;
       if (selectedTeacher !== 'ALL') {
-        const matchesTeacherId = b.teacherId === selectedTeacher;
-        const matchesTeacherName = normalizeStr(b.teacherName) === normalizedSelectedTeacher;
-        if (!matchesTeacherId && !matchesTeacherName) return false;
+        const blockFull = normalizeStr(getFullTeacherName(b.teacherId, b.teacherName || ''));
+        const blockShort = normalizeStr(getShortTeacherName(b.teacherId, b.teacherName || ''));
+        const blockRaw = normalizeStr(b.teacherName);
+        const replRaw = normalizeStr(b.replacementTeacherName);
+        const replFull = normalizeStr(
+          b.replacementTeacherName
+            ? getFullTeacherName(b.replacementTeacherId, b.replacementTeacherName)
+            : ''
+        );
+
+        const matchesTeacher =
+          (b.teacherId && targetTeacherIds.has(b.teacherId)) ||
+          (b.replacementTeacherId && targetTeacherIds.has(b.replacementTeacherId)) ||
+          (blockRaw && targetTeacherNames.has(blockRaw)) ||
+          (blockFull && targetTeacherNames.has(blockFull)) ||
+          (blockShort && targetTeacherNames.has(blockShort)) ||
+          (replRaw && targetTeacherNames.has(replRaw)) ||
+          (replFull && targetTeacherNames.has(replFull));
+
+        if (!matchesTeacher) return false;
       }
       if (searchTokens.length > 0) {
         const rawClassroom =
@@ -666,6 +801,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
         const haystack = [
           b.subject || '',
           b.teacherName || '',
+          getFullTeacherName(b.teacherId, b.teacherName || ''),
           b.replacementTeacherName || '',
           rawClassroom,
           b.classroomName || '',
@@ -682,7 +818,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
       }
       return true;
     });
-  }, [timeBlocks, selectedShift, selectedDay, selectedGrade, selectedTeacher, searchTerm]);
+  }, [timeBlocks, teachers, selectedShift, selectedDay, selectedGrade, selectedTeacher, searchTerm]);
 
   // Visible grades in columns for the selected shift
   const activeGrades = useMemo(() => {
@@ -1108,10 +1244,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                 <div className="absolute left-0 mt-1.5 w-full max-h-72 overflow-y-auto bg-white rounded-2xl shadow-xl border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95 duration-150 select-none">
                   <button
                     type="button"
-                    onClick={() => {
-                      setSelectedTeacher('ALL');
-                      setIsTeacherMenuOpen(false);
-                    }}
+                    onClick={() => handleSelectTeacher('ALL')}
                     className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap text-left"
                   >
                     <span
@@ -1138,10 +1271,7 @@ export const PublicScheduleViewerPage: React.FC<PublicScheduleViewerPageProps> =
                         <button
                           key={t.id}
                         type="button"
-                        onClick={() => {
-                          setSelectedTeacher(t.displayName);
-                          setIsTeacherMenuOpen(false);
-                        }}
+                        onClick={() => handleSelectTeacher(t.displayName)}
                         className="w-full flex items-center justify-between gap-2 px-3.5 py-2 hover:bg-slate-50 cursor-pointer transition-colors whitespace-nowrap text-left"
                       >
                         <span

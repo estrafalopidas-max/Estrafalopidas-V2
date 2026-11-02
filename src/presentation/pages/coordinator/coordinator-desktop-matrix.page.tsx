@@ -179,6 +179,9 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const [grades, setGrades] = useState<GradeEntity[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
 
+  const timeBlocksRef = useRef<TimeBlockEntity[]>(timeBlocks);
+  timeBlocksRef.current = timeBlocks;
+
   // Filter States: Inicialización Automática en el Día Actual de la Semana (o Lunes si es Próxima Semana / post-viernes 18:00)
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(() => getTodayDayOfWeek(new Date(), activeWeekSlot));
   const [selectedGrade, setSelectedGrade] = useState<string>('all');
@@ -368,11 +371,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   // Motor de Captura (Snapshotting): Inyecta copia profunda estricta antes de cada mutación
   const pushSnapshot = useCallback(() => {
     setHistory((prev) => {
-      const snapshot: TimeBlockEntity[] = JSON.parse(JSON.stringify(timeBlocks));
+      const snapshot: TimeBlockEntity[] = JSON.parse(JSON.stringify(timeBlocksRef.current));
       const trimmed = prev.length >= 20 ? prev.slice(prev.length - 19) : prev;
       return [...trimmed, snapshot];
     });
-  }, [timeBlocks]);
+  }, []);
 
   // Persistencia local del borrador de la semana activa (sin alterar la Consulta Pública publicada)
   useEffect(() => {
@@ -632,7 +635,11 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     pushSnapshot();
     try {
       const updatedBlock = await updateSlotUseCase.execute(updates);
-      setTimeBlocks((prev) => upsertSingleTimeBlock(prev, updatedBlock));
+      const nextBlocks = upsertSingleTimeBlock(timeBlocksRef.current, updatedBlock);
+      timeBlocksRef.current = nextBlocks;
+      setTimeBlocks(nextBlocks);
+      localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+      localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
     } catch (err: any) {
       if (err instanceof ConstraintCollisionError) {
         setActiveConflict(err.validation);
@@ -645,32 +652,38 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const handleQuickChangeClassroom = useCallback(
     async (block: TimeBlockEntity, newClassroom: string) => {
       pushSnapshot();
+      const currentBlocks = timeBlocksRef.current;
+      const existingMatch =
+        currentBlocks.find((b) => b.id === block.id) ||
+        currentBlocks.find(
+          (b) =>
+            b.dayOfWeek === block.dayOfWeek &&
+            b.gradeId === block.gradeId &&
+            b.period === block.period
+        ) ||
+        block;
       const updatedBlock: TimeBlockEntity = {
-        ...block,
+        ...existingMatch,
         classroomId: newClassroom,
         classroomName: newClassroom,
         updatedAt: new Date().toISOString(),
       };
-      const nextBlocks = upsertSingleTimeBlock(timeBlocks, updatedBlock);
+      const nextBlocks = upsertSingleTimeBlock(currentBlocks, updatedBlock);
+      timeBlocksRef.current = nextBlocks;
       setTimeBlocks(nextBlocks);
       try {
         localStorage.removeItem('ievf_blank_matrix_mode');
         localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
-        await timeBlockRepo.update(block.id, {
-          classroomId: newClassroom,
-          classroomName: newClassroom,
-          updatedAt: updatedBlock.updatedAt,
-        });
+        await timeBlockRepo.update(updatedBlock.id, updatedBlock);
         window.dispatchEvent(new Event('schedule_matrix_updated'));
-        showToast(`Aula actualizada: ${block.gradeName} → ${newClassroom}`);
+        showToast(`Aula actualizada: ${updatedBlock.gradeName} → ${newClassroom}`);
       } catch (err) {
         console.error('[handleQuickChangeClassroom] Error actualizando aula:', err);
       }
     },
     [
       pushSnapshot,
-      timeBlocks,
       timeBlockRepo,
       showToast,
     ]
@@ -720,8 +733,10 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     const isNovelty = draggableId.startsWith('novelty-');
     const isTeacherCard = draggableId.startsWith('teacher-');
 
+    const activeAllBlocks = timeBlocksRef.current;
+
     // 3. ATOMICIDAD REGLA 1: Verificar que la celda destino no esté ocupada por otra clase activa (cuando se mueve una celda de la matriz)
-    const existingTargetBlock = timeBlocks.find(
+    const existingTargetBlock = activeAllBlocks.find(
       (b) =>
         b.dayOfWeek === selectedDay &&
         b.shift === selectedShift &&
@@ -767,7 +782,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       movingTeacherId = teacher.id;
       movingTeacherName = teacher.displayName;
     } else {
-      draggedBlock = timeBlocks.find((b) => b.id === draggableId) || null;
+      draggedBlock = activeAllBlocks.find((b) => b.id === draggableId) || null;
       if (!draggedBlock) return;
       movingTeacherId = draggedBlock.teacherId;
       movingTeacherName = draggedBlock.teacherName;
@@ -782,7 +797,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         const currentAssignedHours = calculateTeacherAssignedHours(
           teacherObj.id,
           teacherObj.displayName,
-          timeBlocks
+          activeAllBlocks
         );
         const rawMax = Number(teacherObj.maxWeeklyHours);
         const maxWeeklyHours = !rawMax || rawMax === 22 || rawMax === 25 ? 24 : rawMax;
@@ -797,7 +812,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
     // Check teacher collision at target period (excluding the target cell itself if replacing from teacher pool)
     if (movingTeacherId && movingTeacherId !== 'unassigned' && movingTeacherName !== 'Sin Asignar') {
-      const teacherCollision = timeBlocks.find(
+      const teacherCollision = activeAllBlocks.find(
         (b) =>
           b.id !== (draggedBlock ? draggedBlock.id : '') &&
           !(isTeacherCard && existingTargetBlock && b.id === existingTargetBlock.id) &&
@@ -873,8 +888,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     pushSnapshot();
 
     if (draggedBlock) {
-      const previousBlock = { ...draggedBlock };
-      const updates: Partial<TimeBlockEntity> = {
+      const previousBlocks = activeAllBlocks;
+      const nowIso = new Date().toISOString();
+      const targetBlockId = existingTargetBlock?.id || `tb-${targetGrade.id}-${selectedDay}-p${targetSlot.period}`;
+      const movedBlock: TimeBlockEntity = {
+        ...draggedBlock,
+        id: targetBlockId,
         dayOfWeek: selectedDay,
         shift: targetGrade.shift || selectedShift,
         gradeId: targetGrade.id,
@@ -884,32 +903,61 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         endTime: endTime.trim(),
         classroomId: targetClassroomId,
         classroomName: targetClassroomName,
-        updatedAt: new Date().toISOString(),
+        updatedAt: nowIso,
       };
 
-      // Optimistic UI update: remove any placeholder exit block at the destination so the moved block takes its place
-      setTimeBlocks((prev) =>
-        prev
-          .filter(
-            (b) =>
-              b.id === draggedBlock!.id ||
-              !(
-                b.dayOfWeek === selectedDay &&
-                b.shift === selectedShift &&
-                b.gradeId === targetGrade.id &&
-                b.period === targetSlot.period
-              )
-          )
-          .map((b) => (b.id === draggedBlock!.id ? { ...b, ...updates } : b))
-      );
+      const sourceBlockId = `tb-${draggedBlock.gradeId}-${draggedBlock.dayOfWeek}-p${draggedBlock.period}`;
+      const vacatedSourceBlock: TimeBlockEntity = {
+        ...draggedBlock,
+        id: sourceBlockId,
+        block_type: 'exit',
+        subject: 'Sin asignación académica',
+        teacherId: 'unassigned',
+        teacherName: 'Sin Asignar',
+        status: 'regular',
+        motivo_novedad: null,
+        notes: null,
+        replacementTeacherId: null,
+        replacementTeacherName: null,
+        updatedAt: nowIso,
+      };
+
+      const nextBlocks = [
+        ...activeAllBlocks.filter(
+          (b) =>
+            b.id !== draggedBlock!.id &&
+            b.id !== targetBlockId &&
+            b.id !== sourceBlockId &&
+            !(
+              b.dayOfWeek === selectedDay &&
+              b.gradeId === targetGrade.id &&
+              b.period === targetSlot.period
+            ) &&
+            !(
+              b.dayOfWeek === draggedBlock!.dayOfWeek &&
+              b.gradeId === draggedBlock!.gradeId &&
+              b.period === draggedBlock!.period
+            )
+        ),
+        vacatedSourceBlock,
+        movedBlock,
+      ];
+
+      timeBlocksRef.current = nextBlocks;
+      setTimeBlocks(nextBlocks);
 
       try {
-        await timeBlockRepo.update(draggedBlock.id, updates);
+        localStorage.removeItem('ievf_blank_matrix_mode');
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
+        await timeBlockRepo.updateBatch([
+          { id: vacatedSourceBlock.id, data: vacatedSourceBlock },
+          { id: movedBlock.id, data: movedBlock },
+        ]);
       } catch (err) {
         console.error('Error actualizando TimeBlock en Firestore:', err);
-        setTimeBlocks((prev) =>
-          prev.map((b) => (b.id === draggedBlock!.id ? previousBlock : b))
-        );
+        timeBlocksRef.current = previousBlocks;
+        setTimeBlocks(previousBlocks);
         setActiveConflict({
           isValid: false,
           message: 'Error de conexión con Firestore al mover el bloque. Se restauró a la posición original.',
@@ -943,8 +991,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
           updatedAt: new Date().toISOString(),
         };
 
-        setTimeBlocks((prev) => [
-          ...prev.filter(
+        const nextBlocks = [
+          ...activeAllBlocks.filter(
             (b) =>
               b.id !== newBlockId &&
               !(
@@ -955,8 +1003,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
               )
           ),
           newBlock,
-        ]);
+        ];
+        timeBlocksRef.current = nextBlocks;
+        setTimeBlocks(nextBlocks);
         try {
+          localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+          localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
           await timeBlockRepo.update(newBlockId, newBlock);
         } catch (err) {
           console.error('Error al registrar novedad en time_blocks:', err);
@@ -993,8 +1045,8 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         updatedAt: new Date().toISOString(),
       };
 
-      setTimeBlocks((prev) => [
-        ...prev.filter(
+      const nextBlocks = [
+        ...activeAllBlocks.filter(
           (b) =>
             b.id !== newBlockId &&
             !(
@@ -1005,8 +1057,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
             )
         ),
         newBlock,
-      ]);
+      ];
+      timeBlocksRef.current = nextBlocks;
+      setTimeBlocks(nextBlocks);
       try {
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+        localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
         await timeBlockRepo.update(newBlockId, newBlock);
         window.dispatchEvent(new Event('schedule_matrix_updated'));
       } catch (err) {
@@ -1154,12 +1210,13 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
   const resolveBlocksForIds = useCallback(
     (ids: string[] | Set<string>): TimeBlockEntity[] => {
       const idList = Array.from(ids);
+      const currentBlocks = timeBlocksRef.current;
       const { periods: allPeriods } = generateMatrixSchedule(selectedShift, isMeetingDay, isEventDay, activeScheduleType);
       const batchBlocks: TimeBlockEntity[] = [];
 
       idList.forEach((sId) => {
         // Coincidencia directa por id de bloque
-        const direct = timeBlocks.find((b) => b.id === sId);
+        const direct = currentBlocks.find((b) => b.id === sId);
         if (direct) {
           batchBlocks.push(direct);
           return;
@@ -1168,7 +1225,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         // Coincidencia por droppableId
         const parsed = parseSlotDroppableId(sId);
         if (parsed) {
-          const found = timeBlocks.find(
+          const found = currentBlocks.find(
             (b) => b.gradeId === parsed.gradeId && b.period === parsed.period && b.dayOfWeek === selectedDay
           );
           if (found) {
@@ -1213,7 +1270,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
       return batchBlocks;
     },
-    [timeBlocks, selectedShift, isMeetingDay, isEventDay, activeScheduleType, selectedDay, grades]
+    [selectedShift, isMeetingDay, isEventDay, activeScheduleType, selectedDay, grades]
   );
 
   // Micro-interacción de Papelera en Celda: Dispara modal individual o por lote
@@ -1336,7 +1393,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
       const { nextBlocks, updatedBlocks } = applyBatchCellAssignment({
         targets: batchSelectedTargets,
-        timeBlocks,
+        timeBlocks: timeBlocksRef.current,
         dayOfWeek: selectedDay,
         shift: selectedShift,
         teacher,
@@ -1346,6 +1403,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
       if (updatedBlocks.length === 0) return;
 
+      timeBlocksRef.current = nextBlocks;
       setTimeBlocks(nextBlocks);
       handleClearBatchSelection();
 
@@ -1363,7 +1421,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     },
     [
       batchSelectedTargets,
-      timeBlocks,
       selectedDay,
       selectedShift,
       pushSnapshot,
@@ -1380,7 +1437,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
       const { nextBlocks, updatedBlocks } = applyBatchCellAssignment({
         targets: batchSelectedTargets,
-        timeBlocks,
+        timeBlocks: timeBlocksRef.current,
         dayOfWeek: selectedDay,
         shift: selectedShift,
         subject,
@@ -1388,6 +1445,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
 
       if (updatedBlocks.length === 0) return;
 
+      timeBlocksRef.current = nextBlocks;
       setTimeBlocks(nextBlocks);
       handleClearBatchSelection();
 
@@ -1405,7 +1463,6 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     },
     [
       batchSelectedTargets,
-      timeBlocks,
       selectedDay,
       selectedShift,
       pushSnapshot,
@@ -1430,12 +1487,13 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     // Snapshotting previo a la mutación para el historial de Undo
     pushSnapshot();
 
+    const currentBlocks = timeBlocksRef.current;
     const isResetToEmpty = reason === 'Sin asignación académica';
 
     if (isResetToEmpty) {
       // Opción de Reseteo (Borrado Real): mutar a celda vacía 'Sin asignación académica'
       const targetIds = new Set(targetBlocks.map((b) => b.id));
-      const updatedList = timeBlocks.map((b) => {
+      const updatedList = currentBlocks.map((b) => {
         if (targetIds.has(b.id)) {
           return {
             ...b,
@@ -1453,7 +1511,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       });
 
       for (const tb of targetBlocks) {
-        if (!timeBlocks.some((b) => b.id === tb.id)) {
+        if (!currentBlocks.some((b) => b.id === tb.id)) {
           updatedList.push({
             ...tb,
             block_type: 'exit',
@@ -1468,6 +1526,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         }
       }
 
+      timeBlocksRef.current = updatedList;
       setTimeBlocks(updatedList);
       setIsNoveltyModalOpen(false);
       setNoveltyPendingBlock(null);
@@ -1483,6 +1542,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
           targetBlocks.map((b) => ({
             id: b.id,
             data: {
+              ...b,
               block_type: 'exit',
               subject: 'Sin asignación académica',
               teacherId: 'unassigned',
@@ -1500,7 +1560,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     } else {
       // Mutación a Novedad Institucional
       const targetIds = new Set(targetBlocks.map((b) => b.id));
-      const updatedList = timeBlocks.map((b) => {
+      const updatedList = currentBlocks.map((b) => {
         if (targetIds.has(b.id)) {
           return {
             ...b,
@@ -1514,7 +1574,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       });
 
       for (const tb of targetBlocks) {
-        if (!timeBlocks.some((b) => b.id === tb.id)) {
+        if (!currentBlocks.some((b) => b.id === tb.id)) {
           updatedList.push({
             ...tb,
             block_type: 'novelty',
@@ -1525,6 +1585,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
         }
       }
 
+      timeBlocksRef.current = updatedList;
       setTimeBlocks(updatedList);
       setIsNoveltyModalOpen(false);
       setNoveltyPendingBlock(null);
@@ -1540,6 +1601,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
           targetBlocks.map((b) => ({
             id: b.id,
             data: {
+              ...b,
               block_type: 'novelty',
               motivo_novedad: reason,
               notes: `Novedad: ${reason}`,
@@ -1587,6 +1649,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     // Snapshotting previo para Undo
     pushSnapshot();
 
+    const currentBlocks = timeBlocksRef.current;
     const blockId =
       quickAssignTarget?.block?.id || `tb-${data.grade.id}-${selectedDay}-p${data.period}`;
     const teacherName =
@@ -1632,7 +1695,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
     };
 
     const nextBlocks = (() => {
-      const filtered = timeBlocks.filter(
+      const filtered = currentBlocks.filter(
         (b) =>
           b.id !== blockId &&
           !(
@@ -1644,6 +1707,7 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       return [...filtered, newBlock];
     })();
 
+    timeBlocksRef.current = nextBlocks;
     setTimeBlocks(nextBlocks);
     setQuickAssignTarget(null);
 
@@ -1699,10 +1763,14 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       updatedAt: new Date().toISOString(),
     };
 
-    setTimeBlocks((prev) => upsertSingleTimeBlock(prev, newBlock));
+    const nextBlocks = upsertSingleTimeBlock(timeBlocksRef.current, newBlock);
+    timeBlocksRef.current = nextBlocks;
+    setTimeBlocks(nextBlocks);
     setQuickAssignTarget(null);
 
     try {
+      localStorage.setItem('villaFloraMatrix', JSON.stringify(nextBlocks));
+      localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(nextBlocks));
       await timeBlockRepo.update(blockId, newBlock);
     } catch (err) {
       console.error('[handleAssignInstitutionalEvent] Error guardando evento institucional:', err);
@@ -1719,10 +1787,12 @@ export const CoordinatorDesktopMatrixPage: React.FC = () => {
       const lastState = nextHistory.pop()!;
 
       // 1. Establece el estado actual de la matriz con la instantánea previa
+      timeBlocksRef.current = lastState;
       setTimeBlocks(lastState);
 
       // 2. Persistencia atómica de la instantánea restaurada en LocalStorage y Firestore
       try {
+        localStorage.setItem('villaFloraMatrix', JSON.stringify(lastState));
         localStorage.setItem('ievf_time_blocks_v1', JSON.stringify(lastState));
         window.dispatchEvent(new Event('schedule_matrix_updated'));
         timeBlockRepo.updateBatch(lastState.map((b) => ({ id: b.id, data: b })));
