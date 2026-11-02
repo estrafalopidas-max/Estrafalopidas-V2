@@ -115,7 +115,10 @@ export class FirestoreUserRepository implements IUserRepository {
   private async syncTeachersToServer(users: any[]): Promise<void> {
     if (typeof window === 'undefined' || typeof fetch !== 'function') return;
     try {
-      const token = localStorage.getItem('ievf_session_token') || '';
+      const token =
+        localStorage.getItem('ievf_session_token_v1') ||
+        localStorage.getItem('ievf_session_token') ||
+        '';
       await fetch('/api/teachers', {
         method: 'POST',
         headers: {

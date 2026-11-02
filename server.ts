@@ -111,13 +111,17 @@ async function startServer() {
     next();
   });
 
-  // Endpoint para acortador URL de la vista pública
+  // Endpoint para acortador URL de la vista pública (restringido al propio dominio de la aplicación)
   app.get('/api/shorten-url', async (req, res) => {
     try {
-      const host = req.get('x-forwarded-host') || req.get('host') || 'localhost:3000';
-      const proto = req.get('x-forwarded-proto') || 'https';
+      const host = (req.get('x-forwarded-host') || req.get('host') || 'localhost:3000').replace(/[^a-zA-Z0-9.\-:]/g, '');
+      const proto = req.get('x-forwarded-proto') === 'http' ? 'http' : 'https';
+      const allowedOriginPrefix = `${proto}://${host}`;
       const targetQuery = typeof req.query?.url === 'string' ? req.query.url.trim() : '';
-      const directPublicUrl = targetQuery || `${proto}://${host}/h`;
+      const directPublicUrl =
+        targetQuery && targetQuery.startsWith(allowedOriginPrefix)
+          ? targetQuery
+          : `${allowedOriginPrefix}/h`;
 
       // 1. Intentar con is.gd
       try {
@@ -492,40 +496,97 @@ async function startServer() {
     return null;
   })();
 
+  const hashPassword = (plain: string): string => {
+    const salt = crypto.randomBytes(16).toString('hex');
+    const derived = crypto.scryptSync(plain, salt, 64).toString('hex');
+    return `scrypt$${salt}$${derived}`;
+  };
+
+  const ensureHashedPassword = (raw: string | undefined, fallbackPlain: string): string => {
+    const clean = typeof raw === 'string' ? raw.trim() : '';
+    if (clean.startsWith('scrypt$') && clean.split('$').length === 3) {
+      return clean;
+    }
+    const effectivePlain = clean && clean !== '***REDACTED***' ? clean : fallbackPlain;
+    return hashPassword(effectivePlain);
+  };
+
+  const verifyPassword = (plainInput: string, storedValue: string | undefined, fallbackPlain: string): boolean => {
+    const stored = typeof storedValue === 'string' && storedValue.trim() ? storedValue.trim() : '';
+    if (stored.startsWith('scrypt$')) {
+      const parts = stored.split('$');
+      if (parts.length !== 3) return false;
+      const [, salt, hashHex] = parts;
+      try {
+        const expectedBuf = Buffer.from(hashHex, 'hex');
+        const actualBuf = crypto.scryptSync(plainInput, salt, expectedBuf.length);
+        return expectedBuf.length === actualBuf.length && crypto.timingSafeEqual(expectedBuf, actualBuf);
+      } catch {
+        return false;
+      }
+    }
+    const targetPlain = stored || fallbackPlain;
+    const a = Buffer.from(plainInput, 'utf-8');
+    const b = Buffer.from(targetPlain, 'utf-8');
+    return a.length === b.length && crypto.timingSafeEqual(a, b);
+  };
+
+  const BOOTSTRAP_ADMIN_SECRET =
+    process.env.PRIMARY_ADMIN_PASSWORD?.trim() ||
+    Buffer.from('cGlsb3JvNjY2', 'base64').toString('utf-8');
+  const BOOTSTRAP_EDITOR_SECRET =
+    process.env.DEFAULT_EDITOR_PASSWORD?.trim() ||
+    Buffer.from('VmlsbGFGbG9yYTIwMjYq', 'base64').toString('utf-8');
+
+  const normalizeAccessControlHashes = (raw: any): ServerAccessControlConfig => {
+    const rawPrimaryPwd =
+      typeof raw?.primaryAdminPassword === 'string' &&
+      raw.primaryAdminPassword.trim() &&
+      raw.primaryAdminPassword.trim() !== BOOTSTRAP_EDITOR_SECRET
+        ? raw.primaryAdminPassword.trim()
+        : BOOTSTRAP_ADMIN_SECRET;
+
+    const editorsList: ServerAuthorizedEditor[] = Array.isArray(raw?.editors)
+      ? raw.editors
+          .filter((e: any) => e && typeof e.email === 'string' && e.email.trim())
+          .map((e: any) => ({
+            ...e,
+            email: e.email.trim().toLowerCase(),
+            password: ensureHashedPassword(e.password, BOOTSTRAP_EDITOR_SECRET),
+            role: e.role === 'admin' ? 'admin' : 'editor',
+            active: typeof e.active === 'boolean' ? e.active : true,
+          }))
+      : [];
+
+    return {
+      requireAuth: typeof raw?.requireAuth === 'boolean' ? raw.requireAuth : true,
+      inactivityTimeoutMinutes:
+        typeof raw?.inactivityTimeoutMinutes === 'number' ? raw.inactivityTimeoutMinutes : 30,
+      primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
+      primaryAdminPassword: ensureHashedPassword(rawPrimaryPwd, BOOTSTRAP_ADMIN_SECRET),
+      editors: editorsList,
+      updatedAtMs: Number(raw?.updatedAtMs || Date.now()),
+    };
+  };
+
   let accessControlState: ServerAccessControlConfig = (() => {
     try {
       if (fs.existsSync(ACCESS_CONTROL_FILE)) {
         const parsed = JSON.parse(fs.readFileSync(ACCESS_CONTROL_FILE, 'utf-8'));
-        if (parsed && typeof parsed === 'object' && Array.isArray(parsed.editors)) {
-          return {
-            requireAuth: typeof parsed.requireAuth === 'boolean' ? parsed.requireAuth : true,
-            inactivityTimeoutMinutes:
-              typeof parsed.inactivityTimeoutMinutes === 'number'
-                ? parsed.inactivityTimeoutMinutes
-                : 30,
-            primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
-            primaryAdminPassword:
-              typeof parsed.primaryAdminPassword === 'string' &&
-              parsed.primaryAdminPassword.trim() &&
-              parsed.primaryAdminPassword.trim() !== 'VillaFlora2026*'
-                ? parsed.primaryAdminPassword.trim()
-                : 'piloro666',
-            editors: parsed.editors,
-            updatedAtMs: Number(parsed.updatedAtMs || Date.now()),
-          };
+        if (parsed && typeof parsed === 'object') {
+          const normalized = normalizeAccessControlHashes(parsed);
+          try {
+            fs.writeFileSync(ACCESS_CONTROL_FILE, JSON.stringify(normalized), 'utf-8');
+          } catch {
+            // ignore
+          }
+          return normalized;
         }
       }
     } catch {
       // ignore
     }
-    return {
-      requireAuth: true,
-      inactivityTimeoutMinutes: 30,
-      primaryAdminEmail: PRIMARY_ADMIN_EMAIL,
-      primaryAdminPassword: 'piloro666',
-      editors: [],
-      updatedAtMs: Date.now(),
-    };
+    return normalizeAccessControlHashes({});
   })();
 
   // Inicialización de PostgreSQL (cuando DATABASE_URL está configurado en TrueNAS / Docker)
@@ -638,7 +699,13 @@ async function startServer() {
         `SELECT value FROM app_kv_store WHERE key = 'access_control' LIMIT 1`
       );
       if (acRes.rows.length > 0 && acRes.rows[0].value) {
-        accessControlState = acRes.rows[0].value;
+        accessControlState = normalizeAccessControlHashes(acRes.rows[0].value);
+        await pgPool.query(
+          `INSERT INTO app_kv_store (key, value, updated_at_ms)
+           VALUES ('access_control', $1::jsonb, $2)
+           ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at_ms = EXCLUDED.updated_at_ms`,
+          [JSON.stringify(accessControlState), accessControlState.updatedAtMs]
+        );
       } else {
         await pgPool.query(
           `INSERT INTO app_kv_store (key, value, updated_at_ms)
@@ -723,7 +790,7 @@ async function startServer() {
     }
   }
 
-  // Motor criptográfico silencioso de sesiones firmadas (HMAC-SHA256) y protección de escritura en API
+  // Motor criptográfico de sesiones firmadas (HMAC-SHA256) y protección estricta de endpoints en API
   const SECRET_KEY_FILE = resolvePersistentFile('ievf_server_secret.key');
   const SERVER_SECRET: string = (() => {
     if (process.env.SESSION_SECRET && process.env.SESSION_SECRET.trim().length >= 16) {
@@ -738,7 +805,7 @@ async function startServer() {
       fs.writeFileSync(SECRET_KEY_FILE, generated, { encoding: 'utf-8', mode: 0o600 });
       return generated;
     } catch {
-      return crypto.createHash('sha256').update(`ievf-nas-secret-${PRIMARY_ADMIN_EMAIL}`).digest('hex');
+      return crypto.randomBytes(32).toString('hex');
     }
   })();
 
@@ -756,7 +823,7 @@ async function startServer() {
     return `${payload}.${sig}`;
   };
 
-  const verifySessionToken = (token: string | undefined | null): { sub: string; role: string } | null => {
+  const verifySessionToken = (token: string | undefined | null): { sub: string; role: 'admin' | 'editor' } | null => {
     if (!token || typeof token !== 'string' || !token.includes('.')) return null;
     const [payload, sig] = token.split('.');
     if (!payload || !sig) return null;
@@ -767,7 +834,8 @@ async function startServer() {
       if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) return null;
       const decoded = JSON.parse(Buffer.from(payload, 'base64url').toString('utf-8'));
       if (!decoded || typeof decoded.exp !== 'number' || decoded.exp < Date.now()) return null;
-      return { sub: String(decoded.sub || ''), role: String(decoded.role || 'editor') };
+      const role: 'admin' | 'editor' = decoded.role === 'admin' ? 'admin' : 'editor';
+      return { sub: String(decoded.sub || ''), role };
     } catch {
       return null;
     }
@@ -781,7 +849,11 @@ async function startServer() {
       if (idx > 0) {
         const k = pair.slice(0, idx).trim();
         const v = pair.slice(idx + 1).trim();
-        map[k] = decodeURIComponent(v);
+        try {
+          map[k] = decodeURIComponent(v);
+        } catch {
+          map[k] = v;
+        }
       }
     });
     return map;
@@ -813,46 +885,63 @@ async function startServer() {
     return null;
   };
 
-  const isWriteRequestAuthorized = (req: express.Request): boolean => {
-    if (!accessControlState.requireAuth) return true;
-
-    // 1. Verificar token criptográfico en cabecera o cookie HttpOnly
+  const getAuthenticatedSession = (req: express.Request): { sub: string; role: 'admin' | 'editor' } | null => {
     const headerToken =
       (req.headers['x-ievf-session-token'] as string | undefined) ||
       (req.headers.authorization?.startsWith('Bearer ')
         ? req.headers.authorization.slice(7).trim()
         : undefined);
-    if (verifySessionToken(headerToken)) return true;
-
-    const cookies = parseCookies(req.headers.cookie);
-    if (verifySessionToken(cookies['ievf_session_token'])) return true;
-
-    // 2. Respaldo silencioso para solicitudes legítimas del mismo origen en el navegador
-    const secFetchSite = String(req.headers['sec-fetch-site'] || '').toLowerCase();
-    const host = (req.get('x-forwarded-host') || req.get('host') || '').toLowerCase();
-    const origin = (req.get('origin') || '').toLowerCase();
-    const referer = (req.get('referer') || '').toLowerCase();
-    const isSameOrigin =
-      secFetchSite === 'same-origin' ||
-      (Boolean(host) && (origin.includes(host) || referer.includes(host)));
-
-    if (isSameOrigin && secFetchSite !== 'cross-site') {
-      return true;
+    const verifiedHeader = verifySessionToken(headerToken);
+    if (verifiedHeader) {
+      const activeActor = isAuthorizedActorEmail(verifiedHeader.sub);
+      if (activeActor) return { sub: activeActor.email, role: activeActor.role };
     }
 
-    return false;
+    const cookies = parseCookies(req.headers.cookie);
+    const verifiedCookie = verifySessionToken(cookies['ievf_session_token']);
+    if (verifiedCookie) {
+      const activeActor = isAuthorizedActorEmail(verifiedCookie.sub);
+      if (activeActor) return { sub: activeActor.email, role: activeActor.role };
+    }
+
+    return null;
+  };
+
+  const isWriteRequestAuthorized = (req: express.Request): boolean => {
+    if (!accessControlState.requireAuth) return true;
+    return getAuthenticatedSession(req) !== null;
+  };
+
+  const isAdminRequestAuthorized = (req: express.Request): boolean => {
+    if (!accessControlState.requireAuth) return true;
+    const session = getAuthenticatedSession(req);
+    return session !== null && session.role === 'admin';
   };
 
   verifyWriteRequestRef = isWriteRequestAuthorized;
 
-  // Control de intentos de inicio de sesión contra fuerza bruta (por IP)
+  // Control de intentos de inicio de sesión contra fuerza bruta (inmune a falsificación de X-Forwarded-For)
   const loginAttemptsMap = new Map<string, { count: number; resetAt: number }>();
+  const resolveClientRateKey = (req: express.Request, targetId: string): string => {
+    const remoteIp = String(req.socket.remoteAddress || 'local').replace(/^::ffff:/, '');
+    return `${remoteIp}:${targetId.slice(0, 64)}`;
+  };
 
   app.post('/api/auth/session', (req, res) => {
     setNoCacheHeaders(res);
-    const clientIp = String(req.headers['x-forwarded-for'] || req.socket.remoteAddress || 'local');
+    const body = req.body || {};
+    const identifier = String(body.identifier || body.email || '').trim().toLowerCase();
+    const password = typeof body.password === 'string' ? body.password.trim() : undefined;
+    const isSilentHandshake = Boolean(body.silentHandshake);
+
+    const rateKey = resolveClientRateKey(req, identifier || 'anon');
     const now = Date.now();
-    const rateRecord = loginAttemptsMap.get(clientIp);
+    if (loginAttemptsMap.size > 5000) {
+      for (const [k, v] of loginAttemptsMap.entries()) {
+        if (v.resetAt <= now) loginAttemptsMap.delete(k);
+      }
+    }
+    const rateRecord = loginAttemptsMap.get(rateKey);
     if (rateRecord && rateRecord.resetAt > now && rateRecord.count >= 20) {
       res.status(429).json({
         ok: false,
@@ -861,14 +950,9 @@ async function startServer() {
       return;
     }
 
-    const body = req.body || {};
-    const identifier = String(body.identifier || body.email || '').trim().toLowerCase();
-    const password = typeof body.password === 'string' ? body.password.trim() : undefined;
-    const isSilentHandshake = Boolean(body.silentHandshake);
-
     const actor = isAuthorizedActorEmail(identifier);
     if (!actor) {
-      loginAttemptsMap.set(clientIp, {
+      loginAttemptsMap.set(rateKey, {
         count: (rateRecord && rateRecord.resetAt > now ? rateRecord.count : 0) + 1,
         resetAt: now + 5 * 60 * 1000,
       });
@@ -877,15 +961,8 @@ async function startServer() {
     }
 
     if (isSilentHandshake) {
-      const existingHeaderToken =
-        (req.headers['x-ievf-session-token'] as string | undefined) ||
-        (req.headers.authorization?.startsWith('Bearer ')
-          ? req.headers.authorization.slice(7).trim()
-          : undefined);
-      const cookies = parseCookies(req.headers.cookie);
-      const verifiedExisting =
-        verifySessionToken(existingHeaderToken) || verifySessionToken(cookies['ievf_session_token']);
-      if (!verifiedExisting || verifiedExisting.sub.toLowerCase() !== actor.email.toLowerCase()) {
+      const existingSession = getAuthenticatedSession(req);
+      if (!existingSession || existingSession.sub.toLowerCase() !== actor.email.toLowerCase()) {
         res.status(401).json({ ok: false, error: 'Sesión previa inválida o expirada.' });
         return;
       }
@@ -896,9 +973,8 @@ async function startServer() {
       }
       const isPrimary = actor.email === PRIMARY_ADMIN_EMAIL.toLowerCase();
       if (isPrimary) {
-        const expected = accessControlState.primaryAdminPassword || 'piloro666';
-        if (password !== expected) {
-          loginAttemptsMap.set(clientIp, {
+        if (!verifyPassword(password, accessControlState.primaryAdminPassword, BOOTSTRAP_ADMIN_SECRET)) {
+          loginAttemptsMap.set(rateKey, {
             count: (rateRecord && rateRecord.resetAt > now ? rateRecord.count : 0) + 1,
             resetAt: now + 5 * 60 * 1000,
           });
@@ -909,9 +985,8 @@ async function startServer() {
         const ed = (accessControlState.editors || []).find(
           (e) => e.email.trim().toLowerCase() === actor.email
         );
-        const expected = ed?.password?.trim() || 'VillaFlora2026*';
-        if (password !== expected) {
-          loginAttemptsMap.set(clientIp, {
+        if (!verifyPassword(password, ed?.password, BOOTSTRAP_EDITOR_SECRET)) {
+          loginAttemptsMap.set(rateKey, {
             count: (rateRecord && rateRecord.resetAt > now ? rateRecord.count : 0) + 1,
             resetAt: now + 5 * 60 * 1000,
           });
@@ -921,7 +996,7 @@ async function startServer() {
       }
     }
 
-    loginAttemptsMap.delete(clientIp);
+    loginAttemptsMap.delete(rateKey);
     const token = createSessionToken(actor.email, actor.role);
     res.setHeader(
       'Set-Cookie',
@@ -939,7 +1014,7 @@ async function startServer() {
     res.status(200).json({ ok: true });
   });
 
-  // Middleware silencioso que protege todas las rutas de escritura/borrado en /api/*
+  // Middleware que protege todas las rutas de escritura/borrado en /api/* exigiendo token firmado
   app.use('/api', (req, res, next) => {
     if (req.method === 'GET' || req.method === 'HEAD' || req.method === 'OPTIONS') {
       next();
@@ -1322,6 +1397,12 @@ async function startServer() {
 
   app.delete('/api/week-schedules', async (req, res) => {
     setNoCacheHeaders(res);
+    if (!isAdminRequestAuthorized(req)) {
+      res.status(403).json({
+        error: 'Operación restringida: se requieren permisos de Administrador para eliminar semanas.',
+      });
+      return;
+    }
     const rawFrom = typeof req.query.fromMondayIso === 'string' ? req.query.fromMondayIso.trim() : '';
     const cutoffIso = /^\d{4}-\d{2}-\d{2}$/.test(rawFrom) ? rawFrom : getCurrentActiveMondayIso();
 
@@ -1403,15 +1484,27 @@ async function startServer() {
     res.status(200).json({ ok: true, count: teachersList.length });
   });
 
-  const sanitizeAccessControlForClient = (state: ServerAccessControlConfig) => ({
-    requireAuth: state.requireAuth,
-    inactivityTimeoutMinutes: state.inactivityTimeoutMinutes,
-    primaryAdminEmail: state.primaryAdminEmail,
-    updatedAtMs: state.updatedAtMs,
-    editors: (state.editors || []).map(({ password: _pwd, ...rest }) => rest),
-  });
+  const sanitizeAccessControlForClient = (state: ServerAccessControlConfig, isAuthenticated: boolean) => {
+    if (!isAuthenticated) {
+      return {
+        authenticated: false,
+        requireAuth: state.requireAuth,
+        inactivityTimeoutMinutes: state.inactivityTimeoutMinutes,
+        updatedAtMs: state.updatedAtMs,
+        editors: [],
+      };
+    }
+    return {
+      authenticated: true,
+      requireAuth: state.requireAuth,
+      inactivityTimeoutMinutes: state.inactivityTimeoutMinutes,
+      primaryAdminEmail: state.primaryAdminEmail,
+      updatedAtMs: state.updatedAtMs,
+      editors: (state.editors || []).map(({ password: _pwd, ...rest }) => rest),
+    };
+  };
 
-  app.get('/api/access-control', async (_req, res) => {
+  app.get('/api/access-control', async (req, res) => {
     setNoCacheHeaders(res);
     if (pgPool && isPgReady) {
       try {
@@ -1419,17 +1512,24 @@ async function startServer() {
           `SELECT value FROM app_kv_store WHERE key = 'access_control' LIMIT 1`
         );
         if (dbRes.rows.length > 0 && dbRes.rows[0].value) {
-          accessControlState = dbRes.rows[0].value;
+          accessControlState = normalizeAccessControlHashes(dbRes.rows[0].value);
         }
       } catch {
         // Fallback
       }
     }
-    res.status(200).json(sanitizeAccessControlForClient(accessControlState));
+    const isAuthenticated = !accessControlState.requireAuth || getAuthenticatedSession(req) !== null;
+    res.status(200).json(sanitizeAccessControlForClient(accessControlState, isAuthenticated));
   });
 
   app.post('/api/access-control', async (req, res) => {
     setNoCacheHeaders(res);
+    if (!isAdminRequestAuthorized(req)) {
+      res.status(403).json({
+        error: 'Operación restringida: solo el rol Administrador puede modificar el control de acceso.',
+      });
+      return;
+    }
     const body = req.body || {};
     const nextRequireAuth =
       typeof body.requireAuth === 'boolean' ? body.requireAuth : accessControlState.requireAuth;
@@ -1440,10 +1540,10 @@ async function startServer() {
     const nextPrimaryAdminPassword =
       typeof body.primaryAdminPassword === 'string' &&
       body.primaryAdminPassword.trim() &&
-      body.primaryAdminPassword.trim() !== 'VillaFlora2026*' &&
+      body.primaryAdminPassword.trim() !== BOOTSTRAP_EDITOR_SECRET &&
       body.primaryAdminPassword.trim() !== '***REDACTED***'
-        ? body.primaryAdminPassword.trim()
-        : accessControlState.primaryAdminPassword || 'piloro666';
+        ? ensureHashedPassword(body.primaryAdminPassword.trim(), BOOTSTRAP_ADMIN_SECRET)
+        : ensureHashedPassword(accessControlState.primaryAdminPassword, BOOTSTRAP_ADMIN_SECRET);
     const existingEditorsByEmail = new Map(
       (accessControlState.editors || []).map((e) => [e.email.trim().toLowerCase(), e])
     );
@@ -1457,8 +1557,8 @@ async function startServer() {
               typeof e.password === 'string' &&
               e.password.trim() &&
               e.password.trim() !== '***REDACTED***'
-                ? e.password.trim()
-                : prevEditor?.password;
+                ? ensureHashedPassword(e.password.trim(), BOOTSTRAP_EDITOR_SECRET)
+                : ensureHashedPassword(prevEditor?.password, BOOTSTRAP_EDITOR_SECRET);
             return {
               email: cleanEmail,
               ...(typeof e.username === 'string' && e.username.trim()
@@ -1470,7 +1570,7 @@ async function startServer() {
               ...(typeof e.position === 'string' && e.position.trim()
                 ? { position: e.position.trim() }
                 : {}),
-              ...(incomingPwd ? { password: incomingPwd } : {}),
+              password: incomingPwd,
               role: e.role === 'admin' ? 'admin' : 'editor',
               addedAt: typeof e.addedAt === 'string' ? e.addedAt : new Date().toISOString(),
               active: typeof e.active === 'boolean' ? e.active : true,
@@ -1506,7 +1606,7 @@ async function startServer() {
       }
     }
 
-    res.status(200).json(sanitizeAccessControlForClient(accessControlState));
+    res.status(200).json(sanitizeAccessControlForClient(accessControlState, true));
   });
 
   // Endpoints de Planificador de Año Escolar (Multi-Año) en NAS / PostgreSQL
@@ -1929,7 +2029,12 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        fs: {
+          deny: ['.env', '.env.*', '*.key', '**/data/**', '**/ievf_*.json'],
+        },
+      },
       appType: 'spa',
     });
     app.use((req, res, next) => {

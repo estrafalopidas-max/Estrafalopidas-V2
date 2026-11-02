@@ -306,9 +306,16 @@ export const CoordinatorIncidencesPage: React.FC = () => {
         reader.readAsDataURL(file);
       });
 
+      const token =
+        localStorage.getItem('ievf_session_token') ||
+        localStorage.getItem('ievf_session_token_v1') ||
+        '';
       const response = await fetch('/api/academic-calendar/parse-special-days', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-ievf-session-token': token } : {}),
+        },
         body: JSON.stringify({
           base64Data,
           mimeType: file.type || 'image/png',

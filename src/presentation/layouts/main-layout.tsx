@@ -187,7 +187,10 @@ export const MainLayout: React.FC = () => {
       setLogoUrl(dataUrl);
       localStorage.setItem('ievf_logo_data_url', dataUrl);
 
-      const token = localStorage.getItem('ievf_session_token') || '';
+      const token =
+        localStorage.getItem('ievf_session_token_v1') ||
+        localStorage.getItem('ievf_session_token') ||
+        '';
       const response = await fetch('/api/upload-logo', {
         method: 'POST',
         headers: {

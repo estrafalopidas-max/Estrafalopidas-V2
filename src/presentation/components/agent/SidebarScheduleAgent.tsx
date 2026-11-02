@@ -201,9 +201,16 @@ export const SidebarScheduleAgent: React.FC<SidebarScheduleAgentProps> = ({
 
     try {
       const context = buildLiveScheduleContext();
+      const token =
+        localStorage.getItem('ievf_session_token') ||
+        localStorage.getItem('ievf_session_token_v1') ||
+        '';
       const response = await fetch('/api/schedule-agent/chat', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-ievf-session-token': token } : {}),
+        },
         body: JSON.stringify({
           message: trimmed,
           mode: chatMode,

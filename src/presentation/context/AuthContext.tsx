@@ -141,6 +141,14 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return null;
     }
   });
+  const [manualSessionRole, setManualSessionRole] = useState<'admin' | 'editor' | null>(() => {
+    try {
+      const r = localStorage.getItem('ievf_verified_editor_role_v1');
+      return r === 'admin' || r === 'editor' ? r : null;
+    } catch {
+      return null;
+    }
+  });
   const [unauthorizedEmail, setUnauthorizedEmail] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [inactivityWarningSeconds, setInactivityWarningSeconds] = useState<number | null>(null);
@@ -148,12 +156,30 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const syncWithServer = useCallback(async () => {
     try {
-      const res = await fetch('/api/access-control');
+      const token =
+        localStorage.getItem('ievf_session_token') ||
+        localStorage.getItem('ievf_session_token_v1') ||
+        '';
+      const res = await fetch('/api/access-control', {
+        headers: token ? { 'x-ievf-session-token': token } : undefined,
+      });
       if (res.ok) {
         const serverData = await res.json();
         const localData = loadLocalAccessControl();
         const serverUpdated = Number(serverData?.updatedAtMs || 0);
         const localUpdated = Number(localData?.updatedAtMs || 0);
+
+        if (serverData?.authenticated === false) {
+          const nextReq =
+            typeof serverData.requireAuth === 'boolean' ? serverData.requireAuth : true;
+          const nextInactivity =
+            typeof serverData.inactivityTimeoutMinutes === 'number'
+              ? serverData.inactivityTimeoutMinutes
+              : localData.inactivityTimeoutMinutes ?? 30;
+          setRequireAuthState(nextReq);
+          setInactivityTimeoutMinutesState(nextInactivity);
+          return;
+        }
 
         if (serverUpdated >= localUpdated && Array.isArray(serverData.editors)) {
           const nextReq =
@@ -164,8 +190,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               : localData.inactivityTimeoutMinutes ?? 30;
           const nextPrimaryPwd =
             typeof serverData.primaryAdminPassword === 'string' &&
-            serverData.primaryAdminPassword.trim() &&
-            serverData.primaryAdminPassword.trim() !== 'VillaFlora2026*'
+            serverData.primaryAdminPassword.trim()
               ? serverData.primaryAdminPassword.trim()
               : localData.primaryAdminPassword || DEFAULT_PRIMARY_ADMIN_PASSWORD;
 
@@ -180,10 +205,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             editors: serverData.editors,
             updatedAtMs: serverUpdated,
           });
-        } else if (localData.editors.length > 0 || localUpdated > serverUpdated) {
+        } else if (
+          serverData?.authenticated === true &&
+          (localData.editors.length > 0 || localUpdated > serverUpdated)
+        ) {
           await fetch('/api/access-control', {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
+            headers: {
+              'Content-Type': 'application/json',
+              ...(token ? { 'x-ievf-session-token': token } : {}),
+            },
             body: JSON.stringify(localData),
           });
         }
@@ -226,9 +257,16 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       });
 
       try {
+        const token =
+          localStorage.getItem('ievf_session_token') ||
+          localStorage.getItem('ievf_session_token_v1') ||
+          '';
         await fetch('/api/access-control', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'x-ievf-session-token': token } : {}),
+          },
           body: JSON.stringify({
             requireAuth: nextRequireAuth,
             inactivityTimeoutMinutes: nextInactivityMinutes,
@@ -288,9 +326,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         };
       }
 
+      if (manualSessionRole && normalized === manualSessionEmail?.toLowerCase()) {
+        return {
+          uid: uid || `editor-${normalized}`,
+          email: normalized,
+          displayName: displayName || normalized,
+          photoURL: photoURL || null,
+          role: manualSessionRole,
+        };
+      }
+
       return null;
     },
-    [editors]
+    [editors, manualSessionEmail, manualSessionRole]
   );
 
   const activeUser: AuthUser | null = React.useMemo(() => {
@@ -338,6 +386,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           .then((data) => {
             if (data?.token) {
               try {
+                localStorage.setItem('ievf_session_token', data.token);
                 localStorage.setItem('ievf_session_token_v1', data.token);
               } catch {
                 // ignore
@@ -351,10 +400,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
   const logout = useCallback(async () => {
     setManualSessionEmail(null);
+    setManualSessionRole(null);
     setUnauthorizedEmail(null);
     setInactivityWarningSeconds(null);
     try {
       localStorage.removeItem(VERIFIED_SESSION_STORAGE_KEY);
+      localStorage.removeItem('ievf_verified_editor_role_v1');
+      localStorage.removeItem('ievf_session_token');
       localStorage.removeItem('ievf_session_token_v1');
     } catch {
       // ignore
@@ -432,8 +484,6 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         return { ok: false, error: 'Ingresa tu contraseña.' };
       }
 
-      await syncWithServer();
-
       try {
         const res = await fetch('/api/auth/session', {
           method: 'POST',
@@ -449,16 +499,21 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
 
         const emailToStore = String(data.email || cleanId).trim().toLowerCase();
+        const roleToStore: 'admin' | 'editor' = data.role === 'admin' ? 'admin' : 'editor';
         lastActivityRef.current = Date.now();
         setManualSessionEmail(emailToStore);
+        setManualSessionRole(roleToStore);
         try {
           localStorage.setItem(VERIFIED_SESSION_STORAGE_KEY, emailToStore);
+          localStorage.setItem('ievf_verified_editor_role_v1', roleToStore);
           if (data.token) {
+            localStorage.setItem('ievf_session_token', data.token);
             localStorage.setItem('ievf_session_token_v1', data.token);
           }
         } catch {
           // ignore
         }
+        await syncWithServer();
         return { ok: true };
       } catch {
         return {

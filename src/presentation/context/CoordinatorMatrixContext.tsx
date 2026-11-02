@@ -77,8 +77,13 @@ export function clearAllWeekContainers(fromMondayIso?: string): void {
   }
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
     try {
+      const token =
+        localStorage.getItem('ievf_session_token') ||
+        localStorage.getItem('ievf_session_token_v1') ||
+        '';
       void fetch(`/api/week-schedules?fromMondayIso=${encodeURIComponent(cutoffIso)}`, {
         method: 'DELETE',
+        headers: token ? { 'x-ievf-session-token': token } : undefined,
       }).catch(() => {});
     } catch {
       // ignore
@@ -113,9 +118,16 @@ function persistWeekContainerToServer(
 ): void {
   if (!mondayIso || typeof window === 'undefined' || typeof fetch !== 'function') return;
   try {
+    const token =
+      localStorage.getItem('ievf_session_token') ||
+      localStorage.getItem('ievf_session_token_v1') ||
+      '';
     void fetch(`/api/week-schedules/${encodeURIComponent(mondayIso)}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        ...(token ? { 'x-ievf-session-token': token } : {}),
+      },
       body: JSON.stringify({
         container,
       }),

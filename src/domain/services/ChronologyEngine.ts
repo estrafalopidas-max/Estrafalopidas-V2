@@ -648,9 +648,16 @@ export function saveAcademicCalendarsStore(
     }
     if ((syncServer || needsServerResync) && typeof fetch === 'function') {
       try {
+        const token =
+          localStorage.getItem('ievf_session_token') ||
+          localStorage.getItem('ievf_session_token_v1') ||
+          '';
         void fetch('/api/academic-calendar', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            ...(token ? { 'x-ievf-session-token': token } : {}),
+          },
           body: JSON.stringify(normalized),
         }).catch(() => {});
       } catch {

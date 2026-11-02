@@ -213,9 +213,16 @@ export async function publishScheduleToCloud(
 
   if (typeof window !== 'undefined' && typeof fetch === 'function') {
     try {
+      const token =
+        localStorage.getItem('ievf_session_token') ||
+        localStorage.getItem('ievf_session_token_v1') ||
+        '';
       await fetch('/api/published-schedule', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(token ? { 'x-ievf-session-token': token } : {}),
+        },
         body: JSON.stringify({
           snapshot: normalizedSnapshot,
         }),
